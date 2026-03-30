@@ -1,9 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Search as SearchIcon, Play, Disc, Mic, ListMusic, Loader2 } from "lucide-react";
+import { Search as SearchIcon, Loader2 } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 
-// Helper to safely get the best quality image from the API
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/150";
   if (typeof img === "string") return img.replace("150x150", "500x500");
@@ -13,17 +12,12 @@ const getImageUrl = (img: any) => {
 
 export default function SearchPage() {
   const { setCurrentSong, setIsPlaying } = useAppContext();
-  const[query, setQuery] = useState("");
+  const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState("songs");
   const [results, setResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const[loading, setLoading] = useState(false);
 
-  const tabs =[
-    { id: "songs", label: "Songs", icon: Play },
-    { id: "albums", label: "Albums", icon: Disc },
-    { id: "playlists", label: "Playlists", icon: ListMusic },
-    { id: "artists", label: "Artists", icon: Mic },
-  ];
+  const tabs = ["songs", "albums", "playlists", "artists"];
 
   useEffect(() => {
     const fetchSearchResults = async () => {
@@ -31,15 +25,13 @@ export default function SearchPage() {
         setResults([]);
         return;
       }
-
       setLoading(true);
       try {
         const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${activeTab}?query=${encodeURIComponent(query)}`);
         const json = await res.json();
         
-        // The API returns arrays directly for songs, but nests them in data.results for others
         if (activeTab === "songs") {
-          setResults(json.data || []);
+          setResults(json.data?.results ||[]);
         } else {
           setResults(json.data?.results ||[]);
         }
@@ -49,104 +41,63 @@ export default function SearchPage() {
       setLoading(false);
     };
 
-    // Debounce to prevent spamming the API while typing
-    const timeoutId = setTimeout(() => {
-      fetchSearchResults();
-    }, 500);
-
+    const timeoutId = setTimeout(() => fetchSearchResults(), 500);
     return () => clearTimeout(timeoutId);
-  }, [query, activeTab]);
+  },[query, activeTab]);
 
   const handlePlayClick = (item: any) => {
-    // If it's a song, play it immediately
-    if (activeTab === "songs") {
-      setCurrentSong(item);
-      setIsPlaying(true);
-    } else {
-      // In the future, this will navigate to the Album/Playlist/Artist page
-      alert(`Routing to ${activeTab} page is coming in the next step!`);
-    }
+    setCurrentSong(item);
+    setIsPlaying(true);
   };
 
   return (
-    <main className="min-h-screen pt-10 pb-24 px-4 bg-black">
-      <h1 className="text-3xl font-extrabold mb-6 tracking-tight text-white">Search</h1>
+    <main className="min-h-screen pt-12 pb-24 px-4 bg-black">
+      <h1 className="text-4xl font-black mb-6 tracking-tighter text-white">Search</h1>
 
-      {/* Sticky Search Bar */}
-      <div className="sticky top-0 z-40 bg-black/80 backdrop-blur-xl py-2 mb-4">
-        <div className="relative flex items-center w-full h-12 rounded-2xl focus-within:shadow-lg bg-neutral-900 overflow-hidden border border-neutral-800">
-          <div className="grid place-items-center h-full w-12 text-neutral-400">
-            <SearchIcon size={20} />
-          </div>
+      <div className="sticky top-0 z-40 bg-black/90 backdrop-blur-xl py-3 mb-4">
+        <div className="relative flex items-center w-full h-12 rounded-xl bg-neutral-800 overflow-hidden border border-neutral-700">
+          <div className="grid place-items-center h-full w-12 text-neutral-400"><SearchIcon size={20} /></div>
           <input
             className="peer h-full w-full outline-none text-sm text-white bg-transparent pr-4 placeholder-neutral-500"
             type="text"
-            id="search"
             placeholder="Search songs, albums, artists..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mt-4 overflow-x-auto hide-scrollbar pb-2">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all whitespace-nowrap ${
-                  isActive ? "bg-white text-black" : "bg-neutral-900 text-neutral-400 border border-neutral-800"
-                }`}
-              >
-                <tab.icon size={16} />
-                {tab.label}
-              </button>
-            );
-          })}
+        <div className="flex gap-2 mt-4 overflow-x-auto hide-scrollbar">
+          {tabs.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-5 py-2 rounded-full text-sm font-bold capitalize transition-all whitespace-nowrap ${
+                activeTab === tab ? "bg-white text-black" : "bg-neutral-900 text-white border border-neutral-700"
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Results Area */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center mt-20 text-neutral-400">
-          <Loader2 className="animate-spin mb-4" size={32} />
-          <p>Searching {activeTab}...</p>
-        </div>
+        <div className="flex justify-center mt-20 text-neutral-400"><Loader2 className="animate-spin" size={32} /></div>
       ) : results.length > 0 ? (
-        <div className="grid grid-cols-2 gap-4 mt-2">
+        <div className="grid grid-cols-2 gap-4 mt-4">
           {results.map((item, index) => (
-            <div 
-              key={item.id || index} 
-              onClick={() => handlePlayClick(item)}
-              className="bg-neutral-900/50 p-3 rounded-2xl border border-neutral-800/50 hover:bg-neutral-800 transition cursor-pointer active:scale-95"
-            >
-              <img 
-                src={getImageUrl(item.image)} 
-                alt={item.name || item.title} 
-                className={`w-full aspect-square object-cover mb-3 shadow-md ${activeTab === 'artists' ? 'rounded-full' : 'rounded-xl'}`}
-              />
-              <h3 className="text-sm font-bold text-white truncate">{item.name || item.title}</h3>
+            <div key={item.id || index} onClick={() => handlePlayClick(item)} className="bg-neutral-900 p-3 rounded-xl border border-neutral-800 cursor-pointer active:scale-95 transition-transform">
+              <img src={getImageUrl(item.image)} alt={item.title} className={`w-full aspect-square object-cover mb-3 ${activeTab === 'artists' ? 'rounded-full' : 'rounded-lg'}`} />
+              <h3 className="text-sm font-bold text-white truncate">{item.title || item.name}</h3>
               <p className="text-xs text-neutral-400 truncate mt-1">
-                {activeTab === "songs" && item.artists?.primary?.[0]?.name}
-                {activeTab === "albums" && item.year ? `Album • ${item.year}` : ""}
-                {activeTab === "playlists" && item.songCount ? `${item.songCount} Songs` : ""}
-                {activeTab === "artists" && "Artist"}
+                {item.description || item.subtitle || (activeTab === 'artists' ? 'Artist' : '')}
               </p>
             </div>
           ))}
         </div>
       ) : query.trim() !== "" ? (
-        <div className="text-center mt-20 text-neutral-500">
-          <p>No {activeTab} found for "{query}"</p>
-        </div>
-      ) : (
-        <div className="text-center mt-20 text-neutral-500">
-          <SearchIcon size={48} className="mx-auto mb-4 opacity-20" />
-          <p>Type something to start searching.</p>
-        </div>
-      )}
+        <p className="text-center mt-20 text-neutral-500">No results found.</p>
+      ) : null}
     </main>
   );
 }

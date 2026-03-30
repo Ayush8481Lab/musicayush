@@ -12,22 +12,22 @@ const getImageUrl = (img: any) => {
   return "https://via.placeholder.com/500x500?text=Music";
 };
 
-// Strict Subtitle Extractor
+// Bulletproof Subtitle Extractor
 const getSubtitle = (item: any, hideSubtitle: boolean) => {
-  if (hideSubtitle) return null; 
+  if (hideSubtitle) return "";
+  let sub = item.subtitle || item.header_desc || item.description || "";
   
-  // If it's an album, strictly extract the Artist Name
-  if (item.type === "album" || item.type === "album") {
-    const primary = item.more_info?.artistMap?.primary_artists;
-    if (primary && primary.length > 0) return primary.map((a: any) => a.name).join(", ");
-    
-    const all = item.more_info?.artistMap?.artists;
-    if (all && all.length > 0) return all.map((a: any) => a.name).join(", ");
+  if (!sub && item.more_info) {
+    if (item.more_info.artistMap?.primary_artists?.length > 0) {
+      sub = item.more_info.artistMap.primary_artists.map((a: any) => a.name).join(", ");
+    } else if (item.more_info.singers) {
+      sub = item.more_info.singers;
+    }
   }
+  if (!sub && item.primaryArtists) sub = item.primaryArtists;
+  if (!sub && item.singers) sub = item.singers;
   
-  // Fallback for songs and other types
-  const sub = item.subtitle || item.header_desc || item.description || item.primaryArtists || item.singers;
-  return sub ? sub : null;
+  return sub || (item.type ? item.type.charAt(0).toUpperCase() + item.type.slice(1) : "");
 };
 
 // Remove duplicates based on ID
@@ -39,48 +39,47 @@ const mergeAndDedupe = (arr1: any[], arr2: any[]) => {
   return Array.from(map.values());
 };
 
-// Premium Standard Carousel
-const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onItemClick }: any) => {
-  if (!items || items.length === 0) return null;
+// Premium Card Component with Marquee & Animation
+const PremiumCard = ({ item, isCircular, hideSubtitle, index, onClick }: any) => {
+  const title = item.title || item.name || "Unknown";
+  const subtitle = getSubtitle(item, hideSubtitle);
+
   return (
-    <div className="mb-10">
-      <h2 className="text-2xl font-black mb-4 px-4 tracking-tight text-white">{title}</h2>
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
-        {items.map((item: any, i: number) => {
-          const subtitle = getSubtitle(item, hideSubtitle);
-          return (
-            <div 
-              key={item.id || i} 
-              onClick={() => onItemClick(item)} 
-              className="animate-slide-down flex-shrink-0 snap-start w-32 cursor-pointer active:scale-95 transition-transform"
-              style={{ animationDelay: `${i * 0.05}s` }}
-            >
-              <img 
-                src={getImageUrl(item.image)} 
-                alt={item.title || item.name} 
-                className={`w-32 h-32 object-cover bg-neutral-800 shadow-lg mb-3 ${isCircular ? "rounded-full" : "rounded-xl"}`}
-              />
-              {/* Up to 2 lines of text allowed, exactly like Spotify */}
-              <p className="text-sm font-bold text-neutral-100 text-center leading-snug line-clamp-2">
-                {item.title || item.name}
-              </p>
-              {/* Only renders if subtitle exists */}
-              {subtitle && (
-                <p className="text-xs text-neutral-400 text-center mt-1 line-clamp-1">
-                  {subtitle}
-                </p>
-              )}
-            </div>
-          );
-        })}
+    <div 
+      onClick={() => onClick(item)} 
+      className="animate-fade-in-up flex-shrink-0 snap-start w-32 cursor-pointer group active:scale-95 transition-all duration-300"
+      style={{ animationDelay: `${index * 0.05}s` }} // Staggered animation
+    >
+      <div className={`overflow-hidden shadow-lg bg-neutral-800 border border-neutral-800/50 mb-3 ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
+        <img 
+          src={getImageUrl(item.image)} 
+          alt={title} 
+          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
+        />
       </div>
+      
+      {/* Title with Marquee */}
+      <div className="marquee-container text-center">
+        <span className="marquee-text text-[13px] font-extrabold text-white tracking-wide">
+          {title}
+        </span>
+      </div>
+      
+      {/* Subtitle with Marquee */}
+      {subtitle && (
+        <div className="marquee-container text-center mt-0.5">
+          <span className="marquee-text text-[11px] font-medium text-neutral-400">
+            {subtitle}
+          </span>
+        </div>
+      )}
     </div>
   );
 };
 
-// Lazy-Loading Image Card for Recommendations
+// Async Image Card for Footer APIs (Loads image only when visible)
 const AsyncImageCard = ({ item, type, index, onClick }: any) => {
-  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const[imgUrl, setImgUrl] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -116,27 +115,43 @@ const AsyncImageCard = ({ item, type, index, onClick }: any) => {
   };
 
   const isCircular = type === "artist" || type === "actor";
+  const title = item.title || item.name;
 
   return (
     <div 
       ref={cardRef} 
       onClick={() => onClick(item)} 
-      className="animate-slide-down flex-shrink-0 snap-start w-32 cursor-pointer active:scale-95 transition-transform"
+      className="animate-fade-in-up flex-shrink-0 snap-start w-32 cursor-pointer group active:scale-95 transition-all duration-300"
       style={{ animationDelay: `${index * 0.05}s` }}
     >
-      <div className={`w-32 h-32 overflow-hidden shadow-lg bg-neutral-900 border border-neutral-800/50 mb-3 flex items-center justify-center ${isCircular ? "rounded-full" : "rounded-xl"}`}>
+      <div className={`overflow-hidden shadow-lg bg-neutral-900 border border-neutral-800/50 mb-3 flex items-center justify-center ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
         {imgUrl ? (
-          <img src={imgUrl} alt={item.title} className="w-full h-full object-cover" />
+          <img src={imgUrl} alt={title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
         ) : (
           <Loader2 className="animate-spin text-neutral-600" size={24} />
         )}
       </div>
-      <p className="text-sm font-bold text-neutral-100 text-center leading-snug line-clamp-2">
-        {item.title || item.name}
-      </p>
-      <p className="text-xs text-neutral-400 text-center mt-1 line-clamp-1 capitalize">
-        {type}
-      </p>
+      <div className="marquee-container text-center">
+        <span className="marquee-text text-[13px] font-extrabold text-white tracking-wide">{title}</span>
+      </div>
+      <div className="marquee-container text-center mt-0.5">
+        <span className="marquee-text text-[11px] font-medium text-neutral-400 capitalize">{type}</span>
+      </div>
+    </div>
+  );
+};
+
+// Reusable Carousel Wrappers
+const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onItemClick }: any) => {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className="mb-10">
+      <h2 className="text-2xl font-black mb-4 px-4 tracking-tight text-white">{title}</h2>
+      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
+        {items.map((item: any, i: number) => (
+          <PremiumCard key={item.id || i} item={item} isCircular={isCircular} hideSubtitle={hideSubtitle} index={i} onClick={onItemClick} />
+        ))}
+      </div>
     </div>
   );
 };
@@ -168,14 +183,14 @@ export default function Home() {
   const [charts, setCharts] = useState<any[]>([]);
 
   const [recoArtists, setRecoArtists] = useState<any[]>([]);
-  const [recoActors, setRecoActors] = useState<any[]>([]);
-  const[recoAlbums, setRecoAlbums] = useState<any[]>([]);
-  const[recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
+  const[recoActors, setRecoActors] = useState<any[]>([]);
+  const [recoAlbums, setRecoAlbums] = useState<any[]>([]);
+  const [recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchAllData = async () => {
       setLoading(true);
-      // Strictly wipe all states so old language data doesn't flash
+      // Wipe state when language changes
       setTrending([]); setNewReleases([]); setFeaturedPlaylists([]); 
       setOtherPromos([]); setTopArtists([]); setCharts([]);
       setRecoArtists([]); setRecoActors([]); setRecoAlbums([]); setRecoPlaylists([]);
@@ -201,14 +216,14 @@ export default function Home() {
         const trendData = Array.isArray(trendingJson) ? trendingJson : trendingJson.data ||[];
         setTrending(mergeAndDedupe(launchJson.new_trending, trendData));
 
-        // 2. New Releases (Strictly from getAlbums)
+        // 2. New Releases (Strictly from the custom API requested)
         const albumsData = Array.isArray(albumsJson) ? albumsJson : albumsJson.data ||[];
         setNewReleases(albumsData);
 
         // 3. Featured Playlists
         setFeaturedPlaylists(Array.isArray(featuredJson) ? featuredJson : featuredJson.data ||[]);
 
-        // 4. Exclude Radios and Unwanted Modules
+        // 4. Modules (Excluding Radio & Recommendations)
         if (launchJson.modules) {
           const activeModules = Object.keys(launchJson.modules)
             .map((key) => ({ key, ...launchJson.modules[key] }))
@@ -217,17 +232,16 @@ export default function Home() {
 
           setCharts(launchJson.charts || []);
 
-          const exclude = ["new_trending", "new_albums", "charts", "top_playlists"];
+          const exclude =["new_trending", "new_albums", "charts", "top_playlists"];
           const promos = activeModules.filter((m) => !exclude.includes(m.source));
           setOtherPromos(promos.map((p) => ({ title: p.title, data: launchJson[p.key] ||[] })).filter(p => p.data.length > 0));
         }
 
-        setTopArtists(artistsJson.top_artists ||[]);
-        
-        // Footer Data
-        setRecoArtists(footerJson.artist || []);
-        setRecoActors(footerJson.actor ||[]);
-        setRecoAlbums(footerJson.album || []);
+        // 5. Footer Details
+        setTopArtists(artistsJson.top_artists || []);
+        setRecoArtists(footerJson.artist ||[]);
+        setRecoActors(footerJson.actor || []);
+        setRecoAlbums(footerJson.album ||[]);
         setRecoPlaylists(footerJson.playlist ||[]);
 
       } catch (error) {
@@ -268,22 +282,24 @@ export default function Home() {
   }
 
   return (
-    <main className="pt-12 pb-28 bg-black min-h-screen">
+    <main className="pt-14 pb-28 bg-black min-h-screen">
       {/* Clean Premium Title */}
-      <div className="px-4 mb-10 flex items-center justify-center gap-2">
-        <div className="bg-white p-1.5 rounded-full">
-          <Music2 fill="black" size={20} className="text-black" />
+      <div className="px-4 mb-10 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="bg-white p-1.5 rounded-full">
+            <Music2 fill="black" size={20} className="text-black" />
+          </div>
+          <h1 className="text-3xl font-black tracking-tighter text-white">
+            Music<span className="text-neutral-400 font-bold text-xl">@8481</span>
+          </h1>
         </div>
-        <h1 className="text-3xl font-black tracking-tighter text-white">
-          Music@8481
-        </h1>
       </div>
 
+      {/* Sections in Exact Requested Order */}
       <Carousel title="Trending" items={trending} onItemClick={handleItemClick} />
       <Carousel title="New Releases" items={newReleases} onItemClick={handleItemClick} />
       <Carousel title="Featured Playlists" items={featuredPlaylists} onItemClick={handleItemClick} />
       
-      {/* Recommended Items Load Images Smoothly As You Scroll */}
       <AsyncCarousel title="Recommended Artists" items={recoArtists} type="artist" onItemClick={handleItemClick} />
 
       {otherPromos.map((promo, idx) => (
@@ -295,8 +311,8 @@ export default function Home() {
       <AsyncCarousel title="Recommended Playlists" items={recoPlaylists} type="playlist" onItemClick={handleItemClick} />
       
       <Carousel title="Top Charts" items={charts} hideSubtitle={true} onItemClick={handleItemClick} />
-      <Carousel title="Top Artists" items={topArtists} isCircular={true} hideSubtitle={true} onItemClick={handleItemClick} />
+      <Carousel title="Top Artists" items={topArtists} isCircular={true} onItemClick={handleItemClick} />
       
     </main>
   );
-  }
+            }

@@ -4,7 +4,7 @@ import { useAppContext } from "../context/AppContext";
 import { Loader2, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-// Safe image extractor for all sizes
+// Safe image extractor
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/500";
   if (typeof img === "string") return img.replace("150x150", "500x500").replace("50x50", "500x500");
@@ -12,8 +12,33 @@ const getImageUrl = (img: any) => {
   return "https://via.placeholder.com/500";
 };
 
-// Premium Carousel Component
-const Carousel = ({ title, items, isCircular = false, onItemClick }: any) => {
+// Smart subtitle extractor
+const getSubtitle = (item: any, hideSubtitle: boolean) => {
+  if (hideSubtitle) return ""; // Hide for Top Charts
+  
+  if (item.type === "album") {
+    const primary = item.more_info?.artistMap?.primary_artists;
+    const all = item.more_info?.artistMap?.artists;
+    if (primary && primary.length > 0) return primary.map((a: any) => a.name).join(", ");
+    if (all && all.length > 0) return all.map((a: any) => a.name).join(", ");
+  }
+
+  return item.subtitle || item.header_desc || item.description || "";
+};
+
+// Merges two arrays and removes duplicates based on 'id'
+const mergeAndDedupe = (arr1: any[], arr2: any[]) => {
+  const map = new Map();
+  [...(arr1 || []), ...(arr2 ||[])].forEach(item => {
+    if (item && item.id && !map.has(item.id)) {
+      map.set(item.id, item);
+    }
+  });
+  return Array.from(map.values());
+};
+
+// Reusable Carousel
+const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
     <div className="mb-8">
@@ -21,21 +46,24 @@ const Carousel = ({ title, items, isCircular = false, onItemClick }: any) => {
         {title}
       </h2>
       <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
-        {items.map((item: any, i: number) => (
-          <div key={item.id || i} onClick={() => onItemClick(item)} className="flex-shrink-0 snap-start w-36 cursor-pointer group active:scale-95 transition-all duration-300">
-            <div className={`overflow-hidden shadow-lg bg-neutral-800 ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
-              <img 
-                src={getImageUrl(item.image)} 
-                alt={item.title || item.name} 
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-              />
+        {items.map((item: any, i: number) => {
+          const subtitle = getSubtitle(item, hideSubtitle);
+          return (
+            <div key={item.id || i} onClick={() => onItemClick(item)} className="flex-shrink-0 snap-start w-36 cursor-pointer group active:scale-95 transition-all duration-300">
+              <div className={`overflow-hidden shadow-lg bg-neutral-800 ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
+                <img 
+                  src={getImageUrl(item.image)} 
+                  alt={item.title || item.name} 
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+              </div>
+              <p className="text-sm font-bold mt-3 truncate text-neutral-100">{item.title || item.name}</p>
+              {subtitle && (
+                <p className="text-xs text-neutral-400 truncate mt-0.5">{subtitle}</p>
+              )}
             </div>
-            <p className="text-sm font-bold mt-3 truncate text-neutral-100">{item.title || item.name}</p>
-            <p className="text-xs text-neutral-400 truncate mt-0.5">
-              {item.subtitle || (item.type === "artist" ? "Artist" : item.header_desc || "Music@8481")}
-            </p>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -43,44 +71,77 @@ const Carousel = ({ title, items, isCircular = false, onItemClick }: any) => {
 
 export default function Home() {
   const { language, setCurrentSong, setIsPlaying } = useAppContext();
-  const [launchData, setLaunchData] = useState<any>(null);
-  const[modules, setModules] = useState<any[]>([]);
-  const [topArtists, setTopArtists] = useState<any[]>([]);
-  const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+
+  // Storing organized data
+  const[trending, setTrending] = useState<any[]>([]);
+  const [newReleases, setNewReleases] = useState<any[]>([]);
+  const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
+  const [recoArtists, setRecoArtists] = useState<any>({ title: "", data:[] });
+  const [otherPromos, setOtherPromos] = useState<any[]>([]);
+  const[topArtists, setTopArtists] = useState<any[]>([]);
+  const [charts, setCharts] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchAllData = async () => {
       setLoading(true);
       try {
-        // Fetch all 3 APIs in parallel for maximum speed!
-        // We use the /api/jiosaavn proxy we set up in next.config.ts to avoid CORS
-        const [launchRes, artistsRes, featuredRes] = await Promise.all([
+        // Fetching all endpoints in parallel to merge data
+        const[launchRes, artistsRes, featuredRes, albumsRes, trendingRes] = await Promise.all([
           fetch(`/api/jiosaavn?__call=webapi.getLaunchData&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
           fetch(`/api/jiosaavn?__call=social.getTopArtists&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
-          fetch(`/api/jiosaavn?__call=content.getFeaturedPlaylists&fetch_from_serialized_files=true&p=1&n=20&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`)
+          fetch(`/api/jiosaavn?__call=content.getFeaturedPlaylists&fetch_from_serialized_files=true&p=1&n=50&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
+          fetch(`/api/jiosaavn?__call=content.getAlbums&api_version=4&_format=json&_marker=0&n=50&p=1&ctx=wap6dot0&languages=${language}`),
+          fetch(`/api/jiosaavn?__call=content.getTrending&api_version=4&_format=json&_marker=0&n=50&p=1&ctx=wap6dot0&languages=${language}`)
         ]);
 
         const launchJson = await launchRes.json();
         const artistsJson = await artistsRes.json();
         const featuredJson = await featuredRes.json();
+        const albumsJson = await albumsRes.json();
+        const extraTrendingJson = await trendingRes.json();
 
-        setLaunchData(launchJson);
+        // 1. Merge Trending (Launch Trending + Extra Trending)
+        const extraTrendingArr = Array.isArray(extraTrendingJson) ? extraTrendingJson : extraTrendingJson.data ||[];
+        setTrending(mergeAndDedupe(launchJson.new_trending, extraTrendingArr));
+
+        // 2. Merge New Releases (Launch Albums + Extra Albums)
+        setNewReleases(mergeAndDedupe(launchJson.new_albums, albumsJson.data ||[]));
+
+        // 3. Set Featured Playlists
+        setFeaturedPlaylists(Array.isArray(featuredJson) ? featuredJson : featuredJson.data || []);
+
+        // 4. Set Top Artists
         setTopArtists(artistsJson.top_artists ||[]);
-        
-        // Featured playlists can be an array directly or inside a data object
-        setFeaturedPlaylists(Array.isArray(featuredJson) ? featuredJson : featuredJson.data ||[]);
 
-        // Deeply analyze and sort the "modules" object from the launch API
+        // 5. Set Charts
+        setCharts(launchJson.charts ||[]);
+
+        // 6. Process Modules (Remove Radio, Separate Reco Artists, Keep Rest)
         if (launchJson.modules) {
-          const sortedModules = Object.keys(launchJson.modules)
-            .map((key) => ({
-              key, // e.g., "new_trending", "charts", "promo:vx:data:68"
-              ...launchJson.modules[key]
-            }))
-            .sort((a, b) => a.position - b.position); // Sort by API's intended position
-          setModules(sortedModules);
+          const activeModules = Object.keys(launchJson.modules)
+            .map((key) => ({ key, ...launchJson.modules[key] }))
+            .sort((a, b) => a.position - b.position)
+            // Filter out ANY radio stations completely
+            .filter((m) => m.source !== "radio" && m.type !== "radio_station"); 
+
+          // Find Recommended Artists
+          const recoModule = activeModules.find((m) => m.source === "artist_recos");
+          if (recoModule && launchJson[recoModule.key]) {
+            setRecoArtists({ title: recoModule.title, data: launchJson[recoModule.key] });
+          }
+
+          // Other Promos (excluding things we already display)
+          const excludeSources =["new_trending", "new_albums", "charts", "top_playlists", "artist_recos"];
+          const promos = activeModules.filter((m) => !excludeSources.includes(m.source));
+          
+          const promosWithData = promos.map((promo) => ({
+            title: promo.title,
+            data: launchJson[promo.key] ||[]
+          })).filter(p => p.data.length > 0);
+
+          setOtherPromos(promosWithData);
         }
       } catch (error) {
         console.error("Error fetching home data:", error);
@@ -91,10 +152,11 @@ export default function Home() {
     fetchAllData();
   }, [language]);
 
-  // Premium routing logic
+  // Dynamic Router
   const handleItemClick = (item: any) => {
     const type = item.type;
     const link = item.perma_url || item.url;
+    const artistId = item.artistid || (type === "artist" ? item.id : null);
 
     if (type === "song") {
       setCurrentSong(item);
@@ -103,14 +165,9 @@ export default function Home() {
       router.push(`/album?link=${encodeURIComponent(link)}`);
     } else if (type === "playlist") {
       router.push(`/playlist?link=${encodeURIComponent(link)}`);
-    } else if (type === "artist" || item.artistid) {
-      router.push(`/artist?id=${item.artistid || item.id}`);
-    } else if (type === "radio_station") {
-      // Radios behave like songs in the player
-      setCurrentSong(item);
-      setIsPlaying(true);
+    } else if (artistId) {
+      router.push(`/artist?id=${artistId}`);
     } else {
-      // Fallback
       setCurrentSong(item);
       setIsPlaying(true);
     }
@@ -132,31 +189,32 @@ export default function Home() {
         <h1 className="text-4xl font-black tracking-tighter text-white">Music@8481</h1>
         <Sparkles className="text-neutral-500" size={24} />
       </div>
+
+      {/* 1. Trending (Merged & Massive) */}
+      <Carousel title="Trending" items={trending} onItemClick={handleItemClick} />
+
+      {/* 2. New Releases (Merged & Massive) */}
+      <Carousel title="New Releases" items={newReleases} onItemClick={handleItemClick} />
+
+      {/* 3. Featured Playlists (From requested API) */}
+      <Carousel title="Featured Playlists" items={featuredPlaylists} onItemClick={handleItemClick} />
+
+      {/* 4. Recommended Artists (Openable, Extracted from Modules) */}
+      {recoArtists.data.length > 0 && (
+        <Carousel title={recoArtists.title || "Recommended Artists"} items={recoArtists.data} isCircular={true} onItemClick={handleItemClick} />
+      )}
+
+      {/* 5. Top Charts (Subtitles Hidden) */}
+      <Carousel title="Top Charts" items={charts} hideSubtitle={true} onItemClick={handleItemClick} />
+
+      {/* 6. Other Promos (Dynamic from Modules) */}
+      {otherPromos.map((promo, idx) => (
+        <Carousel key={idx} title={promo.title} items={promo.data} onItemClick={handleItemClick} />
+      ))}
+
+      {/* 7. Top Artists (Always at the bottom) */}
+      <Carousel title="Top Artists" items={topArtists} isCircular={true} onItemClick={handleItemClick} />
       
-      {/* Top Artists - First priority */}
-      {topArtists.length > 0 && (
-        <Carousel title="Top Artists" items={topArtists} isCircular={true} onItemClick={handleItemClick} />
-      )}
-
-      {/* Featured Playlists (Custom API requested by you) */}
-      {featuredPlaylists.length > 0 && (
-        <Carousel title="Featured Playlists" items={featuredPlaylists} onItemClick={handleItemClick} />
-      )}
-
-      {/* Dynamic Modules from Launch API */}
-      {modules.map((mod) => {
-        const items = launchData[mod.key]; // Grab the array using the module key
-        if (!items || items.length === 0) return null;
-
-        return (
-          <Carousel 
-            key={mod.key} 
-            title={mod.title} // The official title from JioSaavn API
-            items={items} 
-            onItemClick={handleItemClick} 
-          />
-        );
-      })}
     </main>
   );
 }

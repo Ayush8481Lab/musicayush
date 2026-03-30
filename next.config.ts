@@ -1,18 +1,23 @@
+import type { NextConfig } from "next";
 
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+const nextConfig: NextConfig = {
   images: {
+    unoptimized: true, // Prevents Vercel image optimization limits
     remotePatterns:[
       {
         protocol: "https",
-        hostname: "c.saavncdn.com",
+        hostname: "**", // Allows all image URLs (c.saavncdn.com, etc.)
       },
-      {
-        protocol: "https",
-        hostname: "via.placeholder.com",
-      }
     ],
+  },
+  async rewrites() {
+    return[
+      {
+        source: "/api/jiosaavn",
+        destination: "https://www.jiosaavn.com/api.php",
+      },
+    ];
   },
 };
 
-module.exports = nextConfig;
+export default nextConfig;

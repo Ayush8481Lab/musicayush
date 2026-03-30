@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useAppContext } from "../context/AppContext";
 import { Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/150";
@@ -23,7 +24,7 @@ const Carousel = ({ title, items, isCircular = false, onItemClick }: any) => {
               className={`w-36 h-36 object-cover bg-neutral-800 shadow-lg ${isCircular ? "rounded-full" : "rounded-xl"}`}
             />
             <p className="text-sm font-bold mt-3 truncate text-white">{item.title || item.name}</p>
-            <p className="text-xs text-neutral-400 truncate mt-0.5">{item.subtitle || "Music@8481"}</p>
+            <p className="text-xs text-neutral-400 truncate mt-0.5">{item.subtitle || (item.type === "artist" ? "Artist" : "Music@8481")}</p>
           </div>
         ))}
       </div>
@@ -33,9 +34,10 @@ const Carousel = ({ title, items, isCircular = false, onItemClick }: any) => {
 
 export default function Home() {
   const { language, setCurrentSong, setIsPlaying } = useAppContext();
-  const [data, setData] = useState<any>(null);
-  const[topArtists, setTopArtists] = useState<any>(null);
+  const[data, setData] = useState<any>(null);
+  const [topArtists, setTopArtists] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -57,8 +59,25 @@ export default function Home() {
   }, [language]);
 
   const handlePlayableClick = (item: any) => {
-    setCurrentSong(item);
-    setIsPlaying(true);
+    // Log the item type to make sure we route correctly
+    const type = item.type;
+    const link = item.perma_url || item.url;
+
+    if (type === "song") {
+      setCurrentSong(item);
+      setIsPlaying(true);
+    } else if (type === "album") {
+      router.push(`/album?link=${encodeURIComponent(link)}`);
+    } else if (type === "playlist") {
+      router.push(`/playlist?link=${encodeURIComponent(link)}`);
+    } else if (type === "artist" || item.artistid) {
+      // Artist page coming next!
+      alert("Artist page is coming in the next step!");
+    } else {
+      // Fallback
+      setCurrentSong(item);
+      setIsPlaying(true);
+    }
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center text-white"><Loader2 className="animate-spin mr-2" /> Loading...</div>;

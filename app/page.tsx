@@ -1,22 +1,29 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useAppContext } from "../context/AppContext";
+import { Loader2 } from "lucide-react";
+
+const getImageUrl = (img: any) => {
+  if (!img) return "https://via.placeholder.com/150";
+  if (typeof img === "string") return img.replace("150x150", "500x500");
+  return "https://via.placeholder.com/150";
+};
 
 const Carousel = ({ title, items, isCircular = false, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
     <div className="mb-8">
-      <h2 className="text-xl font-bold mb-4 px-4">{title}</h2>
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x">
+      <h2 className="text-2xl font-bold mb-4 px-4 tracking-tight">{title}</h2>
+      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
         {items.map((item: any, i: number) => (
-          <div key={i} onClick={() => onItemClick(item)} className="flex-shrink-0 snap-start w-32 cursor-pointer active:scale-95 transition-transform">
+          <div key={i} onClick={() => onItemClick(item)} className="flex-shrink-0 snap-start w-36 cursor-pointer active:scale-95 transition-transform">
             <img 
-              src={item.image?.replace("150x150", "500x500") || "https://via.placeholder.com/150"} 
+              src={getImageUrl(item.image)} 
               alt={item.title || item.name} 
-              className={`w-32 h-32 object-cover bg-neutral-800 shadow-lg ${isCircular ? "rounded-full" : "rounded-2xl"}`}
+              className={`w-36 h-36 object-cover bg-neutral-800 shadow-lg ${isCircular ? "rounded-full" : "rounded-xl"}`}
             />
-            <p className="text-sm font-semibold mt-3 truncate text-neutral-100">{item.title || item.name}</p>
-            <p className="text-xs text-neutral-400 truncate mt-0.5">{item.subtitle || "Trending"}</p>
+            <p className="text-sm font-bold mt-3 truncate text-white">{item.title || item.name}</p>
+            <p className="text-xs text-neutral-400 truncate mt-0.5">{item.subtitle || "Music@8481"}</p>
           </div>
         ))}
       </div>
@@ -54,24 +61,12 @@ export default function Home() {
     setIsPlaying(true);
   };
 
-  if (loading) {
-    return <div className="flex h-screen items-center justify-center text-neutral-400 font-medium animate-pulse">Loading Music@8481...</div>;
-  }
+  if (loading) return <div className="flex h-screen items-center justify-center text-white"><Loader2 className="animate-spin mr-2" /> Loading...</div>;
 
   return (
-    <main className="pt-12 pb-6">
-      <h1 className="text-3xl font-extrabold px-4 mb-8 tracking-tight">Music@8481</h1>
-
+    <main className="pt-12 pb-24 bg-gradient-to-b from-neutral-900 to-black min-h-screen">
+      <h1 className="text-4xl font-black px-4 mb-8 tracking-tighter">Music@8481</h1>
       <Carousel title="Trending" items={data?.new_trending} onItemClick={handlePlayableClick} />
-      
-      <div className="mb-8 px-4">
-        <h2 className="text-xl font-bold mb-4">For You</h2>
-        <div className="bg-gradient-to-br from-neutral-800 to-neutral-900 rounded-2xl p-6 border border-neutral-700/50 flex flex-col items-center justify-center h-36 shadow-lg">
-          <p className="text-neutral-300 font-medium">Algorithm in development...</p>
-          <p className="text-neutral-500 text-xs mt-2">Personalized picks coming soon</p>
-        </div>
-      </div>
-
       <Carousel title="New Releases" items={data?.new_albums} onItemClick={handlePlayableClick} />
       <Carousel title="Top Charts" items={data?.charts} onItemClick={handlePlayableClick} />
       <Carousel title="Top Playlists" items={data?.top_playlists} onItemClick={handlePlayableClick} />

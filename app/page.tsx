@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useAppContext } from "../context/AppContext";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles, Mic2, User, Disc, ListMusic } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 // Safe image extractor
@@ -14,7 +14,7 @@ const getImageUrl = (img: any) => {
 
 // Smart subtitle extractor
 const getSubtitle = (item: any, hideSubtitle: boolean) => {
-  if (hideSubtitle) return ""; // Hide for Top Charts
+  if (hideSubtitle) return ""; 
   
   if (item.type === "album") {
     const primary = item.more_info?.artistMap?.primary_artists;
@@ -22,29 +22,24 @@ const getSubtitle = (item: any, hideSubtitle: boolean) => {
     if (primary && primary.length > 0) return primary.map((a: any) => a.name).join(", ");
     if (all && all.length > 0) return all.map((a: any) => a.name).join(", ");
   }
-
   return item.subtitle || item.header_desc || item.description || "";
 };
 
-// Merges two arrays and removes duplicates based on 'id'
+// Deduplication helper
 const mergeAndDedupe = (arr1: any[], arr2: any[]) => {
   const map = new Map();
   [...(arr1 || []), ...(arr2 ||[])].forEach(item => {
-    if (item && item.id && !map.has(item.id)) {
-      map.set(item.id, item);
-    }
+    if (item && item.id && !map.has(item.id)) map.set(item.id, item);
   });
   return Array.from(map.values());
 };
 
-// Reusable Carousel
+// Beautiful Image Carousel
 const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
     <div className="mb-8">
-      <h2 className="text-2xl font-bold mb-4 px-4 tracking-tight text-white flex items-center gap-2">
-        {title}
-      </h2>
+      <h2 className="text-2xl font-extrabold mb-4 px-4 tracking-tight text-white">{title}</h2>
       <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
         {items.map((item: any, i: number) => {
           const subtitle = getSubtitle(item, hideSubtitle);
@@ -58,9 +53,36 @@ const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onIt
                 />
               </div>
               <p className="text-sm font-bold mt-3 truncate text-neutral-100">{item.title || item.name}</p>
-              {subtitle && (
-                <p className="text-xs text-neutral-400 truncate mt-0.5">{subtitle}</p>
-              )}
+              {subtitle && <p className="text-xs text-neutral-400 truncate mt-0.5">{subtitle}</p>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// Premium Gradient Card Carousel (For Footer APIs that lack images)
+const GradientCarousel = ({ title, items, icon: Icon, onItemClick }: any) => {
+  if (!items || items.length === 0) return null;
+  const gradients =[
+    "from-indigo-600 to-purple-800", "from-emerald-500 to-teal-800",
+    "from-rose-500 to-red-800", "from-blue-500 to-cyan-800", "from-amber-500 to-orange-800"
+  ];
+
+  return (
+    <div className="mb-8">
+      <h2 className="text-2xl font-extrabold mb-4 px-4 tracking-tight text-white">{title}</h2>
+      <div className="flex gap-3 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
+        {items.map((item: any, i: number) => {
+          const grad = gradients[i % gradients.length];
+          return (
+            <div key={item.id || i} onClick={() => onItemClick(item)} className="flex-shrink-0 snap-start w-40 cursor-pointer active:scale-95 transition-transform">
+              <div className={`h-24 rounded-2xl bg-gradient-to-br ${grad} p-4 flex flex-col justify-between shadow-lg relative overflow-hidden`}>
+                <div className="absolute -right-4 -bottom-4 opacity-20"><Icon size={64} /></div>
+                <Icon className="text-white/80" size={24} />
+                <p className="text-sm font-bold text-white truncate relative z-10">{item.title}</p>
+              </div>
             </div>
           );
         })}
@@ -74,26 +96,32 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  // Storing organized data
-  const[trending, setTrending] = useState<any[]>([]);
+  // Main Data States
+  const [trending, setTrending] = useState<any[]>([]);
   const [newReleases, setNewReleases] = useState<any[]>([]);
-  const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
-  const [recoArtists, setRecoArtists] = useState<any>({ title: "", data:[] });
+  const[featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
   const [otherPromos, setOtherPromos] = useState<any[]>([]);
-  const[topArtists, setTopArtists] = useState<any[]>([]);
+  const [topArtists, setTopArtists] = useState<any[]>([]);
   const [charts, setCharts] = useState<any[]>([]);
+
+  // Footer Recommendation States
+  const [recoArtists, setRecoArtists] = useState<any[]>([]);
+  const[recoActors, setRecoActors] = useState<any[]>([]);
+  const [recoAlbums, setRecoAlbums] = useState<any[]>([]);
+  const [recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchAllData = async () => {
       setLoading(true);
       try {
-        // Fetching all endpoints in parallel to merge data
-        const[launchRes, artistsRes, featuredRes, albumsRes, trendingRes] = await Promise.all([
+        // Fetching exactly 6 APIs in parallel matching the selected language!
+        const[launchRes, artistsRes, featuredRes, albumsRes, trendingRes, footerRes] = await Promise.all([
           fetch(`/api/jiosaavn?__call=webapi.getLaunchData&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
           fetch(`/api/jiosaavn?__call=social.getTopArtists&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
           fetch(`/api/jiosaavn?__call=content.getFeaturedPlaylists&fetch_from_serialized_files=true&p=1&n=50&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
           fetch(`/api/jiosaavn?__call=content.getAlbums&api_version=4&_format=json&_marker=0&n=50&p=1&ctx=wap6dot0&languages=${language}`),
-          fetch(`/api/jiosaavn?__call=content.getTrending&api_version=4&_format=json&_marker=0&n=50&p=1&ctx=wap6dot0&languages=${language}`)
+          fetch(`/api/jiosaavn?__call=content.getTrending&api_version=4&_format=json&_marker=0&n=50&p=1&ctx=wap6dot0&languages=${language}`),
+          fetch(`/api/jiosaavn?__call=webapi.getFooterDetails&language=${language}&api_version=4&_format=json&_marker=0`)
         ]);
 
         const launchJson = await launchRes.json();
@@ -101,48 +129,44 @@ export default function Home() {
         const featuredJson = await featuredRes.json();
         const albumsJson = await albumsRes.json();
         const extraTrendingJson = await trendingRes.json();
+        const footerJson = await footerRes.json();
 
-        // 1. Merge Trending (Launch Trending + Extra Trending)
+        // 1. Merge Trending 
         const extraTrendingArr = Array.isArray(extraTrendingJson) ? extraTrendingJson : extraTrendingJson.data ||[];
         setTrending(mergeAndDedupe(launchJson.new_trending, extraTrendingArr));
 
-        // 2. Merge New Releases (Launch Albums + Extra Albums)
+        // 2. Merge New Releases 
         setNewReleases(mergeAndDedupe(launchJson.new_albums, albumsJson.data ||[]));
 
-        // 3. Set Featured Playlists
-        setFeaturedPlaylists(Array.isArray(featuredJson) ? featuredJson : featuredJson.data || []);
+        // 3. Featured Playlists
+        setFeaturedPlaylists(Array.isArray(featuredJson) ? featuredJson : featuredJson.data ||[]);
 
-        // 4. Set Top Artists
+        // 4. Top Artists & Charts
         setTopArtists(artistsJson.top_artists ||[]);
-
-        // 5. Set Charts
         setCharts(launchJson.charts ||[]);
 
-        // 6. Process Modules (Remove Radio, Separate Reco Artists, Keep Rest)
+        // 5. Parse Promos (Strictly remove radio/artist_recos)
         if (launchJson.modules) {
           const activeModules = Object.keys(launchJson.modules)
             .map((key) => ({ key, ...launchJson.modules[key] }))
             .sort((a, b) => a.position - b.position)
-            // Filter out ANY radio stations completely
-            .filter((m) => m.source !== "radio" && m.type !== "radio_station"); 
+            .filter((m) => m.source !== "radio" && m.type !== "radio_station" && m.source !== "artist_recos"); 
 
-          // Find Recommended Artists
-          const recoModule = activeModules.find((m) => m.source === "artist_recos");
-          if (recoModule && launchJson[recoModule.key]) {
-            setRecoArtists({ title: recoModule.title, data: launchJson[recoModule.key] });
-          }
-
-          // Other Promos (excluding things we already display)
-          const excludeSources =["new_trending", "new_albums", "charts", "top_playlists", "artist_recos"];
+          const excludeSources = ["new_trending", "new_albums", "charts", "top_playlists"];
           const promos = activeModules.filter((m) => !excludeSources.includes(m.source));
           
-          const promosWithData = promos.map((promo) => ({
+          setOtherPromos(promos.map((promo) => ({
             title: promo.title,
             data: launchJson[promo.key] ||[]
-          })).filter(p => p.data.length > 0);
-
-          setOtherPromos(promosWithData);
+          })).filter(p => p.data.length > 0));
         }
+
+        // 6. Footer Details (Artists, Actors, Albums, Playlists)
+        setRecoArtists(footerJson.artist ||[]);
+        setRecoActors(footerJson.actor || []);
+        setRecoAlbums(footerJson.album ||[]);
+        setRecoPlaylists(footerJson.playlist ||[]);
+
       } catch (error) {
         console.error("Error fetching home data:", error);
       }
@@ -152,7 +176,7 @@ export default function Home() {
     fetchAllData();
   }, [language]);
 
-  // Dynamic Router
+  // Main Clicks
   const handleItemClick = (item: any) => {
     const type = item.type;
     const link = item.perma_url || item.url;
@@ -173,48 +197,52 @@ export default function Home() {
     }
   };
 
+  // Footer Clicks (Text-based APIs)
+  const handleFooterClick = (item: any) => {
+    if (!item.action) return;
+    if (item.action.includes('/artist/')) {
+      router.push(`/artist?id=${item.id}`);
+    } else if (item.action.includes('/album/')) {
+      router.push(`/album?link=${encodeURIComponent(`https://www.jiosaavn.com${item.action}`)}`);
+    } else if (item.action.includes('/featured/') || item.action.includes('/playlist/')) {
+      router.push(`/playlist?link=${encodeURIComponent(`https://www.jiosaavn.com${item.action}`)}`);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-black text-white">
         <Loader2 className="animate-spin mb-4 text-white" size={40} />
-        <p className="text-neutral-400 font-medium tracking-wide">Tuning into Music@8481...</p>
+        <p className="text-neutral-400 font-medium tracking-wide animate-pulse">Curating your music...</p>
       </div>
     );
   }
 
   return (
     <main className="pt-12 pb-28 bg-black min-h-screen">
-      {/* Header */}
       <div className="px-4 mb-8 flex items-center justify-between">
         <h1 className="text-4xl font-black tracking-tighter text-white">Music@8481</h1>
         <Sparkles className="text-neutral-500" size={24} />
       </div>
 
-      {/* 1. Trending (Merged & Massive) */}
       <Carousel title="Trending" items={trending} onItemClick={handleItemClick} />
-
-      {/* 2. New Releases (Merged & Massive) */}
       <Carousel title="New Releases" items={newReleases} onItemClick={handleItemClick} />
-
-      {/* 3. Featured Playlists (From requested API) */}
       <Carousel title="Featured Playlists" items={featuredPlaylists} onItemClick={handleItemClick} />
-
-      {/* 4. Recommended Artists (Openable, Extracted from Modules) */}
-      {recoArtists.data.length > 0 && (
-        <Carousel title={recoArtists.title || "Recommended Artists"} items={recoArtists.data} isCircular={true} onItemClick={handleItemClick} />
-      )}
-
-      {/* 5. Top Charts (Subtitles Hidden) */}
+      
       <Carousel title="Top Charts" items={charts} hideSubtitle={true} onItemClick={handleItemClick} />
-
-      {/* 6. Other Promos (Dynamic from Modules) */}
+      
       {otherPromos.map((promo, idx) => (
         <Carousel key={idx} title={promo.title} items={promo.data} onItemClick={handleItemClick} />
       ))}
 
-      {/* 7. Top Artists (Always at the bottom) */}
       <Carousel title="Top Artists" items={topArtists} isCircular={true} onItemClick={handleItemClick} />
-      
+
+      {/* Recommended Details from Footer API (Premium Gradient View) */}
+      <GradientCarousel title="Recommended Artists" items={recoArtists} icon={Mic2} onItemClick={handleFooterClick} />
+      <GradientCarousel title="Recommended Actors" items={recoActors} icon={User} onItemClick={handleFooterClick} />
+      <GradientCarousel title="Recommended Albums" items={recoAlbums} icon={Disc} onItemClick={handleFooterClick} />
+      <GradientCarousel title="Recommended Playlists" items={recoPlaylists} icon={ListMusic} onItemClick={handleFooterClick} />
+
     </main>
   );
 }

@@ -2,13 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  padding: 20px 20px 60px;
-  max-width: 680px;
-  margin: 0 auto;
-}
-/* You can add more global styles here */
-
 
 /* Hide Scrollbar */
 .hide-scrollbar::-webkit-scrollbar { display: none; }

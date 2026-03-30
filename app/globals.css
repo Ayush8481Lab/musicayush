@@ -19,28 +19,44 @@
   }
 }
 
+
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #000000;
+  color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-/* Top to Bottom Slide Animation */
-@keyframes slideDown {
-  0% { opacity: 0; transform: translateY(-30px); }
+
+/* Hide Scrollbar */
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Premium Slide Up Animation */
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(30px); }
   100% { opacity: 1; transform: translateY(0); }
 }
 
-.animate-slide-down {
+.animate-fade-in-up {
   opacity: 0;
-  animation: slideDown 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Marquee Animation for Long Text */
-@keyframes marquee {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-100%); }
+/* Flawless Marquee Animation for Text */
+.marquee-container {
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
 }
 
-.hover-marquee:hover {
-  animation: marquee 4s linear infinite;
+.marquee-text {
+  display: inline-block;
+  transition: transform 2s linear;
 }
+
+/* When the group (card) is hovered/pressed, scroll the text */
+.group:hover .marquee-text {
+  transform: translateX(calc(-100% + 120px)); /* 120px is the card width */
+  }

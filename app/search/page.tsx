@@ -101,40 +101,40 @@ const SearchCard = forwardRef<HTMLDivElement, any>(({ item, tabType, onClick, is
 SearchCard.displayName = "SearchCard";
 
 // Horizontal Infinite Carousel Component
-const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore, onItemClick, observerReady }: any) => {
+const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore, onItemClick }: any) => {
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
-    // FIX: Removed observerReady block from here so the observer actually attaches to the DOM element
     if (loadingMore || !hasMore) return; 
-    
     if (observerRef.current) observerRef.current.disconnect();
     
     observerRef.current = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
-      // FIX: Only check the lock when the intersection event FIRES
-      if (entries[0].isIntersecting && observerReady.current) {
-        loadMore(type);
-      }
-    }, { rootMargin: "250px", threshold: 0 });
+      if (entries[0].isIntersecting) loadMore(type);
+    }, { rootMargin: "400px", threshold: 0 });
 
     if (node) observerRef.current.observe(node);
-  }, [loadingMore, hasMore, loadMore, type, observerReady]);
+  },[loadingMore, hasMore, loadMore, type]);
 
+  // Save Live Horizontal Scroll
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const scrolls = JSON.parse(sessionStorage.getItem("search_scrollX") || "{}");
     scrolls[type] = (e.target as HTMLDivElement).scrollLeft;
     sessionStorage.setItem("search_scrollX", JSON.stringify(scrolls));
   };
 
+  // Restore Horizontal Scroll Flawlessly
   useEffect(() => {
     const scrolls = JSON.parse(sessionStorage.getItem("search_scrollX") || "{}");
     if (scrolls[type]) {
-      setTimeout(() => {
+      const restoreScroll = () => {
         const el = document.getElementById(`carousel-${type}`);
         if (el) el.scrollLeft = scrolls[type];
-      }, 300);
+      };
+      restoreScroll();
+      requestAnimationFrame(restoreScroll);
+      setTimeout(restoreScroll, 100);
     }
-  }, [items.length, type]);
+  }, [type]); // NO items.length dependency to prevent resetting!
 
   return (
     <div className="mb-6 contain-content">
@@ -170,9 +170,9 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
 export default function SearchPage() {
   const { setCurrentSong, setIsPlaying } = useAppContext();
   const router = useRouter();
-  const CACHE_KEY = "search_page_cache_final";
+  const CACHE_KEY = "search_page_cache_ultimate";
 
-  const[isRestored, setIsRestored] = useState(false);
+  const [isRestored, setIsRestored] = useState(false);
   const [query, setQuery] = useState("");
   const[debouncedQuery, setDebouncedQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
@@ -183,17 +183,14 @@ export default function SearchPage() {
   const [horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
   
   const [results, setResults] = useState<any[]>([]);
-  const[page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true); // Default to true!
   
   const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const[loadingMore, setLoadingMore] = useState(false);
   
   const lastFetched = useRef({ query: "", tab: "all", page: 1 });
-  
   const observerRef = useRef<IntersectionObserver | null>(null);
-  const observerReady = useRef(true); // Default to true so fresh searches instantly work
-  const isFetchingHorizontal = useRef<any>({});
 
   const tabs =[
     { id: "all", label: "All" }, 
@@ -203,7 +200,7 @@ export default function SearchPage() {
     { id: "artists", label: "Artists", icon: Mic2 }
   ];
 
-  // 1. Restore State from SessionStorage
+  // 1. Restore State from Cache
   useEffect(() => {
     const cached = sessionStorage.getItem(CACHE_KEY);
     if (cached) {
@@ -224,23 +221,35 @@ export default function SearchPage() {
     setIsRestored(true);
   },[]);
 
-  // 2. Restore Vertical Scroll Safely
+  // 2. Restore Vertical Scroll
   useEffect(() => {
     if (!isRestored) return;
-    
     const y = sessionStorage.getItem(`search_scrollY_${activeTab}`);
     if (y) {
-      observerReady.current = false; // Lock observer so back navigation jump doesn't fetch
-      setTimeout(() => {
-        window.scrollTo({ top: parseInt(y), behavior: "instant" });
-        setTimeout(() => { observerReady.current = true; }, 500); // Unlock observer after jump
-      }, 100);
-    } else {
-      observerReady.current = true; // No scroll to restore, unlock immediately
+      const restore = () => window.scrollTo({ top: parseInt(y), behavior: "instant" });
+      restore();
+      requestAnimationFrame(restore);
+      setTimeout(restore, 100);
     }
   }, [activeTab, isRestored]);
 
-  // Save Cache automatically
+  // 3. Live Window Scroll Tracker (Ensures Browser Back button works)
+  useEffect(() => {
+    let timeout: any;
+    const handleWinScroll = () => {
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        sessionStorage.setItem(`search_scrollY_${activeTab}`, window.scrollY.toString());
+      }, 100);
+    };
+    window.addEventListener("scroll", handleWinScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleWinScroll);
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [activeTab]);
+
+  // Save Cache Automatically
   useEffect(() => {
     if (!isRestored) return;
     const stateToCache = { query, debouncedQuery, activeTab, allData, allPages, allHasMore, results, page, hasMore, lastFetched: lastFetched.current };
@@ -266,12 +275,14 @@ export default function SearchPage() {
 
     const isNewQueryOrTab = debouncedQuery !== lastFetched.current.query || activeTab !== lastFetched.current.tab;
     
+    // Crucial Reset for Tab Swaps
     if (isNewQueryOrTab && page !== 1) {
-      setPage(1); setHasMore(true);
+      setPage(1); 
+      setHasMore(true);
       return; 
     }
 
-    // Prevents wasted API calls when coming back to the page!
+    // Prevent Wasted API Calls on Back Navigation
     if (!isNewQueryOrTab && page === lastFetched.current.page) return;
 
     const fetchData = async () => {
@@ -311,15 +322,17 @@ export default function SearchPage() {
           setAllData({ topMatches: sortedMatches.length > 0 ? sortedMatches : combined.slice(0, 8), songs, albums, playlists, artists });
           setAllPages({ songs: 1, albums: 1, playlists: 1, artists: 1 });
           setAllHasMore({ songs: true, albums: true, playlists: true, artists: true });
-          setHasMore(false); 
+          
+          setHasMore(false); // Valid for "All" tab ONLY
         } else {
-          // Incrementing Page API Call
           const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${activeTab}?query=${encodeURIComponent(debouncedQuery)}&page=${page}`);
           const json = await res.json();
           const newData = json.data?.results || json.data ||[];
 
           setResults(prev => (isNewQueryOrTab || page === 1) ? newData : [...prev, ...newData]);
-          if (newData.length === 0) setHasMore(false);
+          
+          // CRITICAL BUG FIX: Ensure hasMore becomes TRUE if we got results, fixing the "End of Results" bug
+          setHasMore(newData.length > 0);
         }
         
         lastFetched.current = { query: debouncedQuery, tab: activeTab, page };
@@ -334,11 +347,9 @@ export default function SearchPage() {
 
   // Horizontal Load More Logic ("All" Tab)
   const loadMoreHorizontal = useCallback(async (type: string) => {
-    if (isFetchingHorizontal.current[type] || !allHasMore[type]) return;
+    if (horizontalLoading[type] || !allHasMore[type]) return;
     
-    isFetchingHorizontal.current[type] = true;
     setHorizontalLoading((prev: any) => ({ ...prev, [type]: true }));
-    
     try {
       const nextPage = allPages[type] + 1;
       const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${type}?query=${encodeURIComponent(debouncedQuery)}&page=${nextPage}`);
@@ -354,37 +365,25 @@ export default function SearchPage() {
     } catch (e) {}
     
     setHorizontalLoading((prev: any) => ({ ...prev, [type]: false }));
-    isFetchingHorizontal.current[type] = false;
-  },[debouncedQuery, allPages, allHasMore]);
+  },[debouncedQuery, allPages, allHasMore, horizontalLoading]);
 
-  // Vertical Infinite Scroll Logic (Dedicated Tabs) attached to LAST rendered card
+  // Vertical Infinite Scroll Logic (Dedicated Tabs)
   const lastVerticalElementRef = useCallback((node: HTMLDivElement | null) => {
-    // FIX: Removed `!observerReady.current` from here. The observer MUST attach to the DOM!
     if (loading || loadingMore || !hasMore || activeTab === "all") return;
     if (observerRef.current) observerRef.current.disconnect();
 
     observerRef.current = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
-      // FIX: Only evaluate lock inside the callback when you physically hit the bottom
-      if (entries[0].isIntersecting && observerReady.current) {
-        setPage(prev => prev + 1); // Triggers load more perfectly!
+      // Increased root margin so it fetches seamlessly before you hit the bottom
+      if (entries[0].isIntersecting && hasMore) {
+        setPage(prev => prev + 1); 
       }
-    }, { rootMargin: "350px", threshold: 0 });
+    }, { rootMargin: "600px", threshold: 0 });
 
     if (node) observerRef.current.observe(node);
   },[loading, loadingMore, hasMore, activeTab]);
 
-  // Record precise Scroll Point Instantly upon click
+  // Navigate & Save Scrolls
   const handleItemClick = (item: any, passedType?: string) => {
-    sessionStorage.setItem(`search_scrollY_${activeTab}`, window.scrollY.toString());
-    
-    const types =["songs", "albums", "playlists", "artists"];
-    const scrolls = JSON.parse(sessionStorage.getItem("search_scrollX") || "{}");
-    types.forEach(t => {
-      const el = document.getElementById(`carousel-${t}`);
-      if (el) scrolls[t] = el.scrollLeft;
-    });
-    sessionStorage.setItem("search_scrollX", JSON.stringify(scrolls));
-
     const type = item.type || passedType || activeTab;
     let link = item.url || item.perma_url || item.action || "";
     if (link && !link.startsWith("http")) link = `https://www.jiosaavn.com${link}`;
@@ -401,6 +400,7 @@ export default function SearchPage() {
     }
   };
 
+  // Hydration fallback
   if (!isRestored) return <div className="min-h-screen bg-[#121212]" />;
 
   return (
@@ -486,7 +486,6 @@ export default function SearchPage() {
                 loadingMore={horizontalLoading[section.type]}
                 loadMore={loadMoreHorizontal}
                 onItemClick={handleItemClick}
-                observerReady={observerReady}
               />
             ))}
           </div>

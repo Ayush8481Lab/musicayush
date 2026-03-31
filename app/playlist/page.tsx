@@ -7,7 +7,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Play, ArrowLeft, Loader2, Shuffle, Share2, Info, BadgeAlert, Heart, MoreHorizontal, Clock } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 
-// Robust HTML Entity Decoder
+// --- UTILITIES ---
 const decodeEntities = (text: string) => {
   if (!text) return "";
   let decoded = text.replace(/&amp;/g, "&"); 
@@ -58,10 +58,11 @@ const getArtists = (data: any) => {
   return Array.from(new Set(names)).join(", ");
 };
 
+// --- COMPONENTS ---
 const PingPongMarquee = ({ text, isPlaying, isSub }: { text: string, isPlaying?: boolean, isSub?: boolean }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
-  const[overflowWidth, setOverflowWidth] = useState(0);
+  const [overflowWidth, setOverflowWidth] = useState(0);
 
   useEffect(() => {
     const checkOverflow = () => {
@@ -78,15 +79,15 @@ const PingPongMarquee = ({ text, isPlaying, isSub }: { text: string, isPlaying?:
 
   let textColor = "text-white group-hover:text-white";
   if (isPlaying && !isSub) textColor = "text-[#1ed760]";
-  else if (isSub) textColor = "text-white/60 group-hover:text-white/90";
+  else if (isSub) textColor = "text-neutral-400 group-hover:text-white";
 
-  const textSize = isSub ? "text-[13px]" : "text-[16px] font-medium";
+  const textSize = isSub ? "text-[14px] font-normal" : "text-[16px] font-medium tracking-tight";
 
   return (
     <div ref={containerRef} className="relative overflow-hidden whitespace-nowrap w-full mask-linear-fade">
       <div 
         ref={textRef}
-        className={`inline-block ${overflowWidth > 0 ? "animate-ping-pong" : ""} ${textColor} ${textSize} transition-colors duration-300`}
+        className={`inline-block ${overflowWidth > 0 ? "animate-ping-pong" : ""} ${textColor} ${textSize} transition-colors duration-200`}
         style={{ '--overflow-dist': `-${overflowWidth}px` } as React.CSSProperties}
       >
         {decodeEntities(text)}
@@ -105,16 +106,16 @@ const PlayingVisualizer = () => (
 );
 
 const PlaylistSkeleton = () => (
-  <div className="min-h-screen bg-[#121212] p-4 md:p-8 pt-24 animate-pulse">
-    <div className="flex flex-col md:flex-row gap-6 items-end">
-      <div className="w-52 h-52 md:w-60 md:h-60 bg-white/10 shadow-2xl rounded-md" />
-      <div className="flex flex-col gap-4 w-full max-w-xl">
-        <div className="w-24 h-4 bg-white/10 rounded-full" />
-        <div className="w-full h-16 bg-white/10 rounded-xl" />
-        <div className="w-2/3 h-4 bg-white/10 rounded-full" />
+  <div className="min-h-screen bg-[#121212] p-6 md:p-8 pt-24 animate-pulse">
+    <div className="flex flex-col md:flex-row gap-6 items-center md:items-end mb-8">
+      <div className="w-56 h-56 md:w-64 md:h-64 bg-white/5 shadow-2xl rounded-lg" />
+      <div className="flex flex-col gap-4 w-full max-w-xl items-center md:items-start">
+        <div className="w-20 h-4 bg-white/5 rounded-full" />
+        <div className="w-3/4 h-16 bg-white/5 rounded-xl" />
+        <div className="w-1/2 h-4 bg-white/5 rounded-full" />
       </div>
     </div>
-    <div className="mt-12 flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       {[1, 2, 3, 4, 5, 6].map((i) => (
         <div key={i} className="w-full h-14 bg-white/5 rounded-md" />
       ))}
@@ -122,6 +123,7 @@ const PlaylistSkeleton = () => (
   </div>
 );
 
+// --- MAIN PAGE ---
 function PlaylistContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -131,21 +133,30 @@ function PlaylistContent() {
   
   const [playlist, setPlaylist] = useState<any>(null);
   const [page, setPage] = useState(1);
-  const[loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const[loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const[isScrolled, setIsScrolled] = useState(false);
+  
+  // UI States
+  const [headerOpacity, setHeaderOpacity] = useState(0);
+  const[showStickyPlay, setShowStickyPlay] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  // Scroll logic for sticky header
+  // Smooth Scroll Listener for Pro-Level Opacity Transition
   useEffect(() => {
     let ticking = false;
     const handleScroll = () => {
       if (!ticking) {
         window.requestAnimationFrame(() => {
-          setIsScrolled(window.scrollY > 300);
+          const scrollY = window.scrollY;
+          // Calculate pure gradient opacity (fully dark at 300px)
+          const opacity = Math.min(scrollY / 300, 1);
+          setHeaderOpacity(opacity);
+          
+          // Trigger the small play button & title drop-in exactly when massive banner leaves
+          setShowStickyPlay(scrollY > 380);
           ticking = false;
         });
         ticking = true;
@@ -155,10 +166,9 @@ function PlaylistContent() {
     return () => window.removeEventListener("scroll", handleScroll);
   },[]);
 
-  // API Data Fetching
+  // Fetch Logic
   useEffect(() => {
     if (!link) return;
-
     const fetchPlaylist = async () => {
       if (page === 1) setLoading(true);
       else setLoadingMore(true);
@@ -175,48 +185,42 @@ function PlaylistContent() {
           setPlaylist((prev: any) => {
             if (!prev) return newData;
             const existingIds = new Set(prev.songs.map((s: any) => s.id));
-            const newSongs = newData.songs?.filter((s: any) => !existingIds.has(s.id)) || [];
+            const newSongs = newData.songs?.filter((s: any) => !existingIds.has(s.id)) ||[];
             return { ...prev, songs:[...prev.songs, ...newSongs] };
           });
           setHasMore(newData.songs && newData.songs.length > 0);
         }
       } catch (error) {
-        console.error("Error fetching playlist:", error);
         setHasMore(false);
       } finally {
         setLoading(false);
         setLoadingMore(false);
       }
     };
-
     fetchPlaylist();
   }, [link, page]);
 
-  // Infinite Scroll Observer
+  // Infinite Scroll Hook
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (loading || loadingMore || !hasMore) return;
     if (observerRef.current) observerRef.current.disconnect();
-
     observerRef.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore) {
-        setPage(prev => prev + 1);
-      }
+      if (entries[0].isIntersecting && hasMore) setPage(prev => prev + 1);
     }, { rootMargin: "400px" });
-
     if (node) observerRef.current.observe(node);
   },[loading, loadingMore, hasMore]);
 
-  // VERCEL DEPLOYMENT FIX: wrap in useCallback to ensure dependency stability for useMemo!
+  // Actions
   const handlePlaySong = useCallback((song: any) => {
     setCurrentSong(song);
     setIsPlaying(true);
     if (setQueue && playlist?.songs) setQueue(playlist.songs);
-  }, [setCurrentSong, setIsPlaying, setQueue, playlist?.songs]);
+  },[setCurrentSong, setIsPlaying, setQueue, playlist?.songs]);
 
   const handlePlayPlaylist = useCallback(() => {
     if (!playlist?.songs?.length) return;
     handlePlaySong(playlist.songs[0]);
-  }, [playlist?.songs, handlePlaySong]);
+  },[playlist?.songs, handlePlaySong]);
 
   const handleShuffle = useCallback(() => {
     if (!playlist?.songs?.length) return;
@@ -235,13 +239,12 @@ function PlaylistContent() {
       try { await navigator.share(shareData); } catch (err) {}
     } else {
       navigator.clipboard.writeText(window.location.href);
-      alert("Link copied to clipboard!");
+      alert("Link copied!");
     }
   }, [playlist?.name, playlist?.title]);
 
-  // VERCEL FIX: Current song ID separated to prevent re-renders of the entire map loop
+  // Memoized Tracklist for 120fps Scrolling
   const currentSongId = currentSong?.id;
-
   const renderedSongs = useMemo(() => {
     return playlist?.songs?.map((song: any, index: number) => {
       const isLastItem = index === playlist.songs.length - 1;
@@ -255,55 +258,58 @@ function PlaylistContent() {
           key={`${song.id}-${index}`} 
           ref={isLastItem ? lastElementRef : null}
           onClick={() => handlePlaySong(song)} 
-          className={`flex items-center gap-3 md:gap-4 p-2 md:p-3 rounded-md cursor-pointer group transition-colors duration-200 ${isCurrentPlaying ? "bg-white/10" : "hover:bg-white/10"}`}
+          // Professional CSS Grid structure replacing flex for perfect table alignment
+          className={`grid grid-cols-[40px_1fr_auto] md:grid-cols-[48px_1fr_120px_100px] gap-3 md:gap-4 items-center p-2 rounded-md cursor-pointer group transition-colors duration-200 ${isCurrentPlaying ? "bg-white/10" : "hover:bg-white/10"}`}
         >
-          {/* Spotify-style Play/Index column */}
-          <div className="w-8 md:w-12 flex justify-center items-center flex-shrink-0 relative">
+          
+          {/* Column 1: Index / Play Icon / EQ */}
+          <div className="flex justify-center items-center h-full relative text-neutral-400">
             {isCurrentPlaying ? (
               <PlayingVisualizer />
             ) : (
-              <span className="text-white/60 font-medium text-[15px] group-hover:hidden">{index + 1}</span>
+              <span className="text-[16px] font-normal group-hover:opacity-0 transition-opacity">{index + 1}</span>
             )}
-            <Play fill="white" size={18} className={`text-white absolute hidden ${!isCurrentPlaying && 'group-hover:block'}`} />
+            <Play fill="white" size={16} className={`text-white absolute opacity-0 ${!isCurrentPlaying && 'group-hover:opacity-100'} transition-opacity`} />
           </div>
           
-          <div className="relative w-10 h-10 md:w-12 md:h-12 flex-shrink-0 bg-neutral-800 rounded shadow-md">
-            <img src={getImageUrl(song.image)} alt={decodeEntities(songTitle)} className="w-full h-full object-cover rounded" />
-          </div>
-          
-          <div className="flex-1 min-w-0 pr-2 flex flex-col justify-center gap-0.5 overflow-hidden">
-            <div className="flex items-center gap-2 w-full">
-              <PingPongMarquee text={songTitle} isPlaying={isCurrentPlaying} />
-              {song.explicitContent && <BadgeAlert size={14} className="text-white/40 flex-shrink-0" />}
+          {/* Column 2: Title & Artist (with Image) */}
+          <div className="flex items-center gap-3 overflow-hidden pr-2">
+            <div className="relative w-10 h-10 md:w-12 md:h-12 flex-shrink-0 bg-neutral-800 rounded shadow-md overflow-hidden">
+              <img src={getImageUrl(song.image)} alt={decodeEntities(songTitle)} className="w-full h-full object-cover" />
             </div>
-            <PingPongMarquee text={artists} isPlaying={isCurrentPlaying} isSub={true} />
+            <div className="flex-1 min-w-0 flex flex-col justify-center overflow-hidden">
+              <div className="flex items-center gap-2">
+                <PingPongMarquee text={songTitle} isPlaying={isCurrentPlaying} />
+                {song.explicitContent && <BadgeAlert size={14} className="text-neutral-400 flex-shrink-0" />}
+              </div>
+              <PingPongMarquee text={artists} isPlaying={isCurrentPlaying} isSub={true} />
+            </div>
           </div>
 
-          <div className="flex-1 hidden lg:block overflow-hidden pr-4 text-[14px] text-white/60 group-hover:text-white transition-colors">
-            {plays ? `${plays}` : ""}
+          {/* Column 3: Plays (Desktop Only) */}
+          <div className="hidden md:flex items-center text-[14px] text-neutral-400 group-hover:text-white transition-colors">
+            {plays}
           </div>
           
-          <div className="hidden md:flex items-center opacity-0 group-hover:opacity-100 transition-opacity mr-4">
-             <button className="p-2 text-white/60 hover:text-white"><Heart size={18} /></button>
-          </div>
-
-          <div className="w-12 text-right md:mr-6">
-            <span className={`text-[14px] transition-colors ${isCurrentPlaying ? "text-[#1ed760]" : "text-white/60"}`}>
+          {/* Column 4: Actions & Duration */}
+          <div className="flex items-center justify-end gap-4 md:gap-6 pr-2 md:pr-4">
+             <button className="text-neutral-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block">
+               <Heart size={18} />
+             </button>
+            <span className={`text-[14px] tabular-nums font-medium ${isCurrentPlaying ? "text-[#1ed760]" : "text-neutral-400"}`}>
               {formatDuration(song.duration)}
             </span>
+            <button className="text-neutral-400 hover:text-white opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+              <MoreHorizontal size={20} />
+            </button>
           </div>
 
-          <div className="md:hidden flex items-center opacity-100 mr-2">
-            <button className="p-2 text-white/60"><MoreHorizontal size={20} /></button>
-          </div>
         </div>
       );
     });
   }, [playlist?.songs, currentSongId, lastElementRef, handlePlaySong]);
 
-  // -- RENDER GUARDS (Must be placed AFTER all hooks to prevent React Hook errors!) -- //
   if (loading && page === 1) return <PlaylistSkeleton />;
-
   if (!playlist) {
     return (
       <div className="flex flex-col h-screen items-center justify-center bg-[#121212] text-white gap-4">
@@ -322,16 +328,12 @@ function PlaylistContent() {
   const totalDurationStr = totalSeconds ? `${Math.floor(totalSeconds / 60)} min` : "";
 
   return (
-    <div className="pb-36 bg-[#121212] min-h-screen relative text-white selection:bg-[#1ed760]/30 font-sans">
+    <div className="pb-40 bg-[#121212] min-h-screen relative text-white selection:bg-[#1ed760]/30 font-sans">
 
       <style dangerouslySetInnerHTML={{__html: `
-        @keyframes ping-pong {
-          0%, 15% { transform: translateX(0); }
-          85%, 100% { transform: translateX(var(--overflow-dist)); }
-        }
+        @keyframes ping-pong { 0%, 15% { transform: translateX(0); } 85%, 100% { transform: translateX(var(--overflow-dist)); } }
         .animate-ping-pong { animation: ping-pong 6s ease-in-out infinite alternate; }
         .mask-linear-fade { mask-image: linear-gradient(to right, transparent, black 2%, black 98%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 2%, black 98%, transparent); }
-        
         @keyframes eq { 0%, 100% { height: 4px; } 50% { height: 16px; } }
         .eq-bar-1 { animation: eq 1s ease-in-out infinite 0s; }
         .eq-bar-2 { animation: eq 1s ease-in-out infinite 0.2s; }
@@ -339,102 +341,103 @@ function PlaylistContent() {
         .eq-bar-4 { animation: eq 1s ease-in-out infinite 0.1s; }
       `}} />
 
-      {/* Spotify-Style Gradient Background */}
-      <div className="absolute top-0 left-0 w-full h-[500px] pointer-events-none overflow-hidden z-0">
-        <div className="absolute inset-0 bg-[#121212]" /> {/* Base color */}
-        <img 
-          src={coverImage} 
-          alt="blur-bg" 
-          className="absolute inset-0 w-full h-full object-cover blur-[80px] saturate-[150%] opacity-50 transform-gpu" 
-        />
-        {/* Seamless fade into #121212 */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-[#121212]/80 to-[#121212]" />
+      {/* 1. PROFESSIONAL TOP GRADIENT FADE */}
+      {/* Contained strictly to the top 450px so it perfectly fades into #121212 before the tracklist */}
+      <div className="absolute top-0 left-0 w-full h-[450px] pointer-events-none overflow-hidden z-0 select-none">
+        <div className="absolute inset-0 bg-[#121212]" />
+        <img src={coverImage} alt="bg" className="absolute inset-0 w-full h-full object-cover blur-[60px] saturate-[150%] opacity-50 transform-gpu" />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#121212]/80 to-[#121212]" />
       </div>
 
-      {/* Sticky Header */}
-      <nav className={`fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 py-3 transition-colors duration-300 ${isScrolled ? "bg-[#171717] shadow-xl" : "bg-transparent"}`}>
+      {/* 2. DYNAMIC STICKY HEADER */}
+      <nav 
+        className="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 py-4 transition-all duration-100"
+        style={{ backgroundColor: `rgba(20, 20, 20, ${headerOpacity})`, borderBottom: `1px solid rgba(255,255,255, ${headerOpacity * 0.05})` }}
+      >
         <div className="flex items-center gap-4 flex-1 min-w-0">
-          <button onClick={() => router.back()} className="p-2 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all text-white active:scale-90 z-50 flex-shrink-0">
+          <button onClick={() => router.back()} className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md transition-all text-white active:scale-90 z-50 flex-shrink-0">
             <ArrowLeft size={24} />
           </button>
           
-          <div className={`flex items-center gap-3 overflow-hidden transition-opacity duration-300 flex-1 min-w-0 ${isScrolled ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-            <button onClick={handlePlayPlaylist} className="w-10 h-10 bg-[#1ed760] text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform flex-shrink-0 shadow-md">
-               <Play fill="black" size={18} className="ml-0.5" />
+          <div className={`flex items-center gap-3 overflow-hidden transition-all duration-300 flex-1 min-w-0 ${showStickyPlay ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"}`}>
+            <button onClick={handlePlayPlaylist} className="w-11 h-11 bg-[#1ed760] text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform flex-shrink-0 shadow-lg">
+               <Play fill="black" size={20} className="ml-1" />
             </button>
             <PingPongMarquee text={title} />
           </div>
         </div>
       </nav>
 
-      {/* Spotify-Style Hero Banner */}
-      <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 px-5 md:px-8 pt-24 md:pt-32 pb-6">
-        <div className="w-52 h-52 md:w-60 md:h-60 flex-shrink-0 shadow-[0_4px_60px_rgba(0,0,0,0.5)] bg-neutral-800">
+      {/* 3. HERO BANNER SECTION */}
+      <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 px-5 md:px-8 pt-28 md:pt-36 pb-6">
+        <div className="w-56 h-56 md:w-60 md:h-60 flex-shrink-0 shadow-[0_8px_40px_rgba(0,0,0,0.5)] bg-neutral-800 rounded-md overflow-hidden">
           <img src={coverImage} alt={title} className="w-full h-full object-cover" />
         </div>
         
-        <div className="flex flex-col items-center md:items-start text-center md:text-left mt-4 md:mt-0 w-full flex-1 min-w-0">
-          <span className="text-sm font-bold text-white hidden md:block mb-2 drop-shadow-md">
+        <div className="flex flex-col items-center md:items-start text-center md:text-left mt-2 md:mt-0 w-full flex-1 min-w-0">
+          <span className="text-sm font-bold text-white mb-2 tracking-wide hidden md:block">
             {playlist.type === "playlist" ? "Playlist" : "Album"}
           </span>
-          <h1 className="text-4xl sm:text-5xl md:text-7xl lg:text-[5.5rem] font-black tracking-tighter mb-4 line-clamp-3 leading-tight drop-shadow-lg pb-1">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-[6rem] font-black tracking-tighter mb-4 line-clamp-3 leading-[1.05] pb-1">
             {title}
           </h1>
           {description && (
-            <p className="text-[14px] text-white/70 mb-2 max-w-2xl line-clamp-2 font-medium">
+            <p className="text-[14px] text-neutral-300 mb-3 max-w-3xl line-clamp-2 font-medium">
               {description}
             </p>
           )}
           
-          <div className="flex items-center flex-wrap justify-center md:justify-start gap-1.5 text-[14px] font-medium text-white/90 mt-2">
-            <span className="font-bold hover:underline cursor-pointer">{playlistArtists}</span>
-            <span className="text-white/60 hidden sm:inline">•</span>
-            <span className="text-white/60">{playlist.songCount || playlist.songs?.length} songs,</span>
+          <div className="flex items-center flex-wrap justify-center md:justify-start gap-1.5 text-[14px] font-medium text-white mt-1">
+            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#1ed760] to-blue-500 hidden sm:block" />
+            <span className="font-bold hover:underline cursor-pointer tracking-wide">{playlistArtists}</span>
+            <span className="text-neutral-400 hidden sm:inline">•</span>
+            <span className="text-neutral-400">{playlist.songCount || playlist.songs?.length} songs,</span>
             {totalDurationStr && (
-              <span className="text-white/60">{totalDurationStr}</span>
+              <span className="text-neutral-400 opacity-80">{totalDurationStr}</span>
             )}
           </div>
         </div>
       </div>
 
-      {/* Spotify-Style Action Bar */}
-      <div className="relative z-10 px-5 md:px-8 py-6 flex items-center justify-between">
+      {/* 4. MAIN ACTION BAR */}
+      <div className="relative z-10 px-5 md:px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <button onClick={handlePlayPlaylist} className="w-14 h-14 md:w-16 md:h-16 bg-[#1ed760] hover:bg-[#3be477] text-black rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-md">
+          <button onClick={handlePlayPlaylist} className="w-14 h-14 md:w-16 md:h-16 bg-[#1ed760] hover:bg-[#3be477] text-black rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg">
             <Play fill="black" size={28} className="ml-1" />
           </button>
           
-          <button onClick={handleShuffle} className="text-white/70 hover:text-white transition-all active:scale-90" title="Shuffle Play">
+          <button onClick={handleShuffle} className="text-neutral-400 hover:text-white transition-colors active:scale-90" title="Shuffle">
             <Shuffle size={32} />
           </button>
           
-          <button onClick={() => setIsLiked(!isLiked)} className={`transition-all active:scale-90 ${isLiked ? "text-[#1ed760]" : "text-white/70 hover:text-white"}`}>
+          <button onClick={() => setIsLiked(!isLiked)} className={`transition-colors active:scale-90 ${isLiked ? "text-[#1ed760]" : "text-neutral-400 hover:text-white"}`}>
             <Heart size={34} fill={isLiked ? "#1ed760" : "none"} strokeWidth={1.5} />
           </button>
           
-          <button onClick={handleShare} className="text-white/70 hover:text-white transition-all active:scale-90" title="Share Playlist">
+          <button onClick={handleShare} className="text-neutral-400 hover:text-white transition-colors active:scale-90" title="Share">
              <Share2 size={28} />
           </button>
 
-          <button className="text-white/70 hover:text-white transition-all active:scale-90">
+          <button className="text-neutral-400 hover:text-white transition-colors active:scale-90">
             <MoreHorizontal size={32} />
           </button>
         </div>
       </div>
 
-      {/* Table Header */}
-      <div className="relative z-10 px-4 md:px-11 mt-2 hidden md:flex items-center text-[13px] font-medium tracking-widest text-white/60 border-b border-white/10 pb-2 mb-4 sticky top-[64px] bg-[#121212]/95 backdrop-blur-xl">
-        <div className="w-12 text-center">#</div>
-        <div className="flex-1 ml-4">Title</div>
-        <div className="flex-1 hidden lg:block">Plays</div>
-        <div className="w-16 text-right mr-6"><Clock size={18} className="inline-block" /></div>
+      {/* 5. TABLE HEADER (CSS GRID ALIGNED) */}
+      <div className="relative z-10 px-4 md:px-8 mt-4 hidden md:grid grid-cols-[48px_1fr_120px_100px] gap-4 items-center text-[13px] font-medium uppercase tracking-widest text-neutral-400 border-b border-white/10 pb-2 mb-4 sticky top-[72px] bg-[#121212]/95 backdrop-blur-md">
+        <div className="text-center">#</div>
+        <div>Title</div>
+        <div>Plays</div>
+        <div className="text-right pr-10"><Clock size={16} className="inline-block" /></div>
       </div>
 
-      {/* Song List */}
-      <div className="relative z-10 px-2 md:px-8 flex flex-col gap-1">
+      {/* 6. TRACKLIST */}
+      <div className="relative z-10 px-2 md:px-6 flex flex-col">
         {renderedSongs}
       </div>
 
+      {/* 7. LOADING & FOOTER */}
       {loadingMore && (
         <div className="flex justify-center items-center py-10">
           <Loader2 className="animate-spin text-[#1ed760]" size={36} />
@@ -442,7 +445,7 @@ function PlaylistContent() {
       )}
 
       {!hasMore && playlist.songs?.length > 0 && (
-        <div className="px-5 md:px-12 py-16 pb-32 mt-8 flex flex-col gap-1 text-white/50 text-[13px] font-medium border-t border-white/10">
+        <div className="px-5 md:px-12 py-16 mt-8 flex flex-col gap-1 text-neutral-500 text-[13px] font-medium">
           <p>{playlist.songs.length} tracks • {totalDurationStr}</p>
           {playlist.copyright && <p className="max-w-2xl mt-2">{decodeEntities(playlist.copyright)}</p>}
         </div>

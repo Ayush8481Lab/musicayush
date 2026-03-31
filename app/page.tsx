@@ -50,37 +50,51 @@ const mergeAndDedupe = (arr1: any[], arr2: any[]) => {
   return Array.from(map.values());
 };
 
-// Premium Card Component with Smart Continuous Marquee
+// Premium Card Component with Smart Math-based Marquee
 const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
   const title = decodeEntities(item.title || item.name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, hideSubtitle));
+
+  // MAGIC FIX: Only animate if text is actually long enough to need it (Saves massive GPU memory)
+  const isLongTitle = title.length > 15;
+  const isLongSub = subtitle.length > 18;
+
+  // MAGIC FIX: Uniform speed calculated by character length (0.25s per character)
+  const titleSpeed = `${Math.max(4, title.length * 0.25)}s`;
+  const subSpeed = `${Math.max(4, subtitle.length * 0.25)}s`;
 
   return (
     <div
       onClick={() => onClick(item)}
       className="flex-shrink-0 snap-start w-32 cursor-pointer group"
     >
-      <div className={`relative overflow-hidden bg-white/[0.03] border border-white/10 mb-3 transition-all duration-300 group-active:scale-95 hover:border-pink-500/50 hover:shadow-[0_0_20px_rgba(236,72,153,0.2)] ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
+      <div className={`relative overflow-hidden bg-white/5 border border-white/10 mb-2 transition-transform duration-300 active:scale-95 ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-[1/1]"}`}>
         <img
           src={getImageUrl(item.image)}
           alt={title}
           loading="lazy"
           decoding="async"
           onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/500x500?text=Music"; }}
-          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out-expo"
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+        <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors duration-300 pointer-events-none" />
       </div>
 
-      <div className="marquee-container text-center">
-        <span className="marquee-text-active text-[13px] font-extrabold text-white tracking-wide drop-shadow-md">
+      <div className="w-full overflow-hidden whitespace-nowrap text-center">
+        <span
+          className={`inline-block text-[13px] font-extrabold text-white tracking-wide ${isLongTitle ? "animate-ping-pong" : ""}`}
+          style={isLongTitle ? { animationDuration: titleSpeed } : {}}
+        >
           {title}
         </span>
       </div>
 
       {subtitle && (
-        <div className="marquee-container text-center mt-0.5">
-          <span className="marquee-text-active text-[11px] font-medium text-pink-200/70">
+        <div className="w-full overflow-hidden whitespace-nowrap text-center mt-0.5">
+          <span
+            className={`inline-block text-[11px] font-medium text-pink-200/80 ${isLongSub ? "animate-ping-pong" : ""}`}
+            style={isLongSub ? { animationDuration: subSpeed } : {}}
+          >
             {subtitle}
           </span>
         </div>
@@ -89,7 +103,7 @@ const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
   );
 };
 
-// Async Image Card (Highly Optimized Observer to kill Scroll Lag)
+// Async Image Card (Highly Optimized Observer)
 const AsyncImageCard = ({ item, type, onClick }: any) => {
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -97,13 +111,12 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
 
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
-      // Fetch ONLY when visible and instantly disconnect to save CPU/Memory
       if (entries[0].isIntersecting && !fetched.current) {
         fetched.current = true;
         fetchImage();
-        observer.disconnect(); // MAGIC FIX FOR SCROLL LAG
+        observer.disconnect(); // Instantly kill observer to stop scroll lag
       }
-    }, { rootMargin: "150px" });
+    }, { rootMargin: "250px" });
 
     if (cardRef.current) observer.observe(cardRef.current);
     return () => observer.disconnect();
@@ -132,6 +145,9 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
 
   const isCircular = type === "artist" || type === "actor";
   const title = decodeEntities(item.title || item.name);
+  
+  const isLongTitle = title.length > 15;
+  const titleSpeed = `${Math.max(4, title.length * 0.25)}s`;
 
   return (
     <div
@@ -139,7 +155,7 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
       onClick={() => onClick(item)}
       className="flex-shrink-0 snap-start w-32 cursor-pointer group"
     >
-      <div className={`relative overflow-hidden bg-white/[0.03] border border-white/10 mb-3 flex items-center justify-center transition-all duration-300 group-active:scale-95 hover:border-cyan-400/50 hover:shadow-[0_0_20px_rgba(34,211,238,0.2)] ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
+      <div className={`relative overflow-hidden bg-white/5 border border-white/10 mb-2 flex items-center justify-center transition-transform duration-300 active:scale-95 ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-[1/1]"}`}>
         {imgUrl ? (
           <img 
             src={imgUrl} 
@@ -147,29 +163,38 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
             loading="lazy" 
             decoding="async"
             onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/500x500?text=Music"; }}
-            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out-expo" 
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out" 
           />
         ) : (
-          <div className="w-full h-full bg-white/5 animate-pulse" />
+          <div className="w-full h-full bg-white/10 animate-pulse" />
         )}
       </div>
-      <div className="marquee-container text-center">
-        <span className="marquee-text-active text-[13px] font-extrabold text-white tracking-wide drop-shadow-md">{title}</span>
+      
+      <div className="w-full overflow-hidden whitespace-nowrap text-center">
+        <span
+          className={`inline-block text-[13px] font-extrabold text-white tracking-wide ${isLongTitle ? "animate-ping-pong" : ""}`}
+          style={isLongTitle ? { animationDuration: titleSpeed } : {}}
+        >
+          {title}
+        </span>
       </div>
-      <div className="marquee-container text-center mt-0.5">
-        <span className="marquee-text-active text-[11px] font-medium text-cyan-200/70 capitalize">{type}</span>
+      
+      <div className="w-full overflow-hidden whitespace-nowrap text-center mt-0.5">
+        <span className="inline-block text-[11px] font-medium text-cyan-200/80 capitalize">
+          {type}
+        </span>
       </div>
     </div>
   );
 };
 
-// Reusable Carousel Wrappers with vibrant headers
+// Reusable Carousel Wrappers with strictly contained layouts
 const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
-    <div className="mb-10 carousel-wrapper">
+    <div className="mb-10 contain-content">
       <h2 className="text-[22px] font-black mb-4 px-4 tracking-tight bg-gradient-to-r from-white to-neutral-400 bg-clip-text text-transparent">{title}</h2>
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4 touch-pan-x hardware-scroll">
+      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
         {items.map((item: any, i: number) => (
           <PremiumCard key={item.id || i} item={item} isCircular={isCircular} hideSubtitle={hideSubtitle} onClick={onItemClick} />
         ))}
@@ -181,9 +206,9 @@ const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onIt
 const AsyncCarousel = ({ title, items, type, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
-    <div className="mb-10 carousel-wrapper">
+    <div className="mb-10 contain-content">
       <h2 className="text-[22px] font-black mb-4 px-4 tracking-tight bg-gradient-to-r from-white to-neutral-400 bg-clip-text text-transparent">{title}</h2>
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4 touch-pan-x hardware-scroll">
+      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
         {items.map((item: any, i: number) => (
           <AsyncImageCard key={item.id || i} item={item} type={type} onClick={onItemClick} />
         ))}
@@ -199,14 +224,14 @@ export default function Home() {
 
   const [trending, setTrending] = useState<any[]>([]);
   const [newReleases, setNewReleases] = useState<any[]>([]);
-  const[featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
+  const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
   const[otherPromos, setOtherPromos] = useState<any[]>([]);
   const [topArtists, setTopArtists] = useState<any[]>([]);
   const [charts, setCharts] = useState<any[]>([]);
 
-  const[recoArtists, setRecoArtists] = useState<any[]>([]);
+  const [recoArtists, setRecoArtists] = useState<any[]>([]);
   const[recoActors, setRecoActors] = useState<any[]>([]);
-  const [recoAlbums, setRecoAlbums] = useState<any[]>([]);
+  const[recoAlbums, setRecoAlbums] = useState<any[]>([]);
   const [recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
 
   useEffect(() => {
@@ -257,7 +282,7 @@ export default function Home() {
         setTopArtists(artistsJson.top_artists ||[]);
         setRecoArtists(footerJson.artist || []);
         setRecoActors(footerJson.actor ||[]);
-        setRecoAlbums(footerJson.album || []);
+        setRecoAlbums(footerJson.album ||[]);
         setRecoPlaylists(footerJson.playlist ||[]);
 
       } catch (error) {
@@ -291,7 +316,7 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-[#05050A] text-white">
+      <div className="flex h-screen flex-col items-center justify-center bg-[#07070C] text-white">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-pulse opacity-40">
            {[...Array(8)].map((_, i) => (
              <div key={i} className="w-32 h-32 bg-white/10 rounded-2xl"></div>
@@ -302,17 +327,14 @@ export default function Home() {
   }
 
   return (
-    // Rich gradient dark background instead of flat black
-    <main className="pt-14 pb-28 min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-950/40 via-[#05050A] to-[#000000]">
-      
-      {/* Colorful Premium Header */}
+    <main className="pt-14 pb-28 min-h-screen bg-gradient-to-b from-[#0F0A1D] via-[#07070C] to-[#000000]">
       <div className="px-4 mb-10 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-pink-500 to-violet-600 p-2 rounded-xl shadow-[0_0_15px_rgba(236,72,153,0.4)]">
+          <div className="bg-gradient-to-br from-pink-500 to-indigo-600 p-2 rounded-xl">
             <Music2 fill="white" size={22} className="text-white" />
           </div>
           <h1 className="text-3xl font-black tracking-tighter text-white">
-            Music<span className="bg-gradient-to-r from-pink-500 to-cyan-400 bg-clip-text text-transparent font-bold text-xl ml-1">@8481</span>
+            Music<span className="bg-gradient-to-r from-pink-400 to-cyan-300 bg-clip-text text-transparent font-bold text-xl ml-1">@8481</span>
           </h1>
         </div>
       </div>

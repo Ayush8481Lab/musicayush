@@ -53,7 +53,7 @@ const getArtists = (data: any) => {
   } else if (data?.singers) {
     names = data.singers.split(",").map((n: string) => n.trim());
   } else {
-    return "Various Artists";
+    return "Unknown Artist";
   }
   return Array.from(new Set(names)).join(", ");
 };
@@ -61,18 +61,14 @@ const getArtists = (data: any) => {
 const PingPongMarquee = ({ text, isPlaying, isSub }: { text: string, isPlaying?: boolean, isSub?: boolean }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
-  const[overflowWidth, setOverflowWidth] = useState(0);
+  const [overflowWidth, setOverflowWidth] = useState(0);
 
   useEffect(() => {
     const checkOverflow = () => {
       if (containerRef.current && textRef.current) {
         const cWidth = containerRef.current.offsetWidth;
         const tWidth = textRef.current.scrollWidth;
-        if (tWidth > cWidth) {
-          setOverflowWidth(tWidth - cWidth + 10);
-        } else {
-          setOverflowWidth(0);
-        }
+        setOverflowWidth(tWidth > cWidth ? tWidth - cWidth + 10 : 0);
       }
     };
     checkOverflow();
@@ -142,11 +138,17 @@ function PlaylistContent() {
   const [isLiked, setIsLiked] = useState(false);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null); // For buttery smooth scroll logic
 
+  // PERFORMANCE FIX: IntersectionObserver replaces window.addEventListener('scroll')
+  // Completely eliminates scroll lag and screen blanking!
   useEffect(() => {
-    const handleScroll = () => setIsScrolled(window.scrollY > 220); // Slightly delayed trigger for smoother feel
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsScrolled(!entry.isIntersecting),
+      { threshold: 0, rootMargin: "-150px 0px 0px 0px" } // Triggers exactly when past the banner
+    );
+    if (sentinelRef.current) observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
   },[]);
 
   useEffect(() => {
@@ -252,6 +254,9 @@ function PlaylistContent() {
   return (
     <div className="pb-36 bg-[#0a0a0a] min-h-screen relative text-white selection:bg-[#1ed760]/30 font-sans">
       
+      {/* Invisible sentinel pixel to trigger sticky header smoothly without scroll listeners */}
+      <div ref={sentinelRef} className="absolute top-0 left-0 w-full h-[10px]" />
+
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes ping-pong {
           0%, 15% { transform: translateX(0); }
@@ -267,15 +272,16 @@ function PlaylistContent() {
         .eq-bar-4 { animation: eq 1s ease-in-out infinite 0.1s; }
       `}} />
 
-      {/* PERFORMANCE FIX: Reduced blur radius and limited height to prevent scroll lag and blanking */}
+      {/* Optimized Background Gradient (GPU friendly) */}
       <div className="fixed top-0 left-0 w-full h-[60vh] pointer-events-none overflow-hidden z-0">
         <div 
-          className="absolute inset-0 opacity-40 bg-cover bg-center"
-          style={{ backgroundImage: `url(${coverImage})`, filter: 'blur(50px) saturate(200%)', transform: 'translateZ(0) scale(1.1)' }}
+          className="absolute inset-0 opacity-30 bg-cover bg-center"
+          style={{ backgroundImage: `url(${coverImage})`, filter: 'blur(30px) saturate(200%)', transform: 'translateZ(0) scale(1.1)' }}
         />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#0a0a0a]/90 to-[#0a0a0a]" />
       </div>
 
+      {/* Sticky Glass Navbar */}
       <nav className={`fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 py-3 transition-all duration-300 ${isScrolled ? "bg-[#0a0a0a]/90 backdrop-blur-xl shadow-2xl border-b border-white/5" : "bg-transparent"}`}>
         <div className="flex items-center gap-4 flex-1 min-w-0">
           <button onClick={() => router.back()} className="p-2.5 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-md transition-all text-white active:scale-90 z-50 flex-shrink-0">
@@ -283,7 +289,6 @@ function PlaylistContent() {
           </button>
           
           <div className={`flex items-center gap-3 overflow-hidden transition-all duration-300 flex-1 min-w-0 ${isScrolled ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}>
-            {/* CHANGED: Removed Play button, kept Playlist Banner next to Title */}
             <img src={coverImage} className="w-10 h-10 rounded-md object-cover flex-shrink-0 shadow-md border border-white/10" alt="banner" />
             <PingPongMarquee text={title} />
           </div>
@@ -296,13 +301,13 @@ function PlaylistContent() {
         </div>
       </nav>
 
+      {/* Header Info Banner */}
       <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 px-5 md:px-10 pt-24 md:pt-32 pb-6">
-        <div className="w-40 h-40 sm:w-48 sm:h-48 md:w-60 md:h-60 lg:w-64 lg:h-64 flex-shrink-0 rounded-2xl md:rounded-3xl overflow-hidden group shadow-[0_30px_60px_rgba(0,0,0,0.6)] border border-white/10">
-          <img src={coverImage} alt={title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
+        <div className="w-40 h-40 sm:w-48 sm:h-48 md:w-60 md:h-60 lg:w-64 lg:h-64 flex-shrink-0 rounded-2xl md:rounded-3xl overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.6)] border border-white/10">
+          <img src={coverImage} alt={title} className="w-full h-full object-cover" />
         </div>
         
         <div className="flex flex-col items-center md:items-start text-center md:text-left mt-2 md:mt-0 w-full flex-1 min-w-0">
-          {/* CHANGED: Removed "Public Playlist" text entirely */}
           <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-8xl font-black tracking-tighter mb-4 line-clamp-3 leading-[1.1] drop-shadow-2xl mt-2">
             {title}
           </h1>
@@ -329,6 +334,7 @@ function PlaylistContent() {
         </div>
       </div>
 
+      {/* Quick Actions Array */}
       <div className="relative z-10 px-5 md:px-10 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3 md:gap-5">
           <button onClick={handlePlayPlaylist} className="w-14 h-14 md:w-16 md:h-16 bg-[#1ed760] hover:bg-[#3be477] text-black rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-[0_8px_40px_rgba(30,215,96,0.4)]">
@@ -353,6 +359,7 @@ function PlaylistContent() {
         </button>
       </div>
 
+      {/* List Headers */}
       <div className="relative z-10 px-6 md:px-12 mt-6 hidden md:flex items-center text-[12px] font-bold uppercase tracking-widest text-white/40 border-b border-white/5 pb-3 mb-4 sticky top-[68px] bg-[#0a0a0a]/95 backdrop-blur-xl">
         <div className="w-12 text-center">#</div>
         <div className="flex-1 ml-4">Title</div>
@@ -360,6 +367,7 @@ function PlaylistContent() {
         <div className="w-16 text-right mr-4"><Clock size={16} className="inline-block" /></div>
       </div>
 
+      {/* Track List rendering */}
       <div className="relative z-10 px-3 md:px-10 flex flex-col gap-1.5">
         {playlist.songs?.map((song: any, index: number) => {
           const isLastItem = index === playlist.songs.length - 1;
@@ -386,7 +394,8 @@ function PlaylistContent() {
               </div>
               
               <div className="relative w-11 h-11 md:w-12 md:h-12 flex-shrink-0 bg-white/5 rounded-md overflow-hidden shadow-md">
-                <img src={getImageUrl(song.image)} alt={songTitle} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" loading="lazy" />
+                {/* FIX: Loading="lazy" decoding="async" prevents fast scrolling lag */}
+                <img src={getImageUrl(song.image)} alt={decodeEntities(songTitle)} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
               </div>
               
               <div className="flex-1 min-w-0 pr-2 flex flex-col justify-center gap-0.5 overflow-hidden">

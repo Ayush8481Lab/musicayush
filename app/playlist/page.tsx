@@ -1,7 +1,10 @@
 "use client";
 import React, { useEffect, useState, Suspense, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Play, ArrowLeft, Loader2, Shuffle, Share2, Info, BadgeAlert, Pause } from "lucide-react";
+import { 
+  Play, Pause, ArrowLeft, Loader2, Shuffle, Share2, 
+  Info, BadgeAlert, Heart, MoreHorizontal, Download, Clock 
+} from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 
 // --- Utility Functions --- //
@@ -44,31 +47,58 @@ const getArtists = (data: any) => {
   return "Various Artists";
 };
 
-// Fallback color generator based on text hashing
-const getHashColor = (str: string) => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  return `hsl(${Math.abs(hash) % 360}, 65%, 30%)`;
-};
+// --- Custom Components --- //
 
-// --- Custom Universal Marquee Component --- //
-const TrackMarquee = ({ text, isPlaying, isSubtitle }: { text: string, isPlaying?: boolean, isSubtitle?: boolean }) => {
-  const isLong = text.length > 28;
-  const speed = Math.max(8, text.length * 0.2); // Dynamic speed based on length
+// 1. Marquee for Tracklist Items
+const TrackMarquee = ({ text, isPlaying, isSub }: { text: string, isPlaying: boolean, isSub?: boolean }) => {
+  const isLong = text.length > 22; // Threshold for mobile screens
+  
+  // Dynamic colors based on playing state and hierarchy
+  let textColor = "text-white group-hover:text-white";
+  if (isPlaying && !isSub) textColor = "text-[#1ed760]";
+  else if (isSub) textColor = "text-white/60 group-hover:text-white/90";
 
-  const baseClass = isSubtitle 
-    ? "text-[12px] text-neutral-400 group-hover:text-neutral-300 transition-colors" 
-    : `text-[15px] font-semibold ${isPlaying ? "text-[#1ed760]" : "text-white"}`;
+  const textSize = isSub ? "text-[13px]" : "text-[15px] font-semibold";
 
   return (
-    <div className="relative overflow-hidden whitespace-nowrap mask-linear-fade flex w-full">
-      <div className={`inline-block w-max ${isLong ? "animate-marquee" : ""}`} style={{ animationDuration: `${speed}s` }}>
-        <span className={`${baseClass} pr-10`}>{text}</span>
-        {isLong && <span className={`${baseClass} pr-10`}>{text}</span>}
+    <div className="relative overflow-hidden whitespace-nowrap mask-linear-fade w-full">
+      <div className={`inline-block ${isLong ? "animate-marquee-slow hover:animate-marquee-fast" : ""}`}>
+        <span className={`${textColor} ${textSize} transition-colors duration-300`}>{text}</span>
+        {isLong && <span className={`${textColor} ${textSize} ml-12 transition-colors duration-300`}>{text}</span>}
       </div>
     </div>
   );
 };
+
+// 2. Animated Equalizer for currently playing song
+const PlayingVisualizer = () => (
+  <div className="flex items-end justify-center gap-[2px] w-6 h-4">
+    <div className="w-[3px] bg-[#1ed760] rounded-t-sm eq-bar-1"></div>
+    <div className="w-[3px] bg-[#1ed760] rounded-t-sm eq-bar-2"></div>
+    <div className="w-[3px] bg-[#1ed760] rounded-t-sm eq-bar-3"></div>
+    <div className="w-[3px] bg-[#1ed760] rounded-t-sm eq-bar-4"></div>
+  </div>
+);
+
+// 3. Skeleton Loader
+const PlaylistSkeleton = () => (
+  <div className="min-h-screen bg-[#0a0a0a] p-4 md:p-8 pt-24 animate-pulse">
+    <div className="flex flex-col md:flex-row gap-6 items-center md:items-end">
+      <div className="w-36 h-36 md:w-64 md:h-64 bg-white/5 rounded-2xl shadow-2xl" />
+      <div className="flex flex-col gap-4 w-full max-w-xl items-center md:items-start">
+        <div className="w-24 h-4 bg-white/5 rounded-full" />
+        <div className="w-full h-12 bg-white/5 rounded-xl" />
+        <div className="w-2/3 h-4 bg-white/5 rounded-full" />
+      </div>
+    </div>
+    <div className="mt-12 flex flex-col gap-2">
+      {[1, 2, 3, 4, 5, 6].map((i) => (
+        <div key={i} className="w-full h-16 bg-white/5 rounded-xl" />
+      ))}
+    </div>
+  </div>
+);
+
 
 // --- Main Content Component --- //
 function PlaylistContent() {
@@ -76,28 +106,27 @@ function PlaylistContent() {
   const router = useRouter();
   const link = searchParams.get("link");
   
-  // Destructure context - Assumes global player supports queues
-  const { currentSong, setCurrentSong, setIsPlaying, setQueue, setQueueIndex } = useAppContext() as any;
+  // Added currentSong and setQueue (assuming your context has these or similar to handle auto-play queue)
+  const { currentSong, setCurrentSong, isPlaying, setIsPlaying, setQueue } = useAppContext() as any;
   
   const [playlist, setPlaylist] = useState<any>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const[loadingMore, setLoadingMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  
   const [isScrolled, setIsScrolled] = useState(false);
-  const[bgColor, setBgColor] = useState<string>("#121212"); // Default dark
-  
+  const [isLiked, setIsLiked] = useState(false);
+
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  // Scroll listener for sticky header
+  // Scroll listener for sticky header & dynamic background opacity
   useEffect(() => {
-    const handleScroll = () => setIsScrolled(window.scrollY > 250);
+    const handleScroll = () => setIsScrolled(window.scrollY > 150);
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  },[]);
+  }, []);
 
-  // Fetch Playlist Data
+  // Fetch API Logic
   useEffect(() => {
     if (!link) return;
 
@@ -118,7 +147,7 @@ function PlaylistContent() {
             if (!prev) return newData;
             const existingIds = new Set(prev.songs.map((s: any) => s.id));
             const newSongs = newData.songs?.filter((s: any) => !existingIds.has(s.id)) || [];
-            return { ...prev, songs:[...prev.songs, ...newSongs] };
+            return { ...prev, songs: [...prev.songs, ...newSongs] };
           });
           setHasMore(newData.songs && newData.songs.length > 0);
         }
@@ -134,88 +163,65 @@ function PlaylistContent() {
     fetchPlaylist();
   }, [link, page]);
 
-  // Extract solid dominant color from the image using Canvas API
-  useEffect(() => {
-    if (!playlist?.image) return;
-    const coverUrl = getImageUrl(playlist.image);
-    
-    const img = new window.Image();
-    img.crossOrigin = "Anonymous";
-    img.src = coverUrl;
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        canvas.width = 1;
-        canvas.height = 1;
-        ctx.drawImage(img, 0, 0, 1, 1);
-        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-        // Make sure it's dark enough to support white text
-        setBgColor(`rgb(${Math.max(10, r - 30)}, ${Math.max(10, g - 30)}, ${Math.max(10, b - 30)})`);
-      } catch (e) {
-        setBgColor(getHashColor(coverUrl)); // Fallback if CORS blocked
-      }
-    };
-    img.onerror = () => setBgColor(getHashColor(coverUrl));
-  }, [playlist?.image]);
-
   // Infinite Scroll Observer
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (loading || loadingMore || !hasMore) return;
     if (observerRef.current) observerRef.current.disconnect();
 
     observerRef.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore) setPage(prev => prev + 1);
+      if (entries[0].isIntersecting && hasMore) {
+        setPage(prev => prev + 1);
+      }
     }, { rootMargin: "400px" });
 
     if (node) observerRef.current.observe(node);
-  },[loading, loadingMore, hasMore]);
+  }, [loading, loadingMore, hasMore]);
 
-  // Interactive Play Actions
+  // Actions
   const handlePlaySong = (song: any, index: number) => {
     setCurrentSong(song);
     setIsPlaying(true);
-    // Passing the entire playlist array to global queue for Auto-Play Next support
-    if (setQueue) setQueue(playlist.songs);
-    if (setQueueIndex) setQueueIndex(index);
+    
+    // Pass the entire playlist as the active queue to context.
+    // This allows the global player's `<audio onEnded={playNext}>` to automatically play the next song!
+    if (setQueue && playlist?.songs) {
+      setQueue(playlist.songs);
+    }
+  };
+
+  const handlePlayPlaylist = () => {
+    if (!playlist?.songs?.length) return;
+    handlePlaySong(playlist.songs[0], 0);
   };
 
   const handleShuffle = () => {
     if (!playlist?.songs?.length) return;
-    const randomIndex = Math.floor(Math.random() * playlist.songs.length);
-    handlePlaySong(playlist.songs[randomIndex], randomIndex);
+    const shuffled = [...playlist.songs].sort(() => Math.random() - 0.5);
+    if (setQueue) setQueue(shuffled);
+    setCurrentSong(shuffled[0]);
+    setIsPlaying(true);
   };
 
   const handleShare = async () => {
     const shareData = {
       title: decodeEntities(playlist?.name || playlist?.title),
-      text: `Listen to ${decodeEntities(playlist?.name || playlist?.title)} on Music@8481`,
       url: window.location.href,
     };
     if (navigator.share) {
       try { await navigator.share(shareData); } catch (err) {}
     } else {
       navigator.clipboard.writeText(window.location.href);
-      alert("Link copied to clipboard!");
     }
   };
 
-
-  if (loading && page === 1) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-[#121212] text-[#1ed760]">
-        <Loader2 className="animate-spin" size={40} />
-      </div>
-    );
-  }
+  if (loading && page === 1) return <PlaylistSkeleton />;
 
   if (!playlist) {
     return (
-      <div className="flex flex-col h-screen items-center justify-center bg-[#121212] text-white gap-4">
-        <Info size={48} className="text-neutral-500" />
-        <p className="text-lg font-bold">Playlist not found</p>
-        <button onClick={() => router.back()} className="px-6 py-2 bg-white text-black rounded-full font-bold">Go Back</button>
+      <div className="flex flex-col h-screen items-center justify-center bg-[#0a0a0a] text-white gap-4">
+        <Info size={48} className="text-white/30" />
+        <p className="text-xl font-bold">Playlist not found</p>
+        <button onClick={() => router.back()} className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-full font-bold backdrop-blur-md transition-all">Go Back</button>
       </div>
     );
   }
@@ -224,179 +230,187 @@ function PlaylistContent() {
   const title = decodeEntities(playlist.name || playlist.title);
   const description = decodeEntities(playlist.description || "");
   const playlistArtists = decodeEntities(getArtists(playlist));
-
   const totalSeconds = playlist.songs?.reduce((acc: number, song: any) => acc + (song.duration || 0), 0);
-  const totalDurationStr = totalSeconds ? ` • ${Math.floor(totalSeconds / 60)} mins` : "";
+  const totalDurationStr = totalSeconds ? `${Math.floor(totalSeconds / 60)} mins` : "";
 
   return (
-    <div className="pb-32 bg-[#121212] min-h-screen relative text-white selection:bg-[#1ed760]/30">
+    <div className="pb-36 bg-[#0a0a0a] min-h-screen relative text-white selection:bg-[#1ed760]/30 font-sans">
       
-      {/* CSS For Global Marquee */}
+      {/* Dynamic CSS Styles for Marquee & Animations */}
       <style dangerouslySetInnerHTML={{__html: `
-        @keyframes marquee {
-          0% { transform: translateX(0%); }
-          100% { transform: translateX(-50%); }
-        }
-        .animate-marquee {
-          animation: marquee linear infinite;
-        }
-        .mask-linear-fade {
-          -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
-          mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
-        }
+        @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        .animate-marquee-slow { display: inline-block; animation: marquee 16s linear infinite; }
+        .animate-marquee-fast { display: inline-block; animation: marquee 8s linear infinite; }
+        .mask-linear-fade { mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); }
+        
+        @keyframes eq { 0%, 100% { height: 4px; } 50% { height: 16px; } }
+        .eq-bar-1 { animation: eq 1s ease-in-out infinite 0s; }
+        .eq-bar-2 { animation: eq 1s ease-in-out infinite 0.2s; }
+        .eq-bar-3 { animation: eq 1s ease-in-out infinite 0.4s; }
+        .eq-bar-4 { animation: eq 1s ease-in-out infinite 0.1s; }
       `}} />
 
-      {/* 1. Dynamic Extracted Solid Color Gradient Background */}
-      <div 
-        className="absolute top-0 left-0 w-full h-[500px] pointer-events-none z-0 transition-colors duration-1000 ease-in-out"
-        style={{ background: `linear-gradient(to bottom, ${bgColor} 0%, #121212 100%)` }}
-      />
+      {/* 1. Dynamic Extracted Color Background (Using the blurred image trick) */}
+      <div className="fixed top-0 left-0 w-full h-[80vh] pointer-events-none overflow-hidden z-0">
+        <img 
+          src={coverImage} 
+          alt="blur-bg" 
+          className="w-full h-full object-cover blur-[100px] saturate-[250%] opacity-60 scale-[1.2] transform-gpu will-change-transform" 
+        />
+        {/* Layered gradients for perfect blending into the dark bottom */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-[#0a0a0a]/80 to-[#0a0a0a]" />
+      </div>
 
-      {/* 2. Sticky Top Navigation */}
-      <nav className={`fixed top-0 left-0 w-full z-50 flex items-center gap-3 px-4 py-3 transition-all duration-300 ${isScrolled ? "bg-[#171717] shadow-xl" : "bg-transparent"}`}>
-        <button onClick={() => router.back()} className="p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md transition-colors text-white active:scale-95 z-50">
+      {/* 2. Glassmorphic Sticky Header */}
+      <nav className={`fixed top-0 left-0 w-full z-50 flex items-center gap-4 px-4 py-3 transition-all duration-500 ${isScrolled ? "bg-[#0a0a0a]/80 backdrop-blur-xl shadow-2xl border-b border-white/5" : "bg-transparent"}`}>
+        <button onClick={() => router.back()} className="p-2.5 rounded-full bg-black/20 hover:bg-black/40 backdrop-blur-md transition-all text-white active:scale-90 z-50">
           <ArrowLeft size={22} />
         </button>
         
-        {/* Compact Title appearing on scroll */}
-        <div className={`flex items-center gap-3 overflow-hidden transition-opacity duration-300 w-full pr-12 ${isScrolled ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          <img src={coverImage} className="w-9 h-9 rounded-md shadow-md object-cover" alt="thumb" />
-          <div className="flex-1 overflow-hidden">
-            <TrackMarquee text={title} />
-          </div>
+        {/* Shows Image, Title & Mini Play button when scrolled */}
+        <div className={`flex items-center gap-3 overflow-hidden transition-all duration-500 flex-1 ${isScrolled ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}>
+          <button onClick={handlePlayPlaylist} className="w-10 h-10 bg-[#1ed760] text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform flex-shrink-0">
+             <Play fill="black" size={18} className="ml-0.5" />
+          </button>
+          <span className="text-lg font-bold truncate max-w-[200px] md:max-w-md">{title}</span>
         </div>
       </nav>
 
       {/* 3. Hero Header Section */}
-      <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-5 md:gap-8 px-4 md:px-8 pt-20 md:pt-28 pb-6">
-        
-        {/* Banner - Small on Mobile, Large on Desktop */}
-        <div className="w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 flex-shrink-0 shadow-[0_25px_50px_rgba(0,0,0,0.5)] rounded-xl overflow-hidden group">
+      <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 px-5 md:px-10 pt-24 md:pt-36 pb-8">
+        {/* Responsive Mobile-Small, Desktop-Large Banner */}
+        <div className="w-36 h-36 sm:w-48 sm:h-48 md:w-60 md:h-60 lg:w-64 lg:h-64 flex-shrink-0 rounded-2xl md:rounded-3xl overflow-hidden group shadow-[0_30px_60px_rgba(0,0,0,0.6)] border border-white/10">
           <img 
             src={coverImage} 
             alt={title} 
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" 
+            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" 
           />
         </div>
         
-        <div className="flex flex-col items-center md:items-start text-center md:text-left mt-2 md:mt-0 w-full">
-          <p className="text-[11px] uppercase tracking-[0.2em] font-extrabold text-neutral-300 mb-2 drop-shadow-md">
-            {playlist.type === "playlist" ? "Playlist" : "Album"}
-          </p>
-          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-black tracking-tighter mb-3 line-clamp-3 leading-tight drop-shadow-lg">
+        <div className="flex flex-col items-center md:items-start text-center md:text-left mt-2 md:mt-0 w-full flex-1 min-w-0">
+          <span className="text-xs font-black uppercase tracking-[0.25em] text-white/70 mb-2 md:mb-3 drop-shadow-md">
+            {playlist.type === "playlist" ? "Public Playlist" : "Album"}
+          </span>
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-8xl font-black tracking-tighter mb-4 line-clamp-3 leading-[1.1] drop-shadow-2xl">
             {title}
           </h1>
           {description && (
-            <p className="text-[13px] md:text-sm text-neutral-200 mb-3 max-w-2xl line-clamp-2 md:line-clamp-3 leading-relaxed drop-shadow-sm">
+            <p className="text-sm text-white/60 mb-4 max-w-2xl line-clamp-2 leading-relaxed font-medium">
               {description}
             </p>
           )}
           
-          <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 text-[13px] font-medium text-neutral-300 mt-1">
-            <span className="font-bold text-white drop-shadow-md">{playlistArtists}</span>
-            <div className="flex items-center justify-center gap-1.5 opacity-90 drop-shadow-sm">
-              <span className="hidden md:inline">•</span>
-              <span>{playlist.songCount || playlist.songs?.length} songs</span>
-              {totalDurationStr}
-              {playlist.playCount && (
-                <>
-                  <span>•</span>
-                  <span>{formatNumber(playlist.playCount)} plays</span>
-                </>
-              )}
+          <div className="flex items-center flex-wrap justify-center md:justify-start gap-2 text-sm font-semibold text-white/80 mt-1">
+            <div className="flex items-center gap-2">
+               <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#1ed760] to-blue-500" />
+               <span className="text-white hover:underline cursor-pointer">{playlistArtists}</span>
             </div>
+            <span className="text-white/40 hidden sm:inline">•</span>
+            <span>{playlist.songCount || playlist.songs?.length} songs</span>
+            {totalDurationStr && (
+              <>
+                <span className="text-white/40">•</span>
+                <span>{totalDurationStr}</span>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      {/* 4. Action Bar (Light Green Spotify-like Play Button) */}
-      <div className="relative z-10 px-4 md:px-8 py-2 flex items-center justify-center md:justify-start gap-6">
-        <button 
-          onClick={() => { if (playlist.songs?.length) handlePlaySong(playlist.songs[0], 0); }} 
-          className="w-14 h-14 bg-[#1ed760] hover:bg-[#1fdf64] text-black rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-[0_8px_30px_rgba(30,215,96,0.4)]"
-        >
-          <Play fill="black" size={26} className="ml-1" />
-        </button>
-        <button onClick={handleShuffle} className="p-2 text-neutral-300 hover:text-white transition-colors active:scale-90" title="Shuffle Play">
-          <Shuffle size={28} />
-        </button>
-        <button onClick={handleShare} className="p-2 text-neutral-300 hover:text-white transition-colors active:scale-90" title="Share">
-          <Share2 size={26} />
+      {/* 4. Action Bar (Modern Buttons) */}
+      <div className="relative z-10 px-5 md:px-10 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-4 md:gap-6">
+          <button 
+            onClick={handlePlayPlaylist} 
+            className="w-14 h-14 md:w-16 md:h-16 bg-[#1ed760] hover:bg-[#3be477] text-black rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-[0_8px_40px_rgba(30,215,96,0.4)]"
+          >
+            <Play fill="black" size={28} className="ml-1" />
+          </button>
+          
+          <button onClick={handleShuffle} className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-full transition-all active:scale-90" title="Shuffle Play">
+            <Shuffle size={26} />
+          </button>
+          
+          <button onClick={() => setIsLiked(!isLiked)} className={`p-2 rounded-full transition-all active:scale-90 ${isLiked ? "text-[#1ed760]" : "text-white/60 hover:text-white hover:bg-white/10"}`}>
+            <Heart size={28} fill={isLiked ? "#1ed760" : "none"} />
+          </button>
+
+          <button className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-full hidden sm:block transition-all active:scale-90">
+             <Download size={26} />
+          </button>
+        </div>
+
+        <button onClick={handleShare} className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-full transition-all active:scale-90">
+            <MoreHorizontal size={28} />
         </button>
       </div>
 
       {/* 5. Tracklist Header */}
-      <div className="relative z-10 px-4 md:px-8 mt-6 hidden md:flex items-center text-[11px] font-bold uppercase tracking-wider text-neutral-400 border-b border-white/10 pb-2 mb-4">
-        <div className="w-10 text-center">#</div>
+      <div className="relative z-10 px-6 md:px-12 mt-6 hidden md:flex items-center text-[12px] font-bold uppercase tracking-widest text-white/40 border-b border-white/5 pb-3 mb-4 sticky top-[68px] bg-[#0a0a0a]/90 backdrop-blur-xl">
+        <div className="w-12 text-center">#</div>
         <div className="flex-1 ml-4">Title</div>
         <div className="flex-1 hidden lg:block">Plays</div>
-        <div className="w-16 text-right mr-4">Duration</div>
+        <div className="w-16 text-right mr-4"><Clock size={16} className="inline-block" /></div>
       </div>
 
-      {/* 6. Songs List */}
-      <div className="relative z-10 px-2 md:px-8 flex flex-col gap-1">
+      {/* 6. Beautiful Songs List */}
+      <div className="relative z-10 px-3 md:px-10 flex flex-col gap-1.5">
         {playlist.songs?.map((song: any, index: number) => {
           const isLastItem = index === playlist.songs.length - 1;
           const songTitle = decodeEntities(song.name || song.title);
           const artists = decodeEntities(getArtists(song));
           const plays = formatNumber(song.playCount);
           
-          // Verify if this is the currently playing song globally
-          const isCurrentlyPlaying = currentSong?.id === song.id;
+          // Check if this specific song is currently playing
+          const isCurrentPlaying = currentSong?.id === song.id;
 
           return (
             <div 
               key={`${song.id}-${index}`} 
               ref={isLastItem ? lastElementRef : null}
               onClick={() => handlePlaySong(song, index)} 
-              className={`flex items-center gap-3 md:gap-4 p-2 md:p-3 rounded-xl cursor-pointer group transition-all ${
-                isCurrentlyPlaying ? "bg-white/10" : "hover:bg-white/5"
-              }`}
+              className={`flex items-center gap-3 md:gap-4 p-2.5 md:p-3 rounded-xl cursor-pointer group transition-all duration-300 ${isCurrentPlaying ? "bg-white/10" : "hover:bg-white/5"}`}
             >
-              {/* Index number or Playing Indicator */}
-              <div className="w-6 md:w-10 text-center flex justify-center items-center text-neutral-500 font-medium text-[13px] hidden sm:flex group-hover:text-white">
-                {isCurrentlyPlaying ? (
-                  <div className="flex items-end gap-[2px] h-4">
-                    <div className="w-1 bg-[#1ed760] animate-[bounce_1s_infinite] h-full" />
-                    <div className="w-1 bg-[#1ed760] animate-[bounce_1.2s_infinite] h-2/3" />
-                    <div className="w-1 bg-[#1ed760] animate-[bounce_0.8s_infinite] h-1/2" />
-                  </div>
+              {/* Index number or Playing Visualizer */}
+              <div className="w-8 md:w-12 flex justify-center items-center flex-shrink-0">
+                {isCurrentPlaying ? (
+                  <PlayingVisualizer />
                 ) : (
-                  index + 1
+                  <span className="text-white/40 font-semibold text-[14px] group-hover:hidden">{index + 1}</span>
                 )}
+                <Play fill="white" size={16} className={`text-white hidden ${!isCurrentPlaying && 'group-hover:block'} ml-0.5`} />
               </div>
               
               {/* Thumbnail */}
-              <div className="relative w-12 h-12 flex-shrink-0 bg-neutral-800 rounded-md overflow-hidden">
-                <img src={getImageUrl(song.image)} alt={songTitle} className="w-full h-full object-cover" loading="lazy" />
-                <div className={`absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity ${isCurrentlyPlaying ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
-                  {isCurrentlyPlaying ? (
-                    <Pause fill="#1ed760" size={18} className="text-[#1ed760]" />
-                  ) : (
-                    <Play fill="white" size={18} className="text-white ml-0.5" />
-                  )}
-                </div>
+              <div className="relative w-12 h-12 md:w-12 md:h-12 flex-shrink-0 bg-white/5 rounded-md overflow-hidden shadow-md">
+                <img src={getImageUrl(song.image)} alt={songTitle} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" loading="lazy" />
               </div>
               
-              {/* Title & Artist (with Dynamic Marquee & Green Text if Playing) */}
-              <div className="flex-1 overflow-hidden pr-2 flex flex-col justify-center">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <TrackMarquee text={songTitle} isPlaying={isCurrentlyPlaying} />
-                  {song.explicitContent && <BadgeAlert size={14} className="text-neutral-500 flex-shrink-0" title="Explicit" />}
+              {/* Marquee Title & Artist */}
+              <div className="flex-1 min-w-0 pr-2 flex flex-col justify-center gap-0.5">
+                <div className="flex items-center gap-2 w-full">
+                  <TrackMarquee text={songTitle} isPlaying={isCurrentPlaying} />
+                  {song.explicitContent && <BadgeAlert size={14} className="text-white/40 flex-shrink-0" />}
                 </div>
-                <TrackMarquee text={artists} isSubtitle={true} />
+                <TrackMarquee text={artists} isPlaying={isCurrentPlaying} isSub={true} />
               </div>
 
               {/* Plays (Hidden on Mobile) */}
-              <div className="flex-1 hidden lg:block overflow-hidden pr-4 text-[13px] text-neutral-400">
-                {plays ? `${plays} plays` : ""}
+              <div className="flex-1 hidden lg:block overflow-hidden pr-4 text-[13px] font-medium text-white/40 group-hover:text-white/80 transition-colors">
+                {plays ? `${plays}` : ""}
               </div>
               
               {/* Duration */}
               <div className="w-12 text-right md:mr-4">
-                <span className={`text-[13px] font-medium ${isCurrentlyPlaying ? "text-[#1ed760]" : "text-neutral-400"}`}>
+                <span className={`text-[13px] font-medium transition-colors ${isCurrentPlaying ? "text-[#1ed760]" : "text-white/40 group-hover:text-white/80"}`}>
                   {formatDuration(song.duration)}
                 </span>
+              </div>
+
+              {/* Quick Actions (Hover) */}
+              <div className="hidden md:flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                 <button className="p-2 text-white/60 hover:text-white"><Heart size={18} /></button>
+                 <button className="p-2 text-white/60 hover:text-white"><MoreHorizontal size={18} /></button>
               </div>
             </div>
           );
@@ -405,17 +419,16 @@ function PlaylistContent() {
 
       {/* 7. Loading More Spinner */}
       {loadingMore && (
-        <div className="flex justify-center items-center py-8">
-          <Loader2 className="animate-spin text-[#1ed760]" size={32} />
+        <div className="flex justify-center items-center py-10">
+          <Loader2 className="animate-spin text-[#1ed760]" size={36} />
         </div>
       )}
 
-      {/* 8. Footer Info (End of Playlist) */}
+      {/* 8. Footer Info */}
       {!hasMore && playlist.songs?.length > 0 && (
-        <div className="px-4 md:px-12 py-12 pb-24 border-t border-white/10 mt-8 text-neutral-500 text-xs font-medium flex flex-col gap-1 items-center md:items-start text-center md:text-left">
-          <p>{playlist.songs.length} Tracks • {totalDurationStr}</p>
-          {playlist.copyright && <p>© {playlist.copyright}</p>}
-          <p>Data provided by Music@8481 APIs</p>
+        <div className="px-5 md:px-12 py-16 pb-32 mt-8 text-center md:text-left flex flex-col gap-2 border-t border-white/5">
+          <p className="text-white/40 text-sm font-bold tracking-wide uppercase">{playlist.songs.length} Tracks • {totalDurationStr}</p>
+          {playlist.copyright && <p className="text-white/30 text-xs font-medium max-w-2xl">{playlist.copyright}</p>}
         </div>
       )}
     </div>
@@ -424,13 +437,7 @@ function PlaylistContent() {
 
 export default function PlaylistPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-[#121212] p-4 md:p-8 pt-24 animate-pulse flex flex-col items-center">
-        <div className="w-40 h-40 bg-white/10 rounded-xl mb-6" />
-        <div className="w-48 h-6 bg-white/10 rounded-full mb-2" />
-        <div className="w-32 h-4 bg-white/10 rounded-full" />
-      </div>
-    }>
+    <Suspense fallback={<PlaylistSkeleton />}>
       <PlaylistContent />
     </Suspense>
   );

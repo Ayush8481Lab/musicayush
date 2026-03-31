@@ -1,9 +1,23 @@
+/* eslint-disable @next/next/no-img-element */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
-import { useEffect, useState, useRef } from "react";
+
+import React, { useEffect, useState, useRef } from "react";
 import { useAppContext } from "../context/AppContext";
 import { Play, Pause, SkipForward, SkipBack, Loader2 } from "lucide-react";
 
-// Helper to get highest quality image
+// Robust HTML Entity Decoder (Fixes &quot; and &amp; issues)
+const decodeEntities = (text: string) => {
+  if (!text) return "";
+  let decoded = text.replace(/&amp;/g, "&"); // Decode amp first
+  return decoded
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&apos;/g, "'");
+};
+
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/150";
   if (typeof img === "string") return img.replace("50x50", "500x500").replace("150x150", "500x500");
@@ -11,11 +25,10 @@ const getImageUrl = (img: any) => {
   return "https://via.placeholder.com/150";
 };
 
-// SMART PING-PONG MARQUEE FOR MINI PLAYER
 const MiniPingPongMarquee = ({ text, isSub }: { text: string, isSub?: boolean }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
-  const [overflowWidth, setOverflowWidth] = useState(0);
+  const[overflowWidth, setOverflowWidth] = useState(0);
 
   useEffect(() => {
     const checkOverflow = () => {
@@ -38,26 +51,23 @@ const MiniPingPongMarquee = ({ text, isSub }: { text: string, isSub?: boolean })
     <div ref={containerRef} className="relative overflow-hidden whitespace-nowrap w-full mask-linear-fade-mini">
       <div 
         ref={textRef}
-        className={`inline-block ${overflowWidth > 0 ? "animate-ping-pong-mini" : ""} ${isSub ? "text-xs text-white/60" : "text-sm font-bold text-white"} transition-colors`}
+        className={`inline-block ${overflowWidth > 0 ? "animate-ping-pong-mini" : ""} ${isSub ? "text-xs text-white/60 font-medium" : "text-sm font-bold text-white"} transition-colors`}
         style={{ '--overflow-dist': `-${overflowWidth}px` } as React.CSSProperties}
       >
-        {text}
+        {decodeEntities(text)}
       </div>
     </div>
   );
 };
 
-
 export default function MiniPlayer() {
-  // ADDED 'queue' FROM CONTEXT TO HANDLE NEXT/PREV
-  const { currentSong, isPlaying, setIsPlaying, setCurrentSong, queue } = useAppContext() as any;
+  const { currentSong, isPlaying, setIsPlaying, setCurrentSong, queue } = useAppContext();
   
   const [audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0); // For the live progress bar
+  const [progress, setProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  // FETCH AUDIO URL
   useEffect(() => {
     if (!currentSong) {
       setAudioUrl("");
@@ -86,9 +96,8 @@ export default function MiniPlayer() {
     };
 
     fetchPlayableUrl();
-  }, [currentSong]);
+  }, [currentSong, setIsPlaying]);
 
-  // HANDLE PLAY/PAUSE SYNC
   useEffect(() => {
     if (audioRef.current) {
       if (isPlaying && audioUrl) {
@@ -100,9 +109,8 @@ export default function MiniPlayer() {
         audioRef.current.pause();
       }
     }
-  }, [isPlaying, audioUrl]);
+  }, [isPlaying, audioUrl, setIsPlaying]);
 
-  // LIVE PROGRESS BAR TRACKING
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       const current = audioRef.current.currentTime;
@@ -111,7 +119,6 @@ export default function MiniPlayer() {
     }
   };
 
-  // --- AUTO-PLAY / NEXT / PREV LOGIC --- //
   const playNext = () => {
     if (!queue || queue.length === 0) return;
     const currentIndex = queue.findIndex((s: any) => s.id === currentSong.id);
@@ -119,14 +126,13 @@ export default function MiniPlayer() {
       setCurrentSong(queue[currentIndex + 1]);
       setIsPlaying(true);
     } else {
-      setIsPlaying(false); // End of queue
+      setIsPlaying(false);
       setProgress(0);
     }
   };
 
   const playPrev = () => {
     if (!queue || queue.length === 0) return;
-    // If song is playing for more than 3 seconds, restart it instead of going back
     if (audioRef.current && audioRef.current.currentTime > 3) {
       audioRef.current.currentTime = 0;
       return;
@@ -146,7 +152,6 @@ export default function MiniPlayer() {
 
   return (
     <>
-      {/* Ping-Pong Marquee Keyframes */}
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes ping-pong-mini {
           0%, 15% { transform: translateX(0); }
@@ -156,41 +161,35 @@ export default function MiniPlayer() {
         .mask-linear-fade-mini { mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); }
       `}} />
 
-      <div className="fixed bottom-[75px] left-2 right-2 md:left-1/2 md:-translate-x-1/2 md:w-[500px] h-[64px] rounded-xl overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,0.5)] border border-white/10 z-[99] group cursor-pointer active:scale-[0.98] transition-transform">
+      {/* CHANGED: Solid background bg-[#1a1a1a] so it's not transparent */}
+      <div className="fixed bottom-[75px] left-2 right-2 md:left-1/2 md:-translate-x-1/2 md:w-[500px] h-[64px] rounded-xl overflow-hidden shadow-2xl border border-white/10 z-[99] bg-[#1a1a1a] group cursor-pointer active:scale-[0.98] transition-transform">
         
-        {/* Dynamic Blurred Background based on song cover */}
+        {/* Darkened Cover Blur - Made opacity-30 and bg-black/80 so it's heavily opaque */}
         <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-          <img src={coverImage} className="w-full h-full object-cover blur-[30px] saturate-200 opacity-60 scale-150" alt="bg" />
-          <div className="absolute inset-0 bg-black/50" />
+          <img src={coverImage} className="w-full h-full object-cover blur-[20px] opacity-30 scale-125" alt="bg" />
+          <div className="absolute inset-0 bg-black/80" />
         </div>
 
-        {/* Audio Element (Handles Next Song Automation) */}
         <audio 
           ref={audioRef} 
           src={audioUrl} 
           autoPlay={isPlaying} 
-          onEnded={playNext}     // AUTO-PLAYS NEXT SONG HERE!
-          onTimeUpdate={handleTimeUpdate} // UPDATES PROGRESS BAR
+          onEnded={playNext}
+          onTimeUpdate={handleTimeUpdate}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
         />
 
-        {/* Top Progress Bar */}
-        <div className="absolute top-0 left-0 w-full h-[3px] bg-white/10 z-20">
-          <div 
-            className="h-full bg-[#1ed760] transition-all duration-300 ease-linear rounded-r-full shadow-[0_0_10px_#1ed760]" 
-            style={{ width: `${progress}%` }} 
-          />
+        {/* CHANGED: absolute bottom-0 to move green line to bottom */}
+        <div className="absolute bottom-0 left-0 w-full h-[3px] bg-white/5 z-20">
+          <div className="h-full bg-[#1ed760] transition-all duration-300 ease-linear rounded-r-full shadow-[0_0_8px_#1ed760]" style={{ width: `${progress}%` }} />
         </div>
 
-        {/* Player Content */}
         <div className="relative z-10 flex items-center justify-between h-full px-3 w-full">
-          
-          {/* Left: Image & Info */}
           <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0 pr-2">
             <div className="relative w-11 h-11 flex-shrink-0 bg-white/10 rounded-md overflow-hidden shadow-lg border border-white/5">
               {loading ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
                   <Loader2 className="animate-spin text-[#1ed760]" size={20} />
                 </div>
               ) : null}
@@ -203,31 +202,19 @@ export default function MiniPlayer() {
             </div>
           </div>
 
-          {/* Right: Controls (Prev, Play/Pause, Next) */}
           <div className="flex items-center gap-4 flex-shrink-0 pl-2">
-            <button 
-              onClick={(e) => { e.stopPropagation(); playPrev(); }} 
-              className="text-white/70 hover:text-white active:scale-90 transition-all hidden sm:block"
-            >
+            <button onClick={(e) => { e.stopPropagation(); playPrev(); }} className="text-white/70 hover:text-white active:scale-90 transition-all hidden sm:block">
               <SkipBack size={22} fill="currentColor" />
             </button>
 
-            <button 
-              disabled={loading} 
-              onClick={(e) => { e.stopPropagation(); setIsPlaying(!isPlaying); }} 
-              className={`w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-90 ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10'}`}
-            >
+            <button disabled={loading} onClick={(e) => { e.stopPropagation(); setIsPlaying(!isPlaying); }} className={`w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-90 ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10'}`}>
               {isPlaying ? <Pause fill="white" size={24} /> : <Play fill="white" size={24} className="ml-1" />}
             </button>
 
-            <button 
-              onClick={(e) => { e.stopPropagation(); playNext(); }} 
-              className="text-white/70 hover:text-white active:scale-90 transition-all"
-            >
+            <button onClick={(e) => { e.stopPropagation(); playNext(); }} className="text-white/70 hover:text-white active:scale-90 transition-all">
               <SkipForward size={22} fill="currentColor" />
             </button>
           </div>
-
         </div>
       </div>
     </>

@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useAppContext } from "../context/AppContext";
 import { Play, Pause, SkipForward, SkipBack, Loader2, ChevronDown } from "lucide-react";
 
@@ -52,6 +52,7 @@ const formatTime = (time: number) => {
   return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
 };
 
+// PingPong Marquee Component
 const MiniPingPongMarquee = ({ text, isSub, isMain = false }: { text: string, isSub?: boolean, isMain?: boolean }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -90,18 +91,50 @@ const MiniPingPongMarquee = ({ text, isSub, isMain = false }: { text: string, is
 export default function Player() {
   const { currentSong, isPlaying, setIsPlaying, setCurrentSong, queue } = useAppContext();
   
-  const [audioUrl, setAudioUrl] = useState("");
+  const[audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [isExpanded, setIsExpanded] = useState(false); // Controls Main Player Overlay
+  const[isExpanded, setIsExpanded] = useState(false);
+  const [dominantColor, setDominantColor] = useState("rgb(20, 20, 20)");
   
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const title = currentSong ? (currentSong.title || currentSong.name || "Unknown") : "Loading...";
   const artists = currentSong ? getArtists(currentSong) : "Unknown Artist";
   const coverImage = currentSong ? getImageUrl(currentSong.image) : "";
+
+  // 1. DYNAMIC COLOR EXTRACTION VIA CANVAS
+  useEffect(() => {
+    if (!coverImage) return;
+    const img = new Image();
+    img.crossOrigin = "Anonymous"; // Prevents CORS Tainted Canvas issues
+    img.src = coverImage;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      try {
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let r = 0, g = 0, b = 0, count = 0;
+        // Sample every 40th pixel for performance
+        for (let i = 0; i < data.length; i += 160) {
+          r += data[i];
+          g += data[i + 1];
+          b += data[i + 2];
+          count++;
+        }
+        setDominantColor(`rgb(${Math.floor(r / count)}, ${Math.floor(g / count)}, ${Math.floor(b / count)})`);
+      } catch (e) {
+        console.warn("Canvas Tainted, using fallback dark theme", e);
+        setDominantColor("rgb(30, 30, 30)");
+      }
+    };
+  },[coverImage]);
 
   useEffect(() => {
     if (!currentSong) {
@@ -146,17 +179,14 @@ export default function Player() {
     }
   }, [isPlaying, audioUrl]);
 
-  // FEATURE 1: System Notification & Media Keys Integration
+  // 2. MEDIA SESSION METADATA & CONTROLS
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: decodeEntities(title),
         artist: decodeEntities(artists),
-        artwork: [
+        artwork:[
           { src: coverImage, sizes: '96x96', type: 'image/jpeg' },
-          { src: coverImage, sizes: '128x128', type: 'image/jpeg' },
-          { src: coverImage, sizes: '192x192', type: 'image/jpeg' },
-          { src: coverImage, sizes: '256x256', type: 'image/jpeg' },
           { src: coverImage, sizes: '512x512', type: 'image/jpeg' },
         ]
       });
@@ -166,7 +196,27 @@ export default function Player() {
       navigator.mediaSession.setActionHandler('previoustrack', playPrev);
       navigator.mediaSession.setActionHandler('nexttrack', playNext);
     }
-  }, [currentSong, title, artists, coverImage, isPlaying]);
+  }, [currentSong, title, artists, coverImage, setIsPlaying]);
+
+  // 3. MEDIA SESSION DURATION SYNC (For Notification Progress Bar)
+  const syncMediaSessionPosition = useCallback(() => {
+    if ('mediaSession' in navigator && audioRef.current && duration > 0) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: duration,
+          playbackRate: 1,
+          position: audioRef.current.currentTime,
+        });
+      } catch (err) {
+        // Ignore if duration is infinite or position is invalid
+      }
+    }
+  }, [duration]);
+
+  // Sync position on Play/Pause to keep the OS notification updated
+  useEffect(() => {
+    syncMediaSessionPosition();
+  }, [isPlaying, syncMediaSessionPosition]);
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
@@ -175,6 +225,11 @@ export default function Player() {
       setCurrentTime(current);
       setDuration(total || 0);
       if (total > 0) setProgress((current / total) * 100);
+      
+      // We only call setPositionState when the song first loads its duration to save performance
+      if (total > 0 && duration === 0) {
+        syncMediaSessionPosition();
+      }
     }
   };
 
@@ -182,7 +237,11 @@ export default function Player() {
     const val = parseFloat(e.target.value);
     setProgress(val);
     if (audioRef.current && duration > 0) {
-      audioRef.current.currentTime = (val / 100) * duration;
+      const newTime = (val / 100) * duration;
+      audioRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+      // Immediately sync OS notification when seeking
+      syncMediaSessionPosition();
     }
   };
 
@@ -223,7 +282,7 @@ export default function Player() {
         .animate-ping-pong-mini { animation: ping-pong-mini 5s ease-in-out infinite alternate; }
         .mask-linear-fade-mini { mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); }
         
-        /* Custom Seekbar styling */
+        /* Modern Apple-Music style Seekbar */
         input[type=range]::-webkit-slider-thumb {
           -webkit-appearance: none;
           height: 12px; width: 12px;
@@ -231,6 +290,7 @@ export default function Player() {
           background: #ffffff;
           cursor: pointer;
           margin-top: -4px;
+          box-shadow: 0 0 4px rgba(0,0,0,0.5);
         }
         input[type=range]::-webkit-slider-runnable-track {
           width: 100%; height: 4px;
@@ -246,123 +306,139 @@ export default function Player() {
         autoPlay={isPlaying} 
         onEnded={playNext}
         onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
       />
 
-      {/* FEATURE 2: MAIN PLAYER OVERLAY */}
-      <div className={`fixed inset-0 z-[100] bg-black text-white transition-transform duration-500 ease-in-out ${isExpanded ? "translate-y-0" : "translate-y-full"} overflow-hidden flex flex-col`}>
-        {/* Dynamic Background */}
-        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-          <div className="w-full h-full bg-center bg-cover opacity-60" style={{ backgroundImage: `url(${coverImage})`, filter: 'blur(50px) saturate(150%)', transform: 'scale(1.2)' }} />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/60 to-black" />
-        </div>
-
-        {/* Header */}
-        <div className="relative z-10 flex items-center justify-between px-6 pt-12 pb-4">
-          <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white/80 hover:text-white transition-colors rounded-full active:scale-90">
-            <ChevronDown size={32} />
-          </button>
-          <span className="text-xs font-semibold tracking-widest text-white/70 uppercase">Now Playing</span>
-          <div className="w-10"></div> {/* Spacer to center the header text */}
-        </div>
-
-        {/* Content */}
-        <div className="relative z-10 flex flex-col flex-1 px-8 pb-12 w-full max-w-md mx-auto justify-center">
-          {/* Main Image */}
-          <div className="relative w-full aspect-square rounded-xl overflow-hidden shadow-2xl mb-10 border border-white/10">
-            {loading ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                <Loader2 className="animate-spin text-[#1ed760]" size={40} />
-              </div>
-            ) : null}
-            <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
+      {/* --- MAIN PLAYER OVERLAY --- */}
+      <div 
+        className={`fixed inset-0 z-[100] text-white transition-transform duration-500 ease-out ${isExpanded ? "translate-y-0" : "translate-y-full"}`}
+        style={{
+          background: `linear-gradient(145deg, ${dominantColor} 0%, #000000 80%)`,
+        }}
+      >
+        <div className="flex flex-col h-full max-h-screen pt-8 pb-10 px-6 sm:px-10 max-w-lg mx-auto overflow-hidden">
+          
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4 flex-shrink-0 pt-safe">
+            <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white/80 hover:text-white transition-colors rounded-full active:scale-90">
+              <ChevronDown size={32} />
+            </button>
+            <span className="text-xs font-semibold tracking-widest text-white/70 uppercase">Now Playing</span>
+            <div className="w-10"></div> {/* Spacer */}
           </div>
 
-          {/* Song Info */}
-          <div className="flex flex-col mb-8 w-full overflow-hidden">
-            <MiniPingPongMarquee text={title} isMain={true} />
-            <MiniPingPongMarquee text={artists} isSub={true} isMain={true} />
-          </div>
-
-          {/* Seek Bar */}
-          <div className="w-full flex flex-col gap-2 mb-8 group">
-            <input 
-              type="range" 
-              min="0" max="100" 
-              value={progress} 
-              onChange={handleSeek}
-              className="w-full appearance-none bg-transparent focus:outline-none"
-              style={{
-                background: `linear-gradient(to right, white ${progress}%, rgba(255,255,255,0.2) ${progress}%)`
-              }}
-            />
-            <div className="flex justify-between text-xs font-medium text-white/50">
-              <span>{formatTime(currentTime)}</span>
-              <span>{formatTime(duration)}</span>
+          {/* Dynamic Scaling Image Container */}
+          <div className="flex-1 min-h-0 flex items-center justify-center py-6">
+            <div className="relative w-full max-w-[340px] aspect-square rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] transition-all duration-300">
+              {loading && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-md">
+                  <Loader2 className="animate-spin text-[#1ed760]" size={40} />
+                </div>
+              )}
+              <img src={coverImage} alt="cover" className={`w-full h-full object-cover transition-transform duration-500 ${isPlaying ? 'scale-100' : 'scale-[0.97]'}`} />
             </div>
           </div>
 
-          {/* Controls */}
-          <div className="flex items-center justify-center gap-8">
-            <button onClick={playPrev} className="text-white hover:scale-110 active:scale-95 transition-all">
-              <SkipBack size={36} fill="currentColor" />
-            </button>
-            <button 
-              disabled={loading} 
-              onClick={() => setIsPlaying(!isPlaying)} 
-              className={`w-20 h-20 flex items-center justify-center rounded-full bg-white text-black hover:scale-105 active:scale-95 transition-all shadow-xl ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isPlaying ? <Pause fill="black" size={32} /> : <Play fill="black" size={32} className="ml-2" />}
-            </button>
-            <button onClick={playNext} className="text-white hover:scale-110 active:scale-95 transition-all">
-              <SkipForward size={36} fill="currentColor" />
-            </button>
+          {/* Bottom Controls Area (Fixed spacing) */}
+          <div className="flex flex-col flex-shrink-0 w-full mb-safe">
+            
+            {/* Song Info */}
+            <div className="flex flex-col mb-6 w-full overflow-hidden">
+              <MiniPingPongMarquee text={title} isMain={true} />
+              <div className="mt-1">
+                <MiniPingPongMarquee text={artists} isSub={true} isMain={true} />
+              </div>
+            </div>
+
+            {/* Seek Bar */}
+            <div className="w-full flex flex-col gap-3 mb-8">
+              <input 
+                type="range" 
+                min="0" max="100" 
+                value={progress} 
+                onChange={handleSeek}
+                className="w-full appearance-none bg-transparent focus:outline-none h-4"
+                style={{
+                  background: `linear-gradient(to right, white ${progress}%, rgba(255,255,255,0.2) ${progress}%)`,
+                  backgroundSize: '100% 4px',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'center'
+                }}
+              />
+              <div className="flex justify-between text-[13px] font-medium text-white/50">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
+
+            {/* Playback Controls */}
+            <div className="flex items-center justify-center gap-8 md:gap-10 pb-4">
+              <button onClick={playPrev} className="text-white/80 hover:text-white hover:scale-110 active:scale-95 transition-all">
+                <SkipBack size={38} fill="currentColor" stroke="currentColor" />
+              </button>
+              
+              <button 
+                disabled={loading} 
+                onClick={() => setIsPlaying(!isPlaying)} 
+                className={`w-20 h-20 flex items-center justify-center rounded-full bg-white text-black hover:scale-105 active:scale-95 transition-all shadow-xl ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {/* 4. OPTICALLY CENTERED SVG PLAY BUTTON */}
+                {isPlaying ? (
+                  <Pause fill="currentColor" stroke="currentColor" size={32} />
+                ) : (
+                  <Play fill="currentColor" stroke="currentColor" size={34} className="translate-x-[2px]" />
+                )}
+              </button>
+              
+              <button onClick={playNext} className="text-white/80 hover:text-white hover:scale-110 active:scale-95 transition-all">
+                <SkipForward size={38} fill="currentColor" stroke="currentColor" />
+              </button>
+            </div>
+            
           </div>
         </div>
       </div>
 
 
-      {/* MINI PLAYER (Visible when Not Expanded) */}
+      {/* --- MINI PLAYER --- */}
       <div 
         onClick={() => setIsExpanded(true)}
-        className={`fixed bottom-[75px] left-2 right-2 md:left-1/2 md:-translate-x-1/2 md:w-[500px] h-[64px] rounded-xl overflow-hidden shadow-2xl border border-white/5 z-[99] bg-black group cursor-pointer active:scale-[0.98] transition-all duration-300 ${isExpanded ? 'opacity-0 pointer-events-none scale-90' : 'opacity-100 scale-100'}`}
+        className={`fixed bottom-[75px] left-2 right-2 md:left-1/2 md:-translate-x-1/2 md:w-[500px] h-[64px] rounded-xl overflow-hidden shadow-2xl border border-white/10 z-[99] cursor-pointer active:scale-[0.98] transition-all duration-300 ${isExpanded ? 'opacity-0 pointer-events-none scale-95' : 'opacity-100 scale-100'}`}
+        style={{ background: dominantColor }}
       >
-        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-          <div className="w-full h-full bg-center bg-cover" style={{ backgroundImage: `url(${coverImage})`, filter: 'blur(30px) saturate(200%)', transform: 'scale(4)' }} />
-          <div className="absolute inset-0 bg-black/40" />
-        </div>
+        <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none" />
 
         <div className="absolute bottom-0 left-0 w-full h-[3px] bg-black/20 z-20">
-          <div className="h-full bg-[#1ed760] transition-all duration-300 ease-linear rounded-r-full shadow-[0_0_8px_#1ed760]" style={{ width: `${progress}%` }} />
+          <div className="h-full bg-white transition-all duration-300 ease-linear rounded-r-full shadow-[0_0_8px_white]" style={{ width: `${progress}%` }} />
         </div>
 
         <div className="relative z-10 flex items-center justify-between h-full px-3 w-full pb-[3px]">
           <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0 pr-2">
-            <div className="relative w-11 h-11 flex-shrink-0 bg-white/10 rounded-md overflow-hidden shadow-lg border border-white/5">
-              {loading ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                  <Loader2 className="animate-spin text-[#1ed760]" size={20} />
+            <div className="relative w-11 h-11 flex-shrink-0 rounded-md overflow-hidden shadow-md">
+              {loading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                  <Loader2 className="animate-spin text-white" size={20} />
                 </div>
-              ) : null}
+              )}
               <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
             </div>
 
-            <div className="flex flex-col overflow-hidden w-full gap-[1px] justify-center">
+            <div className="flex flex-col overflow-hidden w-full gap-[2px] justify-center">
               <MiniPingPongMarquee text={title} />
               <MiniPingPongMarquee text={artists} isSub={true} />
             </div>
           </div>
 
-          <div className="flex items-center gap-4 flex-shrink-0 pl-2">
-            <button onClick={(e) => { e.stopPropagation(); playPrev(); }} className="text-white/80 hover:text-white active:scale-90 transition-all hidden sm:block">
-              <SkipBack size={24} fill="currentColor" />
+          <div className="flex items-center gap-3 flex-shrink-0 pl-2">
+            <button disabled={loading} onClick={(e) => { e.stopPropagation(); setIsPlaying(!isPlaying); }} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-all active:scale-90">
+              {isPlaying ? (
+                <Pause fill="white" stroke="white" size={24} />
+              ) : (
+                <Play fill="white" stroke="white" size={24} className="translate-x-[2px]" />
+              )}
             </button>
-
-            <button disabled={loading} onClick={(e) => { e.stopPropagation(); setIsPlaying(!isPlaying); }} className={`w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-90 ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10'}`}>
-              {isPlaying ? <Pause fill="white" size={26} /> : <Play fill="white" size={26} className="ml-1" />}
-            </button>
-
-            <button onClick={(e) => { e.stopPropagation(); playNext(); }} className="text-white/80 hover:text-white active:scale-90 transition-all">
-              <SkipForward size={24} fill="currentColor" />
+            <button onClick={(e) => { e.stopPropagation(); playNext(); }} className="w-10 h-10 flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 rounded-full active:scale-90 transition-all">
+              <SkipForward size={24} fill="currentColor" stroke="currentColor" />
             </button>
           </div>
         </div>

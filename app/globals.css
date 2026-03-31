@@ -63,5 +63,5 @@ body {
  */
 @keyframes ping-pong-scroll {
   0%, 15% { transform: translate3d(0, 0, 0); }
-  85%, 100% { transform: translate3d(calc(128px - 100%), 0, 0); }
+  85%, 100% { transform: translate3d(calc(144px - 100%), 0, 0); } /* Updated to 144px */
 }

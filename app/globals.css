@@ -14,21 +14,20 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #05050A; /* Premium Deep Space color */
+    --background: #07070C; 
     --foreground: #ededed;
   }
 }
 
 body {
-  background-color: #05050A;
+  background-color: #07070C;
   color: #ffffff;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Stops scroll rubber-banding artifacting */
   overscroll-behavior-y: none;
 }
 
-/* Super Smooth Scrollbar hiding with native touch handling */
+/* Super Smooth Scrollbar hiding */
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { 
   -ms-overflow-style: none; 
@@ -36,50 +35,33 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Hardware accelerated scroll containers to fix scroll jank */
-.hardware-scroll {
-  transform: translateZ(0);
-  will-change: transform;
-}
-
-/* Premium Image Zoom Curve */
-.ease-out-expo {
-  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+/* MAGIC FIX FOR SCROLL LAG: Tells browser to ignore rendering off-screen elements */
+.contain-content {
+  contain: layout paint;
 }
 
 /* ==================================================== */
-/* CONTINUOUS ALWAYS-ON MARQUEE (GPU ACCELERATED)       */
+/* MATHEMATICALLY PERFECT & LAG-FREE MARQUEE            */
 /* ==================================================== */
 
-.marquee-container {
-  width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  position: relative;
-  /* Mask edges for a clean fade effect on text */
-  mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
-  -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
-}
-
-.marquee-text-active {
-  display: block;
+.animate-ping-pong {
+  display: inline-block;
   width: max-content;
   min-width: 100%;    
-  text-align: center;
-  
-  /* ALWAYS ANIMATING! Smooth continuous loop */
-  animation: ping-pong-scroll 4.5s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
-  
-  /* Forces rendering entirely onto the GPU, zero main-thread calculation */
-  will-change: transform;
+  text-align: left;
+  /* Uses 'linear' for constant smooth speed, no slow-downs at the edges */
+  animation-name: ping-pong-scroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
 }
 
 /* 
- * FLAWLESS CSS MATH: 
- * If text is short (<128px): min() forces 0px. Text stays perfectly centered and still.
- * If text is long  (>128px): calculates exact overflow amount and translates flawlessly.
+ * 128px is the width of the card. 
+ * The math dynamically calculates the perfect overflow!
+ * Uses 0-15% and 85-100% to create natural visual pauses at each end.
  */
 @keyframes ping-pong-scroll {
   0%, 15% { transform: translate3d(0, 0, 0); }
-  85%, 100% { transform: translate3d(min(0px, calc(128px - 100%)), 0, 0); }
+  85%, 100% { transform: translate3d(calc(128px - 100%), 0, 0); }
 }

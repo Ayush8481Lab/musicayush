@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState, Suspense, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Play, ArrowLeft, Loader2, Shuffle, Share2, Info, BadgeAlert, Heart, MoreHorizontal, Clock } from "lucide-react";
+import { Play, ArrowLeft, Loader2, Shuffle, Share2, Info, BadgeAlert, Heart, Clock } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 
 // --- UTILITIES ---
@@ -81,7 +81,7 @@ const PingPongMarquee = ({ text, isPlaying, isSub }: { text: string, isPlaying?:
   if (isPlaying && !isSub) textColor = "text-[#1ed760]";
   else if (isSub) textColor = "text-neutral-400 group-hover:text-white";
 
-  const textSize = isSub ? "text-[14px] font-normal" : "text-[16px] font-medium tracking-tight";
+  const textSize = isSub ? "text-[13px] sm:text-[14px] font-normal" : "text-[15px] sm:text-[16px] font-medium tracking-tight";
 
   return (
     <div ref={containerRef} className="relative overflow-hidden whitespace-nowrap w-full mask-linear-fade">
@@ -106,12 +106,12 @@ const PlayingVisualizer = () => (
 );
 
 const PlaylistSkeleton = () => (
-  <div className="min-h-screen bg-[#121212] p-6 md:p-8 pt-24 animate-pulse">
+  <div className="min-h-screen bg-[#121212] p-6 md:p-8 pt-24 animate-pulse select-none">
     <div className="flex flex-col md:flex-row gap-6 items-center md:items-end mb-8">
-      <div className="w-56 h-56 md:w-64 md:h-64 bg-white/5 shadow-2xl rounded-lg" />
+      <div className="w-40 h-40 md:w-64 md:h-64 bg-white/5 shadow-2xl rounded-lg" />
       <div className="flex flex-col gap-4 w-full max-w-xl items-center md:items-start">
         <div className="w-20 h-4 bg-white/5 rounded-full" />
-        <div className="w-3/4 h-16 bg-white/5 rounded-xl" />
+        <div className="w-3/4 h-12 md:h-16 bg-white/5 rounded-xl" />
         <div className="w-1/2 h-4 bg-white/5 rounded-full" />
       </div>
     </div>
@@ -132,7 +132,7 @@ function PlaylistContent() {
   const { currentSong, setCurrentSong, setIsPlaying, setQueue } = useAppContext() as any;
   
   const [playlist, setPlaylist] = useState<any>(null);
-  const [page, setPage] = useState(1);
+  const[page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const[loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -140,23 +140,20 @@ function PlaylistContent() {
   // UI States
   const [headerOpacity, setHeaderOpacity] = useState(0);
   const[showStickyPlay, setShowStickyPlay] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
+  const[isLiked, setIsLiked] = useState(false);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  // Smooth Scroll Listener for Pro-Level Opacity Transition
   useEffect(() => {
     let ticking = false;
     const handleScroll = () => {
       if (!ticking) {
         window.requestAnimationFrame(() => {
           const scrollY = window.scrollY;
-          // Calculate pure gradient opacity (fully dark at 300px)
-          const opacity = Math.min(scrollY / 300, 1);
+          const opacity = Math.min(scrollY / 250, 1);
           setHeaderOpacity(opacity);
-          
-          // Trigger the small play button & title drop-in exactly when massive banner leaves
-          setShowStickyPlay(scrollY > 380);
+          // Show sticky title & banner exactly when massive banner leaves
+          setShowStickyPlay(scrollY > 300);
           ticking = false;
         });
         ticking = true;
@@ -166,7 +163,6 @@ function PlaylistContent() {
     return () => window.removeEventListener("scroll", handleScroll);
   },[]);
 
-  // Fetch Logic
   useEffect(() => {
     if (!link) return;
     const fetchPlaylist = async () => {
@@ -200,7 +196,6 @@ function PlaylistContent() {
     fetchPlaylist();
   }, [link, page]);
 
-  // Infinite Scroll Hook
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (loading || loadingMore || !hasMore) return;
     if (observerRef.current) observerRef.current.disconnect();
@@ -210,7 +205,6 @@ function PlaylistContent() {
     if (node) observerRef.current.observe(node);
   },[loading, loadingMore, hasMore]);
 
-  // Actions
   const handlePlaySong = useCallback((song: any) => {
     setCurrentSong(song);
     setIsPlaying(true);
@@ -243,7 +237,6 @@ function PlaylistContent() {
     }
   }, [playlist?.name, playlist?.title]);
 
-  // Memoized Tracklist for 120fps Scrolling
   const currentSongId = currentSong?.id;
   const renderedSongs = useMemo(() => {
     return playlist?.songs?.map((song: any, index: number) => {
@@ -258,24 +251,20 @@ function PlaylistContent() {
           key={`${song.id}-${index}`} 
           ref={isLastItem ? lastElementRef : null}
           onClick={() => handlePlaySong(song)} 
-          // Professional CSS Grid structure replacing flex for perfect table alignment
-          className={`grid grid-cols-[40px_1fr_auto] md:grid-cols-[48px_1fr_120px_100px] gap-3 md:gap-4 items-center p-2 rounded-md cursor-pointer group transition-colors duration-200 ${isCurrentPlaying ? "bg-white/10" : "hover:bg-white/10"}`}
+          className={`grid grid-cols-[36px_1fr_auto] md:grid-cols-[48px_1fr_100px_80px] gap-2 md:gap-4 items-center p-2 rounded-md cursor-pointer group transition-colors duration-200 ${isCurrentPlaying ? "bg-white/10" : "hover:bg-white/10"}`}
         >
-          
-          {/* Column 1: Index / Play Icon / EQ */}
           <div className="flex justify-center items-center h-full relative text-neutral-400">
             {isCurrentPlaying ? (
               <PlayingVisualizer />
             ) : (
-              <span className="text-[16px] font-normal group-hover:opacity-0 transition-opacity">{index + 1}</span>
+              <span className="text-[14px] md:text-[16px] font-normal group-hover:opacity-0 transition-opacity">{index + 1}</span>
             )}
             <Play fill="white" size={16} className={`text-white absolute opacity-0 ${!isCurrentPlaying && 'group-hover:opacity-100'} transition-opacity`} />
           </div>
           
-          {/* Column 2: Title & Artist (with Image) */}
           <div className="flex items-center gap-3 overflow-hidden pr-2">
-            <div className="relative w-10 h-10 md:w-12 md:h-12 flex-shrink-0 bg-neutral-800 rounded shadow-md overflow-hidden">
-              <img src={getImageUrl(song.image)} alt={decodeEntities(songTitle)} className="w-full h-full object-cover" />
+            <div className="relative w-10 h-10 md:w-12 md:h-12 flex-shrink-0 bg-neutral-800 rounded shadow-sm overflow-hidden pointer-events-none">
+              <img src={getImageUrl(song.image)} alt="track" className="w-full h-full object-cover" draggable={false} />
             </div>
             <div className="flex-1 min-w-0 flex flex-col justify-center overflow-hidden">
               <div className="flex items-center gap-2">
@@ -286,33 +275,28 @@ function PlaylistContent() {
             </div>
           </div>
 
-          {/* Column 3: Plays (Desktop Only) */}
-          <div className="hidden md:flex items-center text-[14px] text-neutral-400 group-hover:text-white transition-colors">
+          <div className="hidden md:flex items-center text-[13px] md:text-[14px] text-neutral-400 group-hover:text-white transition-colors">
             {plays}
           </div>
           
-          {/* Column 4: Actions & Duration */}
-          <div className="flex items-center justify-end gap-4 md:gap-6 pr-2 md:pr-4">
+          <div className="flex items-center justify-end gap-3 md:gap-6 pr-2 md:pr-4">
              <button className="text-neutral-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block">
                <Heart size={18} />
              </button>
-            <span className={`text-[14px] tabular-nums font-medium ${isCurrentPlaying ? "text-[#1ed760]" : "text-neutral-400"}`}>
+            <span className={`text-[13px] md:text-[14px] tabular-nums font-medium ${isCurrentPlaying ? "text-[#1ed760]" : "text-neutral-400"}`}>
               {formatDuration(song.duration)}
             </span>
-            <button className="text-neutral-400 hover:text-white opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-              <MoreHorizontal size={20} />
-            </button>
           </div>
 
         </div>
       );
     });
-  }, [playlist?.songs, currentSongId, lastElementRef, handlePlaySong]);
+  },[playlist?.songs, currentSongId, lastElementRef, handlePlaySong]);
 
   if (loading && page === 1) return <PlaylistSkeleton />;
   if (!playlist) {
     return (
-      <div className="flex flex-col h-screen items-center justify-center bg-[#121212] text-white gap-4">
+      <div className="flex flex-col h-screen items-center justify-center bg-[#121212] text-white gap-4 select-none">
         <Info size={48} className="text-white/30" />
         <p className="text-xl font-bold">Playlist not found</p>
         <button onClick={() => router.back()} className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-full font-bold backdrop-blur-md transition-all">Go Back</button>
@@ -322,18 +306,40 @@ function PlaylistContent() {
 
   const coverImage = getImageUrl(playlist.image);
   const title = decodeEntities(playlist.name || playlist.title);
-  const description = decodeEntities(playlist.description || "");
+  const rawDesc = decodeEntities(playlist.description || "");
   const playlistArtists = decodeEntities(getArtists(playlist));
+  
+  // Smart Description formatting (Separates Artists on Cover)
+  let mainDesc = rawDesc;
+  let coverArtistsDesc = "";
+  if (rawDesc.includes("Artists on Cover:")) {
+    const parts = rawDesc.split("Artists on Cover:");
+    mainDesc = parts[0].trim();
+    coverArtistsDesc = "Artists on Cover: " + parts[1].trim();
+  }
+
+  // Smart Total Duration Formatting (e.g., "1 hr 15 min")
   const totalSeconds = playlist.songs?.reduce((acc: number, song: any) => acc + (song.duration || 0), 0);
-  const totalDurationStr = totalSeconds ? `${Math.floor(totalSeconds / 60)} min` : "";
+  let totalDurationStr = "";
+  if (totalSeconds) {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    totalDurationStr = h > 0 ? `${h} hr ${m} min` : `${m} min`;
+  }
 
   return (
-    <div className="pb-40 bg-[#121212] min-h-screen relative text-white selection:bg-[#1ed760]/30 font-sans">
+    // select-none and touch-callout block zooming, text selection, and image preview globally
+    <div className="pb-40 bg-[#121212] min-h-screen relative text-white select-none [-webkit-touch-callout:none] font-sans">
 
       <style dangerouslySetInnerHTML={{__html: `
-        @keyframes ping-pong { 0%, 15% { transform: translateX(0); } 85%, 100% { transform: translateX(var(--overflow-dist)); } }
-        .animate-ping-pong { animation: ping-pong 6s ease-in-out infinite alternate; }
+        /* SLOW, READABLE MARQUEE WITH PAUSES */
+        @keyframes ping-pong { 
+          0%, 10% { transform: translateX(0); } 
+          90%, 100% { transform: translateX(var(--overflow-dist)); } 
+        }
+        .animate-ping-pong { animation: ping-pong 12s ease-in-out infinite alternate; }
         .mask-linear-fade { mask-image: linear-gradient(to right, transparent, black 2%, black 98%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 2%, black 98%, transparent); }
+        
         @keyframes eq { 0%, 100% { height: 4px; } 50% { height: 16px; } }
         .eq-bar-1 { animation: eq 1s ease-in-out infinite 0s; }
         .eq-bar-2 { animation: eq 1s ease-in-out infinite 0.2s; }
@@ -341,18 +347,20 @@ function PlaylistContent() {
         .eq-bar-4 { animation: eq 1s ease-in-out infinite 0.1s; }
       `}} />
 
-      {/* 1. PROFESSIONAL TOP GRADIENT FADE */}
-      {/* Contained strictly to the top 450px so it perfectly fades into #121212 before the tracklist */}
-      <div className="absolute top-0 left-0 w-full h-[450px] pointer-events-none overflow-hidden z-0 select-none">
+      {/* 1. LIGHTER VIBRANT TOP BACKGROUND */}
+      <div className="absolute top-0 left-0 w-full h-[450px] md:h-[500px] pointer-events-none overflow-hidden z-0 select-none">
+        {/* Lighter overlay base, no heavy black */}
         <div className="absolute inset-0 bg-[#121212]" />
-        <img src={coverImage} alt="bg" className="absolute inset-0 w-full h-full object-cover blur-[60px] saturate-[150%] opacity-50 transform-gpu" />
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#121212]/80 to-[#121212]" />
+        {/* Increased opacity to 85% for much stronger color extraction */}
+        <img src={coverImage} alt="bg" className="absolute inset-0 w-full h-full object-cover blur-[80px] saturate-[200%] opacity-85 transform-gpu" draggable={false} />
+        {/* Seamless, slightly softer fade into dark background */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-[#121212]/60 to-[#121212]" />
       </div>
 
       {/* 2. DYNAMIC STICKY HEADER */}
       <nav 
-        className="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 py-4 transition-all duration-100"
-        style={{ backgroundColor: `rgba(20, 20, 20, ${headerOpacity})`, borderBottom: `1px solid rgba(255,255,255, ${headerOpacity * 0.05})` }}
+        className="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 py-3 transition-all duration-100"
+        style={{ backgroundColor: `rgba(18, 18, 18, ${headerOpacity})`, borderBottom: `1px solid rgba(255,255,255, ${headerOpacity * 0.05})` }}
       >
         <div className="flex items-center gap-4 flex-1 min-w-0">
           <button onClick={() => router.back()} className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md transition-all text-white active:scale-90 z-50 flex-shrink-0">
@@ -360,36 +368,39 @@ function PlaylistContent() {
           </button>
           
           <div className={`flex items-center gap-3 overflow-hidden transition-all duration-300 flex-1 min-w-0 ${showStickyPlay ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"}`}>
-            <button onClick={handlePlayPlaylist} className="w-11 h-11 bg-[#1ed760] text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform flex-shrink-0 shadow-lg">
-               <Play fill="black" size={20} className="ml-1" />
-            </button>
+            {/* Swapped Play button for Playlist Banner thumbnail */}
+            <img src={coverImage} alt="thumb" className="w-10 h-10 rounded-md object-cover shadow-md flex-shrink-0 pointer-events-none" draggable={false} />
             <PingPongMarquee text={title} />
           </div>
         </div>
       </nav>
 
-      {/* 3. HERO BANNER SECTION */}
-      <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 px-5 md:px-8 pt-28 md:pt-36 pb-6">
-        <div className="w-56 h-56 md:w-60 md:h-60 flex-shrink-0 shadow-[0_8px_40px_rgba(0,0,0,0.5)] bg-neutral-800 rounded-md overflow-hidden">
-          <img src={coverImage} alt={title} className="w-full h-full object-cover" />
+      {/* 3. RESPONSIVE HERO BANNER SECTION */}
+      <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-5 md:gap-8 px-5 md:px-8 pt-24 md:pt-32 pb-4">
+        {/* Smaller on mobile, large on desktop */}
+        <div className="w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 lg:w-60 lg:h-60 flex-shrink-0 shadow-[0_8px_40px_rgba(0,0,0,0.5)] bg-neutral-800 rounded-md overflow-hidden pointer-events-none">
+          <img src={coverImage} alt="cover" className="w-full h-full object-cover" draggable={false} />
         </div>
         
-        <div className="flex flex-col items-center md:items-start text-center md:text-left mt-2 md:mt-0 w-full flex-1 min-w-0">
-          <span className="text-sm font-bold text-white mb-2 tracking-wide hidden md:block">
+        <div className="flex flex-col items-center md:items-start text-center md:text-left mt-3 md:mt-0 w-full flex-1 min-w-0">
+          <span className="text-xs sm:text-sm font-bold text-white mb-1.5 tracking-wide hidden md:block">
             {playlist.type === "playlist" ? "Playlist" : "Album"}
           </span>
-          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-[6rem] font-black tracking-tighter mb-4 line-clamp-3 leading-[1.05] pb-1">
+          {/* Responsive Typography */}
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[5.5rem] font-black tracking-tighter mb-3 line-clamp-3 leading-[1.1] pb-1">
             {title}
           </h1>
-          {description && (
-            <p className="text-[14px] text-neutral-300 mb-3 max-w-3xl line-clamp-2 font-medium">
-              {description}
-            </p>
+          
+          {/* Smart Description formatting */}
+          {(mainDesc || coverArtistsDesc) && (
+            <div className="text-[13px] sm:text-[14px] text-neutral-300 mb-3 max-w-2xl font-medium px-2 md:px-0">
+              {mainDesc && <span className="block mb-0.5 line-clamp-2">{mainDesc}</span>}
+              {coverArtistsDesc && <span className="block text-white/60 line-clamp-1">{coverArtistsDesc}</span>}
+            </div>
           )}
           
-          <div className="flex items-center flex-wrap justify-center md:justify-start gap-1.5 text-[14px] font-medium text-white mt-1">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#1ed760] to-blue-500 hidden sm:block" />
-            <span className="font-bold hover:underline cursor-pointer tracking-wide">{playlistArtists}</span>
+          <div className="flex items-center flex-wrap justify-center md:justify-start gap-1.5 text-[13px] sm:text-[14px] font-medium text-white mt-1">
+            <span className="font-bold tracking-wide">{playlistArtists}</span>
             <span className="text-neutral-400 hidden sm:inline">•</span>
             <span className="text-neutral-400">{playlist.songCount || playlist.songs?.length} songs,</span>
             {totalDurationStr && (
@@ -401,35 +412,31 @@ function PlaylistContent() {
 
       {/* 4. MAIN ACTION BAR */}
       <div className="relative z-10 px-5 md:px-8 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-5 md:gap-6">
           <button onClick={handlePlayPlaylist} className="w-14 h-14 md:w-16 md:h-16 bg-[#1ed760] hover:bg-[#3be477] text-black rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg">
             <Play fill="black" size={28} className="ml-1" />
           </button>
           
           <button onClick={handleShuffle} className="text-neutral-400 hover:text-white transition-colors active:scale-90" title="Shuffle">
-            <Shuffle size={32} />
+            <Shuffle size={28} className="md:w-8 md:h-8" />
           </button>
           
           <button onClick={() => setIsLiked(!isLiked)} className={`transition-colors active:scale-90 ${isLiked ? "text-[#1ed760]" : "text-neutral-400 hover:text-white"}`}>
-            <Heart size={34} fill={isLiked ? "#1ed760" : "none"} strokeWidth={1.5} />
+            <Heart size={30} fill={isLiked ? "#1ed760" : "none"} strokeWidth={1.5} className="md:w-[34px] md:h-[34px]" />
           </button>
           
           <button onClick={handleShare} className="text-neutral-400 hover:text-white transition-colors active:scale-90" title="Share">
-             <Share2 size={28} />
-          </button>
-
-          <button className="text-neutral-400 hover:text-white transition-colors active:scale-90">
-            <MoreHorizontal size={32} />
+             <Share2 size={26} className="md:w-7 md:h-7" />
           </button>
         </div>
       </div>
 
       {/* 5. TABLE HEADER (CSS GRID ALIGNED) */}
-      <div className="relative z-10 px-4 md:px-8 mt-4 hidden md:grid grid-cols-[48px_1fr_120px_100px] gap-4 items-center text-[13px] font-medium uppercase tracking-widest text-neutral-400 border-b border-white/10 pb-2 mb-4 sticky top-[72px] bg-[#121212]/95 backdrop-blur-md">
+      <div className="relative z-10 px-4 md:px-8 mt-2 hidden md:grid grid-cols-[48px_1fr_100px_80px] gap-4 items-center text-[12px] md:text-[13px] font-medium uppercase tracking-widest text-neutral-400 border-b border-white/10 pb-2 mb-3 sticky top-[68px] bg-[#121212]/95 backdrop-blur-md">
         <div className="text-center">#</div>
         <div>Title</div>
         <div>Plays</div>
-        <div className="text-right pr-10"><Clock size={16} className="inline-block" /></div>
+        <div className="text-right pr-6"><Clock size={16} className="inline-block" /></div>
       </div>
 
       {/* 6. TRACKLIST */}
@@ -445,7 +452,7 @@ function PlaylistContent() {
       )}
 
       {!hasMore && playlist.songs?.length > 0 && (
-        <div className="px-5 md:px-12 py-16 mt-8 flex flex-col gap-1 text-neutral-500 text-[13px] font-medium">
+        <div className="px-5 md:px-12 py-16 mt-6 flex flex-col gap-1 text-neutral-500 text-[12px] md:text-[13px] font-medium border-t border-white/5">
           <p>{playlist.songs.length} tracks • {totalDurationStr}</p>
           {playlist.copyright && <p className="max-w-2xl mt-2">{decodeEntities(playlist.copyright)}</p>}
         </div>

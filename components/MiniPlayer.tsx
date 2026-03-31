@@ -101,10 +101,7 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
           else if (rTitle.includes(tTitle)) score += 50; 
       }
       
-      if (score > highestScore) { 
-          highestScore = score; 
-          bestMatch = track; 
-      }
+      if (score > highestScore) { highestScore = score; bestMatch = track; }
   });
 
   if (highestScore > 0) return bestMatch;
@@ -235,7 +232,7 @@ export default function Player() {
     fetchSpotifyMatch();
   },[currentSong, title, artists]);
 
-  // Fetch Lyrics and Canvas with Jina Fallback
+  // Fetch Lyrics and Canvas with Deep Jina Fallback
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
 
@@ -257,30 +254,33 @@ export default function Player() {
         const targetCanvasUrl = `https://ayush-gamma-coral.vercel.app/api/canvas?trackId=${spotifyId}`;
         
         try {
-          // Try Direct Request First
+          // Attempt direct fetch first
           const res = await fetch(targetCanvasUrl);
+          if (!res.ok) throw new Error("CORS or Server Error");
           canvasJson = await res.json();
         } catch (e) {
-          // If Direct Fails, Fallback to r.jina.ai as requested
+          // Fallback to Jina Proxy
           try {
             const jinaRes = await fetch(`https://r.jina.ai/${targetCanvasUrl}`, {
               headers: { Accept: "application/json" }
             });
             const jinaData = await jinaRes.json();
             
-            // Extract the actual JSON from the jina proxy response string
-            const proxyContent = jinaData?.data?.content || jinaData?.content || "";
-            const jsonStrMatch = proxyContent.match(/\{[\s\S]*\}/);
-            
-            if (jsonStrMatch) {
-              canvasJson = JSON.parse(jsonStrMatch[0]);
+            // Jina might return the JSON directly, or wrapped in a markdown payload
+            if (jinaData && jinaData.canvasesList) {
+              canvasJson = jinaData;
+            } else {
+              const proxyContent = typeof jinaData === 'string' ? jinaData : (jinaData?.data?.content || jinaData?.content || jinaData?.text || "");
+              const jsonStrMatch = proxyContent.match(/\{[\s\S]*\}/);
+              if (jsonStrMatch) {
+                canvasJson = JSON.parse(jsonStrMatch[0]);
+              }
             }
           } catch (fallbackError) {
-            console.error("Both direct and jina fetches failed.");
+            console.error("Canvas fetch entirely failed.");
           }
         }
 
-        // Apply Canvas Data
         if (canvasJson && canvasJson.canvasesList && canvasJson.canvasesList.length > 0) {
           setCanvasData(canvasJson.canvasesList[0]);
         }
@@ -342,7 +342,6 @@ export default function Player() {
       if (d > 0) setProgress((c / d) * 100);
       if (d > 0 && duration === 0) syncPosition();
 
-      // Sync Lyrics Active Line
       if (syncType === "LINE_SYNCED" && lyrics.length > 0) {
         let activeIdx = -1;
         for (let i = 0; i < lyrics.length; i++) {
@@ -354,7 +353,7 @@ export default function Player() {
     }
   };
 
-  // INTERNAL Scroll active lyric so the main page doesn't bounce
+  // INTERNAL Scroll active lyric smoothly inside the card
   useEffect(() => {
     if (activeLyricRef.current && lyricsContainerRef.current) {
       const container = lyricsContainerRef.current;
@@ -417,7 +416,6 @@ export default function Player() {
 
   if (!currentSong) return null;
 
-  // Render Artist Data gracefully
   const artistNameToShow = canvasData?.artist?.artistName || artists.split(',')[0];
   const artistImgToShow = canvasData?.artist?.artistImgUrl || coverImage;
 
@@ -499,30 +497,38 @@ export default function Player() {
         </div>
       </div>
 
-      {/* MOBILE FULL SCREEN OVERLAY (Scrollable) */}
+      {/* MOBILE FULL SCREEN OVERLAY */}
       <div 
-        className={`md:hidden fixed inset-0 z-[99999] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] overflow-y-auto overflow-x-hidden scrollbar-hide ${isExpanded ? "translate-y-0" : "translate-y-full"}`} 
+        className={`md:hidden fixed inset-0 z-[99999] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0" : "translate-y-full"}`} 
       >
-        {/* Dynamic Backgrounds (Fixed behind scrollable content to unify the background) */}
-        {!isCanvasLoaded && (
-          <div 
-            className="fixed inset-0 pointer-events-none z-0" 
-            style={{ 
-              backgroundColor: dominantColor,
-              backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.7) 100%)' 
-            }} 
-          />
-        )}
+        {/* =========================================
+            FIXED BACKGROUND LAYER (Solves Cut-off)
+        ========================================= */}
+        <div 
+          className="absolute inset-0 z-0 pointer-events-none" 
+          style={{ 
+            backgroundColor: dominantColor,
+            backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.85) 100%)' 
+          }} 
+        />
         
-        {isCanvasLoaded && canvasData?.canvasUrl && (
-          <div className="fixed inset-0 pointer-events-none z-0 bg-black">
-            <video src={canvasData.canvasUrl} autoPlay loop muted playsInline onCanPlay={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover opacity-90 scale-105 blur-[2px]" />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/60 to-black/95" />
+        {/* FIXED CANVAS VIDEO LAYER */}
+        {canvasData?.canvasUrl && (
+          <div className={`absolute inset-0 z-0 bg-black pointer-events-none transition-opacity duration-1000 ${isCanvasLoaded ? 'opacity-100' : 'opacity-0'}`}>
+            <video 
+              src={canvasData.canvasUrl} 
+              autoPlay loop muted playsInline 
+              onLoadedData={() => setIsCanvasLoaded(true)} 
+              className="absolute inset-0 w-full h-full object-cover opacity-90 scale-105 blur-[2px]" 
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/70 to-black/95" />
           </div>
         )}
 
-        {/* Content Wrapper */}
-        <div className="relative z-10 w-full min-h-max flex flex-col">
+        {/* =========================================
+            SCROLLABLE CONTENT LAYER
+        ========================================= */}
+        <div className="absolute inset-0 z-10 overflow-y-auto overflow-x-hidden scrollbar-hide flex flex-col">
           
           {/* Main Controls (Takes up viewport minus 90px so lyrics card peeks out) */}
           <div className="w-full flex flex-col flex-shrink-0" style={{ minHeight: 'calc(100dvh - 90px)' }}>
@@ -586,15 +592,15 @@ export default function Player() {
           </div>
 
           {/* PAGE 2: Lyrics & Artist Cards */}
-          <div className="w-full px-5 pb-20 flex flex-col gap-6">
+          <div className="w-full px-5 pb-24 flex flex-col gap-6">
             
             {/* Spotify Lyrics Card (Darkened Solid Color & Huge Text) */}
             {lyrics.length > 0 && (
               <div 
                 className="rounded-xl p-6 w-full mx-auto shadow-2xl relative overflow-hidden transition-colors duration-500 border border-white/5" 
               >
-                {/* The card background is exactly the dominant color with a brightness filter overlaying it for contrast */}
-                <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, filter: 'brightness(0.6)' }} />
+                {/* The card background uses dominant color with a brightness filter overlaying it for matching contrast */}
+                <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, filter: 'brightness(0.5)' }} />
                 
                 <div className="relative z-10 flex items-center justify-between mb-6 sticky top-0 bg-transparent">
                   <h3 className="text-white font-bold text-[18px]">Lyrics</h3>
@@ -602,7 +608,7 @@ export default function Player() {
                 </div>
                 
                 {/* Lyrics Container (Scrolls Internally) */}
-                <div className="relative z-10 flex flex-col gap-5 max-h-[400px] overflow-y-auto scrollbar-hide pb-10" ref={lyricsContainerRef}>
+                <div className="relative z-10 flex flex-col gap-5 max-h-[450px] overflow-y-auto scrollbar-hide pb-10" ref={lyricsContainerRef}>
                   {lyrics.map((line, idx) => {
                     const isActive = idx === activeLyricIndex;
                     const isPast = idx < activeLyricIndex;
@@ -611,7 +617,7 @@ export default function Player() {
                         key={idx} 
                         ref={isActive ? activeLyricRef : null}
                         onClick={() => handleLyricClick(line.time)} // Click to Sync
-                        className={`cursor-pointer transition-all duration-300 ${isActive ? 'text-white text-[26px] font-extrabold drop-shadow-lg' : isPast ? 'text-white/60 text-[22px] font-bold hover:text-white/80' : 'text-black/50 text-[22px] font-bold hover:text-white/60'}`}
+                        className={`cursor-pointer transition-all duration-300 ${isActive ? 'text-white text-[28px] font-extrabold drop-shadow-lg leading-tight' : isPast ? 'text-white/60 text-[24px] font-bold hover:text-white/80 leading-tight' : 'text-black/40 text-[24px] font-bold hover:text-white/60 leading-tight'}`}
                       >
                         {line.words || '♪'}
                       </p>
@@ -623,7 +629,7 @@ export default function Player() {
 
             {/* Artist Card */}
             <div className="bg-[#1e1e1e] rounded-xl w-full mx-auto mb-10 overflow-hidden relative shadow-lg h-[240px] group cursor-pointer border border-white/5">
-              <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, filter: 'brightness(0.5)' }} />
+              <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, filter: 'brightness(0.4)' }} />
               <img src={artistImgToShow} className="relative z-0 w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500" alt={artistNameToShow} />
               <div className="absolute inset-0 z-10 bg-gradient-to-t from-black/95 via-black/40 to-transparent" />
               <div className="absolute z-20 bottom-6 left-6 flex flex-col">

@@ -107,7 +107,6 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
       }
   });
 
-  // Fallback: If strict match fails, but we have tracks, return the top result so Canvas/Lyrics still work
   if (highestScore > 0) return bestMatch;
   if (apiData.tracks && apiData.tracks.length > 0) return apiData.tracks[0].data;
   return null;
@@ -236,12 +235,13 @@ export default function Player() {
     fetchSpotifyMatch();
   },[currentSong, title, artists]);
 
-  // Fetch Lyrics and Canvas
+  // Fetch Lyrics and Canvas with Jina Fallback
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
 
     const fetchExtras = async () => {
       try {
+        // 1. Fetch Lyrics
         const lyricsRes = await fetch(`https://lyr-nine.vercel.app/api/lyrics?url=${encodeURIComponent(spotifyUrl)}&format=lrc`);
         if (lyricsRes.ok) {
           const lyricsJson = await lyricsRes.json();
@@ -252,12 +252,37 @@ export default function Player() {
           }
         }
 
-        const canvasRes = await fetch(`https://ayush-gamma-coral.vercel.app/api/canvas?trackId=${spotifyId}`);
-        if (canvasRes.ok) {
-          const canvasJson = await canvasRes.json();
-          if (canvasJson.canvasesList && canvasJson.canvasesList.length > 0) {
-            setCanvasData(canvasJson.canvasesList[0]);
+        // 2. Fetch Canvas API with Safe Parsing & r.jina.ai Fallback
+        let canvasJson = null;
+        const targetCanvasUrl = `https://ayush-gamma-coral.vercel.app/api/canvas?trackId=${spotifyId}`;
+        
+        try {
+          // Try Direct Request First
+          const res = await fetch(targetCanvasUrl);
+          canvasJson = await res.json();
+        } catch (e) {
+          // If Direct Fails, Fallback to r.jina.ai as requested
+          try {
+            const jinaRes = await fetch(`https://r.jina.ai/${targetCanvasUrl}`, {
+              headers: { Accept: "application/json" }
+            });
+            const jinaData = await jinaRes.json();
+            
+            // Extract the actual JSON from the jina proxy response string
+            const proxyContent = jinaData?.data?.content || jinaData?.content || "";
+            const jsonStrMatch = proxyContent.match(/\{[\s\S]*\}/);
+            
+            if (jsonStrMatch) {
+              canvasJson = JSON.parse(jsonStrMatch[0]);
+            }
+          } catch (fallbackError) {
+            console.error("Both direct and jina fetches failed.");
           }
+        }
+
+        // Apply Canvas Data
+        if (canvasJson && canvasJson.canvasesList && canvasJson.canvasesList.length > 0) {
+          setCanvasData(canvasJson.canvasesList[0]);
         }
       } catch (e) {}
     };
@@ -334,14 +359,12 @@ export default function Player() {
     if (activeLyricRef.current && lyricsContainerRef.current) {
       const container = lyricsContainerRef.current;
       const element = activeLyricRef.current;
-      
       const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + (element.clientHeight / 2);
-      
       container.scrollTo({ top: scrollPos, behavior: 'smooth' });
     }
   }, [activeLyricIndex]);
 
-  // Click on Lyrics to Sync
+  // Click on Lyrics to Sync Song Position
   const handleLyricClick = (time: number) => {
     if (audioRef.current && duration > 0) {
       audioRef.current.currentTime = time;
@@ -479,17 +502,22 @@ export default function Player() {
       {/* MOBILE FULL SCREEN OVERLAY (Scrollable) */}
       <div 
         className={`md:hidden fixed inset-0 z-[99999] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] overflow-y-auto overflow-x-hidden scrollbar-hide ${isExpanded ? "translate-y-0" : "translate-y-full"}`} 
-        style={{ backgroundColor: isCanvasLoaded ? '#000' : dominantColor }}
       >
-        {/* Dynamic Backgrounds */}
+        {/* Dynamic Backgrounds (Fixed behind scrollable content to unify the background) */}
         {!isCanvasLoaded && (
-          <div className="fixed inset-0 pointer-events-none z-0" style={{ background: `linear-gradient(to bottom, ${dominantColor} 0%, #121212 100%)` }} />
+          <div 
+            className="fixed inset-0 pointer-events-none z-0" 
+            style={{ 
+              backgroundColor: dominantColor,
+              backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.7) 100%)' 
+            }} 
+          />
         )}
         
         {isCanvasLoaded && canvasData?.canvasUrl && (
           <div className="fixed inset-0 pointer-events-none z-0 bg-black">
-            <video src={canvasData.canvasUrl} autoPlay loop muted playsInline onCanPlay={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover opacity-90 scale-105 blur-sm" />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/90" />
+            <video src={canvasData.canvasUrl} autoPlay loop muted playsInline onCanPlay={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover opacity-90 scale-105 blur-[2px]" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/60 to-black/95" />
           </div>
         )}
 
@@ -560,19 +588,21 @@ export default function Player() {
           {/* PAGE 2: Lyrics & Artist Cards */}
           <div className="w-full px-5 pb-20 flex flex-col gap-6">
             
-            {/* Spotify Lyrics Card (Solid Color & Huge Text) */}
+            {/* Spotify Lyrics Card (Darkened Solid Color & Huge Text) */}
             {lyrics.length > 0 && (
               <div 
-                className="rounded-xl p-6 w-full mx-auto shadow-2xl relative overflow-hidden transition-colors duration-500" 
-                style={{ backgroundColor: dominantColor, filter: 'brightness(0.75)' }} // Solid darkened card color
+                className="rounded-xl p-6 w-full mx-auto shadow-2xl relative overflow-hidden transition-colors duration-500 border border-white/5" 
               >
-                <div className="flex items-center justify-between mb-6 sticky top-0 bg-transparent z-10">
+                {/* The card background is exactly the dominant color with a brightness filter overlaying it for contrast */}
+                <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, filter: 'brightness(0.6)' }} />
+                
+                <div className="relative z-10 flex items-center justify-between mb-6 sticky top-0 bg-transparent">
                   <h3 className="text-white font-bold text-[18px]">Lyrics</h3>
                   <button className="p-2 text-white/80 hover:text-white rounded-full bg-black/30"><Maximize2 size={16} /></button>
                 </div>
                 
                 {/* Lyrics Container (Scrolls Internally) */}
-                <div className="flex flex-col gap-5 max-h-[400px] overflow-y-auto scrollbar-hide pb-10" ref={lyricsContainerRef}>
+                <div className="relative z-10 flex flex-col gap-5 max-h-[400px] overflow-y-auto scrollbar-hide pb-10" ref={lyricsContainerRef}>
                   {lyrics.map((line, idx) => {
                     const isActive = idx === activeLyricIndex;
                     const isPast = idx < activeLyricIndex;
@@ -581,7 +611,7 @@ export default function Player() {
                         key={idx} 
                         ref={isActive ? activeLyricRef : null}
                         onClick={() => handleLyricClick(line.time)} // Click to Sync
-                        className={`cursor-pointer transition-all duration-300 hover:text-white ${isActive ? 'text-white text-[24px] font-bold drop-shadow-lg' : isPast ? 'text-white/60 text-[20px] font-semibold' : 'text-white/30 text-[20px] font-semibold'}`}
+                        className={`cursor-pointer transition-all duration-300 ${isActive ? 'text-white text-[26px] font-extrabold drop-shadow-lg' : isPast ? 'text-white/60 text-[22px] font-bold hover:text-white/80' : 'text-black/50 text-[22px] font-bold hover:text-white/60'}`}
                       >
                         {line.words || '♪'}
                       </p>
@@ -592,12 +622,13 @@ export default function Player() {
             )}
 
             {/* Artist Card */}
-            <div className="bg-[#1e1e1e] rounded-xl w-full mx-auto mb-10 overflow-hidden relative shadow-lg h-[220px] group cursor-pointer border border-white/5">
-              <img src={artistImgToShow} className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500" alt={artistNameToShow} />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent" />
-              <div className="absolute bottom-6 left-6 flex flex-col">
+            <div className="bg-[#1e1e1e] rounded-xl w-full mx-auto mb-10 overflow-hidden relative shadow-lg h-[240px] group cursor-pointer border border-white/5">
+              <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, filter: 'brightness(0.5)' }} />
+              <img src={artistImgToShow} className="relative z-0 w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500" alt={artistNameToShow} />
+              <div className="absolute inset-0 z-10 bg-gradient-to-t from-black/95 via-black/40 to-transparent" />
+              <div className="absolute z-20 bottom-6 left-6 flex flex-col">
                 <span className="text-white/80 text-[12px] uppercase tracking-widest font-bold mb-1">Artist</span>
-                <span className="text-white font-bold text-3xl drop-shadow-lg">{artistNameToShow}</span>
+                <span className="text-white font-extrabold text-3xl drop-shadow-lg">{artistNameToShow}</span>
               </div>
             </div>
 

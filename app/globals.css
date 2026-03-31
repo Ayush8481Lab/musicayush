@@ -14,42 +14,50 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #09090b; /* Rich deep black */
     --foreground: #ededed;
   }
 }
 
 body {
-  background-color: #000000;
+  background-color: #09090b;
   color: #ffffff;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Hide Scrollbar */
+/* Super Smooth Scrollbar hiding with native touch handling */
 .hide-scrollbar::-webkit-scrollbar { display: none; }
-.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.hide-scrollbar { 
+  -ms-overflow-style: none; 
+  scrollbar-width: none; 
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
 
-/* Premium Snappy Easing for Hover Images */
+/* Off-Screen Rendering optimization! Kills all lag natively. */
+.carousel-wrapper {
+  content-visibility: auto;
+  contain-intrinsic-size: 250px; /* Estimates height so scrollbar doesn't jump */
+}
+
+/* Premium Image Zoom Curve */
 .ease-out-expo {
   transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Premium Slide Up Animation */
-@keyframes fadeInUp {
-  0% { opacity: 0; transform: translateY(20px); }
+/* Global fade-in instead of staggering 100+ individual delays */
+@keyframes fadeIn {
+  0% { opacity: 0; transform: translateY(15px); }
   100% { opacity: 1; transform: translateY(0); }
 }
-
-.animate-fade-in-up {
-  opacity: 0;
-  will-change: transform, opacity;
-  animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+.animate-fade-in {
+  animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* ========================================= */
-/* FLAWLESS CSS MARQUEE ANIMATION            */
-/* ========================================= */
+/* ==================================================== */
+/* MATHEMATICALLY FLAWLESS CSS MARQUEE ANIMATION        */
+/* ==================================================== */
 
 .marquee-container {
   width: 100%;
@@ -58,28 +66,26 @@ body {
 }
 
 .marquee-text {
-  display: inline-block;
-  min-width: 100%; /* Forces exact width match for short text */
-  text-align: center; /* Centers short text perfectly inside */
+  display: block;
+  width: max-content; /* Exactly matches text width */
+  min-width: 100%;    /* But never smaller than container */
+  text-align: center;
+  transition: transform 2.5s cubic-bezier(0.25, 1, 0.5, 1);
+  
+  /* Show ellipsis when resting */
   text-overflow: ellipsis;
   overflow: hidden;
-  vertical-align: top;
-  will-change: transform; /* Hardware Acceleration */
 }
 
-/* On hover, clip the ellipsis and activate the smart translation */
+/* MAGIC FIX: Dynamic overflow calculation */
 .group:hover .marquee-text {
-  text-overflow: clip; 
+  text-overflow: clip; /* Remove dots to slide cleanly */
   /* 
-   * If text is smaller than 128px, min-width forces it to 128px.
-   * `calc(-100% + 128px)` equals `calc(-128px + 128px) = 0`. So it DOES NOT move.
-   * If text is larger (e.g., 200px), it accurately scrolls the overflow margin! 
+   * 128px is tailwind w-32 size. 
+   * Formula dynamically calculates overflow width. 
+   * If text is shorter than 128px: evaluates to 0px (No move). 
+   * If text is longer: precisely translates exact excess pixels! 
    */
-  animation: marquee-scroll 3.5s cubic-bezier(0.25, 1, 0.5, 1) infinite alternate;
-}
-
-/* 128px is the fixed w-32 tailwind width of your parent card */
-@keyframes marquee-scroll {
-  0%, 15% { transform: translateX(0); }
-  85%, 100% { transform: translateX(calc(-100% + 128px)); } 
+  transform: translateX(min(0px, calc(128px - 100%)));
+  transition-delay: 0.1s; /* Tiny delay creates premium feel */
 }

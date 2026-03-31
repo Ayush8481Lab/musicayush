@@ -57,12 +57,6 @@ alt={title}
 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
 />
 </div>
-
-code
-Code
-download
-content_copy
-expand_less
 {/* Title with Marquee */}
   <div className="marquee-container text-center">
     <span className="marquee-text text-[13px] font-extrabold text-white tracking-wide">
@@ -201,11 +195,6 @@ setTrending([]); setNewReleases([]); setFeaturedPlaylists([]);
 setOtherPromos([]); setTopArtists([]); setCharts([]);
 setRecoArtists([]); setRecoActors([]); setRecoAlbums([]); setRecoPlaylists([]);
 
-code
-Code
-download
-content_copy
-expand_less
 try {
     const[launchRes, artistsRes, featuredRes, albumsRes, trendingRes, footerRes] = await Promise.all([
       fetch(`/api/jiosaavn?__call=webapi.getLaunchData&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
@@ -270,11 +259,7 @@ const type = item.type;
 const link = item.perma_url || item.url || (item.action ? https://www.jiosaavn.com${item.action} : "");
 const artistId = item.artistid || (type === "artist" ? item.id : null);
 
-code
-Code
-download
-content_copy
-expand_less
+
 if (type === "song") {
   setCurrentSong(item);
   setIsPlaying(true);
@@ -313,11 +298,7 @@ Music<span className="text-neutral-400 font-bold text-xl">@8481</span>
 </div>
 </div>
 
-code
-Code
-download
-content_copy
-expand_less
+
 {/* Sections in Exact Requested Order */}
   <Carousel title="Trending" items={trending} onItemClick={handleItemClick} />
   <Carousel title="New Releases" items={newReleases} onItemClick={handleItemClick} />

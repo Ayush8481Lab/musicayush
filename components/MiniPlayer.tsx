@@ -54,8 +54,6 @@ const parseTimeTag = (tag: string) => {
 };
 
 // --- RAPID API EXACT MATCHER LOGIC ---
-// Note: As per your request, this logic simulates a server-side fetch but runs securely 
-// within the client hook to directly match your provided HTML key rotation logic.
 const RAPID_KEYS =[
   "d1edce158amshec139440d20658ap1f2545jsnbb7da9add82f",
   "6cf7f03014msh787c51a713c0264p15c20djsna1f9a9f6a378",
@@ -71,13 +69,14 @@ const RAPID_KEYS =[
 ];
 const RAPID_API_HOST = "spotify81.p.rapidapi.com";
 
-const performMatching = (apiData: any, targetTrack: string, targetArtist: string) => {
+const performMatching = (apiData: any, targetTrack: string, targetArtist: string): any => {
   if (!apiData.tracks || apiData.tracks.length === 0) return null;
   const clean = (s: string) => (s || "").toLowerCase().replace(/[^\w\s]|_/g, "").replace(/\s+/g, " ").trim();
   const tTitle = clean(targetTrack); 
   const tArtist = clean(targetArtist);
   
-  let bestMatch = null; 
+  // Fixed TS Error: typed as 'any' instead of letting it infer 'never' from 'null'
+  let bestMatch: any = null; 
   let highestScore = 0;
   
   apiData.tracks.forEach((item: any) => {
@@ -119,7 +118,7 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const [isOverflowing, setIsOverflowing] = useState(false);
+  const[isOverflowing, setIsOverflowing] = useState(false);
 
   useEffect(() => {
     const checkOverflow = () => {
@@ -150,9 +149,9 @@ export default function Player() {
   const [audioUrl, setAudioUrl] = useState("");
   const[loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
+  const[currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(100);
+  const[volume, setVolume] = useState(100);
   const[isExpanded, setIsExpanded] = useState(false);
   const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
 
@@ -160,7 +159,7 @@ export default function Player() {
   const rapidKeyIdxRef = useRef(0);
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
   const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
-  const [lyrics, setLyrics] = useState<any[]>([]);
+  const[lyrics, setLyrics] = useState<any[]>([]);
   const [syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const [canvasData, setCanvasData] = useState<any>(null);
@@ -238,7 +237,8 @@ export default function Player() {
       }
 
       if (matchData) {
-        const match = performMatching(matchData, title, searchArtist);
+        // Fixed TS Error: added ': any' so TS knows 'id' is safe to access
+        const match: any = performMatching(matchData, title, searchArtist);
         if (match) {
           setSpotifyId(match.id);
           setSpotifyUrl(`https://open.spotify.com/track/${match.id}`);

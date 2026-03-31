@@ -47,7 +47,7 @@ const getMatchScore = (title: string, query: string) => {
   return 0;
 };
 
-// Premium Card Component (Ref-forwarded for Intersection Observer, exactly matches Home Page)
+// Premium Card Component
 const SearchCard = forwardRef(({ item, tabType, onClick, isGrid = false }: any, ref: any) => {
   const type = item.type || tabType;
   const title = decodeEntities(item.title || item.name || "Unknown");
@@ -108,9 +108,7 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
     if (loadingMore || !hasMore) return;
     if (observerRef.current) observerRef.current.disconnect();
     observerRef.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting) {
-        loadMore(type);
-      }
+      if (entries[0].isIntersecting) loadMore(type);
     }, { rootMargin: "250px" });
 
     if (node) observerRef.current.observe(node);
@@ -125,10 +123,12 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
   useEffect(() => {
     const scrolls = JSON.parse(sessionStorage.getItem("search_scrollX") || "{}");
     if (scrolls[type]) {
-      const el = document.getElementById(`carousel-${type}`);
-      if (el) el.scrollLeft = scrolls[type];
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`carousel-${type}`);
+        if (el) el.scrollLeft = scrolls[type];
+      });
     }
-  }, [items.length]);
+  },[items.length]);
 
   return (
     <div className="mb-6 contain-content">
@@ -145,7 +145,7 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
           return <SearchCard key={`${type}-${i}`} item={item} tabType={type} onClick={onItemClick} isGrid={false} />;
         })}
         {loadingMore && (
-          <div className="flex-shrink-0 flex justify-center items-center w-36 h-36 border border-white/5 rounded-xl bg-white/5">
+          <div className="flex-shrink-0 flex justify-center items-center w-36 aspect-square border border-white/5 rounded-xl bg-white/5">
             <Loader2 className="animate-spin text-neutral-500" size={24} />
           </div>
         )}
@@ -157,29 +157,37 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
 export default function SearchPage() {
   const { setCurrentSong, setIsPlaying } = useAppContext();
   const router = useRouter();
+  const CACHE_KEY = "search_page_cache_v3";
 
-  const CACHE_KEY = "search_page_cache_v2";
+  // Eager Initialization from Session Storage (Prevents Blank Screen)
+  const getCachedState = () => {
+    if (typeof window !== "undefined") {
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      if (cached) return JSON.parse(cached);
+    }
+    return null;
+  };
+  const cachedState = getCachedState();
 
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("all");
+  const[isMounted, setIsMounted] = useState(false);
+  const [query, setQuery] = useState(cachedState?.query || "");
+  const [debouncedQuery, setDebouncedQuery] = useState(cachedState?.debouncedQuery || "");
+  const [activeTab, setActiveTab] = useState(cachedState?.activeTab || "all");
   
-  // States for 'All' tab (Horizontal Pagination)
-  const[allData, setAllData] = useState<any>({ topMatches:[], songs: [], albums:[], playlists:[], artists:[] });
-  const [allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
-  const[allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
+  const [allData, setAllData] = useState<any>(cachedState?.allData || { topMatches:[], songs: [], albums:[], playlists:[], artists:[] });
+  const[allPages, setAllPages] = useState<any>(cachedState?.allPages || { songs: 1, albums: 1, playlists: 1, artists: 1 });
+  const [allHasMore, setAllHasMore] = useState<any>(cachedState?.allHasMore || { songs: true, albums: true, playlists: true, artists: true });
   const [horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
   
-  // States for Dedicated tabs (Vertical Pagination)
-  const [results, setResults] = useState<any[]>([]);
-  const[page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [results, setResults] = useState<any[]>(cachedState?.results || []);
+  const [page, setPage] = useState(cachedState?.page || 1);
+  const [hasMore, setHasMore] = useState(cachedState?.hasMore ?? true);
   
-  const [lastFetched, setLastFetched] = useState({ query: "", tab: "all", page: 1 });
-  const [isRestored, setIsRestored] = useState(false);
-
+  const [loading, setLoading] = useState(false);
+  const[loadingMore, setLoadingMore] = useState(false);
+  
+  // Use a Ref to track last fetched state without causing dependency loops
+  const lastFetched = useRef(cachedState?.lastFetched || { query: "", tab: "all", page: 1 });
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   const tabs =[
@@ -190,76 +198,51 @@ export default function SearchPage() {
     { id: "artists", label: "Artists", icon: Mic2 }
   ];
 
-  // Restore State & Scroll from Session Storage
+  // Resolve Hydration & Restore Vertical Scroll precisely
   useEffect(() => {
-    const cached = sessionStorage.getItem(CACHE_KEY);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        setQuery(parsed.query || "");
-        setDebouncedQuery(parsed.debouncedQuery || "");
-        setActiveTab(parsed.activeTab || "all");
-        setAllData(parsed.allData || { topMatches: [], songs: [], albums:[], playlists:[], artists:[] });
-        setAllPages(parsed.allPages || { songs: 1, albums: 1, playlists: 1, artists: 1 });
-        setAllHasMore(parsed.allHasMore || { songs: true, albums: true, playlists: true, artists: true });
-        setResults(parsed.results ||[]);
-        setPage(parsed.page || 1);
-        setHasMore(parsed.hasMore ?? true);
-        setLastFetched(parsed.lastFetched || { query: "", tab: "all", page: 1 });
-      } catch(e) {}
+    setIsMounted(true);
+    const y = sessionStorage.getItem(`search_scrollY_${activeTab}`);
+    if (y) {
+      requestAnimationFrame(() => {
+        setTimeout(() => window.scrollTo({ top: parseInt(y), behavior: "instant" }), 50);
+      });
     }
-    setIsRestored(true);
-  },[]);
-
-  // Save State
-  useEffect(() => {
-    if (!isRestored) return;
-    const stateToCache = { query, debouncedQuery, activeTab, allData, allPages, allHasMore, results, page, hasMore, lastFetched };
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(stateToCache));
-  },[query, debouncedQuery, activeTab, allData, allPages, allHasMore, results, page, hasMore, lastFetched, isRestored]);
-
-  // Window Scroll Saving and Restoring
-  useEffect(() => {
-    const handleWinScroll = () => {
-      sessionStorage.setItem(`search_scrollY_${activeTab}`, window.scrollY.toString());
-    };
-    window.addEventListener("scroll", handleWinScroll);
-    return () => window.removeEventListener("scroll", handleWinScroll);
   }, [activeTab]);
 
+  // Save Cache automatically
   useEffect(() => {
-    if (isRestored) {
-      setTimeout(() => {
-        const y = sessionStorage.getItem(`search_scrollY_${activeTab}`);
-        if (y) window.scrollTo({ top: parseInt(y), behavior: "instant" });
-      }, 50); // slight delay ensures DOM paints the grids first
-    }
-  },[isRestored, activeTab, results.length, allData.songs.length]);
+    if (!isMounted) return;
+    const stateToCache = { query, debouncedQuery, activeTab, allData, allPages, allHasMore, results, page, hasMore, lastFetched: lastFetched.current };
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify(stateToCache));
+  },[query, debouncedQuery, activeTab, allData, allPages, allHasMore, results, page, hasMore, isMounted]);
 
-  // Debounce input
+  // Debouncer
   useEffect(() => {
-    if (!isRestored) return;
+    if (!isMounted) return;
     const timer = setTimeout(() => setDebouncedQuery(query), 600);
     return () => clearTimeout(timer);
-  }, [query, isRestored]);
+  }, [query, isMounted]);
 
-  // Main Fetch Logic (Initial searches)
+  // Unified Fetch Logic (Handles Initial & Pagination cleanly)
   useEffect(() => {
-    if (!isRestored) return;
+    if (!isMounted) return;
     if (!debouncedQuery.trim()) {
       setAllData({ topMatches: [], songs: [], albums:[], playlists: [], artists:[] });
-      setResults([]); setHasMore(true); setLastFetched({ query: "", tab: activeTab, page: 1 });
+      setResults([]); setHasMore(true);
+      lastFetched.current = { query: "", tab: activeTab, page: 1 };
       return;
     }
 
-    const isNewQueryOrTab = debouncedQuery !== lastFetched.query || activeTab !== lastFetched.tab;
+    const isNewQueryOrTab = debouncedQuery !== lastFetched.current.query || activeTab !== lastFetched.current.tab;
     
+    // Reset page if tab or query changed
     if (isNewQueryOrTab && page !== 1) {
       setPage(1); setHasMore(true);
       return; 
     }
 
-    if (!isNewQueryOrTab && page === lastFetched.page) return;
+    // Skip redundant fetches perfectly
+    if (!isNewQueryOrTab && page === lastFetched.current.page) return;
 
     const fetchData = async () => {
       if (page === 1) setLoading(true);
@@ -295,9 +278,7 @@ export default function SearchPage() {
             .map(match => match.item)
             .slice(0, 8);
 
-          const topMatches = sortedMatches.length > 0 ? sortedMatches : combined.slice(0, 8);
-
-          setAllData({ topMatches, songs, albums, playlists, artists });
+          setAllData({ topMatches: sortedMatches.length > 0 ? sortedMatches : combined.slice(0, 8), songs, albums, playlists, artists });
           setAllPages({ songs: 1, albums: 1, playlists: 1, artists: 1 });
           setAllHasMore({ songs: true, albums: true, playlists: true, artists: true });
           setHasMore(false); 
@@ -306,11 +287,11 @@ export default function SearchPage() {
           const json = await res.json();
           const newData = json.data?.results || json.data ||[];
 
-          setResults(prev => (isNewQueryOrTab || page === 1) ? newData : [...prev, ...newData]);
+          setResults(prev => (isNewQueryOrTab || page === 1) ? newData :[...prev, ...newData]);
           if (newData.length === 0) setHasMore(false);
         }
         
-        setLastFetched({ query: debouncedQuery, tab: activeTab, page });
+        lastFetched.current = { query: debouncedQuery, tab: activeTab, page };
       } catch (err) {} 
       finally {
         setLoading(false); setLoadingMore(false);
@@ -318,12 +299,11 @@ export default function SearchPage() {
     };
 
     fetchData();
-  },[debouncedQuery, activeTab, page, isRestored]);
+  },[debouncedQuery, activeTab, page, isMounted]);
 
-  // Horizontal Load More Logic for "All" tab
+  // Horizontal Load More Logic ("All" Tab)
   const loadMoreHorizontal = useCallback(async (type: string) => {
     if (horizontalLoading[type] || !allHasMore[type]) return;
-    
     setHorizontalLoading((prev: any) => ({ ...prev, [type]: true }));
     try {
       const nextPage = allPages[type] + 1;
@@ -339,9 +319,9 @@ export default function SearchPage() {
       }
     } catch (e) {}
     setHorizontalLoading((prev: any) => ({ ...prev, [type]: false }));
-  },[debouncedQuery, allPages, allHasMore, horizontalLoading]);
+  }, [debouncedQuery, allPages, allHasMore, horizontalLoading]);
 
-  // Infinite Scroll Hook for Dedicated Tabs
+  // Vertical Infinite Scroll Logic (Dedicated Tabs)
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (loading || loadingMore || !hasMore || activeTab === "all") return;
     if (observerRef.current) observerRef.current.disconnect();
@@ -350,13 +330,15 @@ export default function SearchPage() {
       if (entries[0].isIntersecting) {
         setPage(prevPage => prevPage + 1);
       }
-    });
+    }, { rootMargin: "250px" });
 
     if (node) observerRef.current.observe(node);
   },[loading, loadingMore, hasMore, activeTab]);
 
-  // Handle Navigation Clicks
+  // Handle Item Clicks & Record precise Scroll Point
   const handleItemClick = (item: any, passedType?: string) => {
+    sessionStorage.setItem(`search_scrollY_${activeTab}`, window.scrollY.toString());
+    
     const type = item.type || passedType || activeTab;
     let link = item.url || item.perma_url || item.action || "";
     if (link && !link.startsWith("http")) link = `https://www.jiosaavn.com${link}`;
@@ -372,6 +354,8 @@ export default function SearchPage() {
       router.push(`/artist?id=${item.id}`);
     }
   };
+
+  if (!isMounted) return <div className="min-h-screen bg-[#121212]" />;
 
   return (
     <main className="min-h-screen pt-12 pb-28 bg-[#121212]">
@@ -430,8 +414,6 @@ export default function SearchPage() {
           </div>
         ) : activeTab === "all" ? (
           <div className="flex flex-col gap-2">
-            
-            {/* Best Matches - Doesn't need pagination */}
             {allData.topMatches.length > 0 && (
               <div className="mb-6 contain-content">
                 <h2 className="text-[20px] font-bold mb-3 px-4 tracking-tight text-white">Best Matches</h2>
@@ -443,7 +425,6 @@ export default function SearchPage() {
               </div>
             )}
             
-            {/* Dynamic Pagination Carousels */}
             {[
               { title: "Songs", data: allData.songs, type: "songs" },
               { title: "Albums", data: allData.albums, type: "albums" },
@@ -464,8 +445,8 @@ export default function SearchPage() {
           </div>
         ) : (
           <div className="px-4">
-            {/* Dedicated Tabs - Responsive Auto-Fill Grid sizes perfectly matching Homepage `w-36` (144px approx) */}
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] gap-x-4 gap-y-6 justify-items-center">
+            {/* Grid perfectly matches Home Page size mathematically */}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-x-4 gap-y-6 justify-items-center">
               {results.map((item, index) => (
                 <SearchCard key={index} item={item} tabType={activeTab} onClick={handleItemClick} isGrid={true} />
               ))}

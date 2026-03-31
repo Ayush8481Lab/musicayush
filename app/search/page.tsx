@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 // Safe Image Extractor
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/150x150?text=Music";
-  if (typeof img === "string") return img.replace("50x50", "150x150"); 
+  if (typeof img === "string") return img.replace("50x50", "500x500").replace("150x150", "500x500"); 
   if (Array.isArray(img)) return img[img.length - 1]?.url || img[0]?.url;
   return "https://via.placeholder.com/150x150?text=Music";
 };
@@ -47,16 +47,16 @@ const getMatchScore = (title: string, query: string) => {
   return 0; // No match
 };
 
-// Premium 4-Grid Card Component with Marquee Effect
+// Premium Card Component with Marquee Effect & Larger Fonts
 const SearchCard = ({ item, tabType, index, onClick }: any) => {
   const type = item.type || tabType;
   const title = decodeEntities(item.title || item.name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, type));
   const isCircular = type === "artists" || type === "artist";
 
-  // Marquee Math Logic (Adjusted threshold for smaller 4-grid layout)
-  const isLongTitle = title.length > 12;
-  const isLongSub = subtitle.length > 15;
+  // Marquee Math Logic (Adjusted threshold for larger fonts)
+  const isLongTitle = title.length > 14;
+  const isLongSub = subtitle.length > 18;
 
   const titleSpeed = `${Math.max(3, title.length * 0.25)}s`;
   const subSpeed = `${Math.max(3, subtitle.length * 0.25)}s`;
@@ -64,34 +64,34 @@ const SearchCard = ({ item, tabType, index, onClick }: any) => {
   return (
     <div 
       onClick={() => onClick(item, type)} 
-      className="animate-slide-down flex flex-col items-center cursor-pointer group active:scale-95 transition-transform duration-200 overflow-hidden"
+      className="animate-slide-down flex flex-col items-center cursor-pointer group active:scale-95 transition-transform duration-200 overflow-hidden w-full"
       style={{ animationDelay: `${(index % 12) * 0.03}s` }}
     >
-      <div className={`w-full aspect-square overflow-hidden shadow-md bg-neutral-900 border border-white/5 mb-1.5 flex items-center justify-center ${isCircular ? "rounded-full" : "rounded-xl"}`}>
+      <div className={`w-full aspect-square overflow-hidden shadow-md bg-neutral-900 border border-white/5 mb-2 flex items-center justify-center ${isCircular ? "rounded-full" : "rounded-xl"}`}>
         <img 
           src={getImageUrl(item.image)} 
           alt={title} 
           loading="lazy" 
-          onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/150x150?text=Music"; }}
+          onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/500x500?text=Music"; }}
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-out" 
         />
       </div>
       
-      {/* Marquee Title */}
-      <div className="w-full overflow-hidden whitespace-nowrap text-center px-0.5">
+      {/* Marquee Title (Increased Font Size) */}
+      <div className="w-full overflow-hidden whitespace-nowrap text-center px-1">
         <span
-          className={`inline-block text-[11px] font-extrabold text-white tracking-wide ${isLongTitle ? "animate-ping-pong" : ""}`}
+          className={`inline-block text-[14px] font-extrabold text-white tracking-wide ${isLongTitle ? "animate-ping-pong" : ""}`}
           style={isLongTitle ? { animationDuration: titleSpeed } : {}}
         >
           {title}
         </span>
       </div>
 
-      {/* Marquee Subtitle */}
+      {/* Marquee Subtitle (Increased Font Size) */}
       {subtitle && (
-        <div className="w-full overflow-hidden whitespace-nowrap text-center px-0.5 mt-0.5">
+        <div className="w-full overflow-hidden whitespace-nowrap text-center px-1 mt-0.5">
           <span
-            className={`inline-block text-[9px] font-medium text-neutral-400 capitalize ${isLongSub ? "animate-ping-pong" : ""}`}
+            className={`inline-block text-[12px] font-medium text-neutral-400 capitalize ${isLongSub ? "animate-ping-pong" : ""}`}
             style={isLongSub ? { animationDuration: subSpeed } : {}}
           >
             {subtitle}
@@ -114,8 +114,8 @@ export default function SearchPage() {
   
   // States for Infinite Scroll Tabs
   const [results, setResults] = useState<any[]>([]);
-  const [page, setPage] = useState(1);
-  const[hasMore, setHasMore] = useState(true);
+  const[page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const[loadingMore, setLoadingMore] = useState(false);
 
@@ -153,7 +153,7 @@ export default function SearchPage() {
 
       try {
         if (activeTab === "all") {
-          // Fetch everything simultaneously
+          // Fetch everything simultaneously (Using higher limits for side-scrolling)
           const [sRes, aRes, pRes, arRes] = await Promise.all([
             fetch(`https://ayushm-psi.vercel.app/api/search/songs?query=${encodeURIComponent(debouncedQuery)}&page=1`),
             fetch(`https://ayushm-psi.vercel.app/api/search/albums?query=${encodeURIComponent(debouncedQuery)}&page=1`),
@@ -181,11 +181,18 @@ export default function SearchPage() {
             .filter(match => match.score > 0)
             .sort((a, b) => b.score - a.score)
             .map(match => match.item)
-            .slice(0, 4);
+            .slice(0, 6); // Up to 6 items for horizontal scroller
 
-          const topMatches = sortedMatches.length > 0 ? sortedMatches : combined.slice(0, 4);
+          const topMatches = sortedMatches.length > 0 ? sortedMatches : combined.slice(0, 6);
 
-          setAllData({ topMatches, songs: songs.slice(0, 8), albums: albums.slice(0, 8), playlists: playlists.slice(0, 8), artists: artists.slice(0, 8) });
+          // Slicing up to 16 items for the 2-row horizontal scroll format
+          setAllData({ 
+            topMatches, 
+            songs: songs.slice(0, 16), 
+            albums: albums.slice(0, 16), 
+            playlists: playlists.slice(0, 16), 
+            artists: artists.slice(0, 16) 
+          });
           setHasMore(false); 
         } else {
           // Fetch specific tab with Infinite Scroll pagination
@@ -208,7 +215,7 @@ export default function SearchPage() {
     };
 
     fetchData();
-  },[debouncedQuery, activeTab, page]);
+  }, [debouncedQuery, activeTab, page]);
 
   // Infinite Scroll Hook
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
@@ -255,7 +262,7 @@ export default function SearchPage() {
             <SearchIcon size={18} />
           </div>
           <input
-            className="peer h-full w-full outline-none text-sm text-white bg-transparent pr-10 placeholder-neutral-500 font-medium"
+            className="peer h-full w-full outline-none text-[15px] text-white bg-transparent pr-10 placeholder-neutral-500 font-medium"
             type="text"
             placeholder="Songs, albums, artists..."
             value={query}
@@ -276,11 +283,11 @@ export default function SearchPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-bold transition-all whitespace-nowrap ${
                   isActive ? "bg-white text-black scale-105" : "bg-neutral-900 text-neutral-400 border border-neutral-800 active:scale-95"
                 }`}
               >
-                {tab.icon && <tab.icon size={14} strokeWidth={isActive ? 2.5 : 2} />}
+                {tab.icon && <tab.icon size={16} strokeWidth={isActive ? 2.5 : 2} />}
                 {tab.label}
               </button>
             );
@@ -294,22 +301,26 @@ export default function SearchPage() {
           <div className="flex justify-center mt-20"><Loader2 className="animate-spin text-neutral-400" size={32} /></div>
         ) : !debouncedQuery.trim() ? (
           <div className="flex flex-col items-center justify-center mt-24 text-neutral-600 animate-slide-down">
-            <SearchIcon size={48} className="mb-4 opacity-20" />
+            <SearchIcon size={56} className="mb-4 opacity-20" />
             <p className="text-lg font-bold text-neutral-400">Find your music</p>
           </div>
         ) : activeTab === "all" ? (
           <div className="flex flex-col gap-8">
+            {/* Best Matches - Single Line Horizontal (Shows 2 visible cards) */}
             {allData.topMatches.length > 0 && (
               <div>
-                <h2 className="text-lg font-bold text-white mb-3">Best Matches</h2>
-                <div className="grid grid-cols-4 gap-3">
+                <h2 className="text-xl font-bold text-white mb-4">Best Matches</h2>
+                <div className="flex gap-4 overflow-x-auto hide-scrollbar snap-x pb-2">
                   {allData.topMatches.map((item: any, i: number) => (
-                    <SearchCard key={`top-${i}`} item={item} index={i} onClick={handleItemClick} />
+                    <div key={`top-${i}`} className="min-w-[44vw] sm:min-w-[160px] snap-start flex-shrink-0">
+                      <SearchCard item={item} index={i} onClick={handleItemClick} />
+                    </div>
                   ))}
                 </div>
               </div>
             )}
             
+            {/* Double Row Horizontal Sections */}
             {[
               { title: "Songs", data: allData.songs, type: "songs" },
               { title: "Albums", data: allData.albums, type: "albums" },
@@ -317,10 +328,20 @@ export default function SearchPage() {
               { title: "Playlists", data: allData.playlists, type: "playlists" },
             ].map((section, idx) => section.data.length > 0 && (
               <div key={idx}>
-                <h2 className="text-lg font-bold text-white mb-3">{section.title}</h2>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="flex justify-between items-center mb-4 pr-1">
+                  <h2 className="text-xl font-bold text-white">{section.title}</h2>
+                  {section.data.length >= 8 && (
+                    <button onClick={() => setActiveTab(section.type)} className="text-[12px] font-bold text-neutral-400 hover:text-white active:scale-95 transition-transform">
+                      View All
+                    </button>
+                  )}
+                </div>
+                {/* 2-Row CSS Grid Horizontal Scroll */}
+                <div className="grid grid-rows-2 grid-flow-col gap-x-4 gap-y-4 overflow-x-auto hide-scrollbar pb-2 snap-x">
                   {section.data.map((item: any, i: number) => (
-                    <SearchCard key={`${section.type}-${i}`} item={item} tabType={section.type} index={i} onClick={handleItemClick} />
+                    <div key={`${section.type}-${i}`} className="w-[38vw] sm:w-[140px] snap-start flex-shrink-0">
+                      <SearchCard item={item} tabType={section.type} index={i} onClick={handleItemClick} />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -328,15 +349,18 @@ export default function SearchPage() {
           </div>
         ) : (
           <div>
-            <div className="grid grid-cols-4 gap-3">
+            {/* Dedicated Tabs - 3 Cards per row Grid */}
+            <div className="grid grid-cols-3 gap-x-3 gap-y-5 sm:gap-4">
               {results.map((item, index) => (
-                <SearchCard key={index} item={item} tabType={activeTab} index={index} onClick={handleItemClick} />
+                <div key={index} className="w-full">
+                  <SearchCard item={item} tabType={activeTab} index={index} onClick={handleItemClick} />
+                </div>
               ))}
             </div>
             
             <div ref={lastElementRef} className="h-10 mt-6 flex justify-center items-center w-full">
               {loadingMore && <Loader2 className="animate-spin text-neutral-500" size={24} />}
-              {!hasMore && results.length > 0 && <p className="text-xs text-neutral-600 font-medium">End of results</p>}
+              {!hasMore && results.length > 0 && <p className="text-sm text-neutral-600 font-medium">End of results</p>}
             </div>
           </div>
         )}

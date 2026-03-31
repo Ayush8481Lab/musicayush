@@ -50,7 +50,7 @@ const mergeAndDedupe = (arr1: any[], arr2: any[]) => {
   return Array.from(map.values());
 };
 
-// Premium Card Component with Smart Marquee
+// Premium Card Component with Smart Continuous Marquee
 const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
   const title = decodeEntities(item.title || item.name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, hideSubtitle));
@@ -60,7 +60,7 @@ const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
       onClick={() => onClick(item)}
       className="flex-shrink-0 snap-start w-32 cursor-pointer group"
     >
-      <div className={`relative overflow-hidden shadow-xl bg-neutral-800 border border-neutral-700/40 mb-3 transition-all duration-300 group-active:scale-95 ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
+      <div className={`relative overflow-hidden bg-white/[0.03] border border-white/10 mb-3 transition-all duration-300 group-active:scale-95 hover:border-pink-500/50 hover:shadow-[0_0_20px_rgba(236,72,153,0.2)] ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
         <img
           src={getImageUrl(item.image)}
           alt={title}
@@ -69,19 +69,18 @@ const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
           onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/500x500?text=Music"; }}
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out-expo"
         />
-        {/* Subtle inner shadow for premium look */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
       </div>
 
       <div className="marquee-container text-center">
-        <span className="marquee-text text-[13px] font-extrabold text-neutral-100 tracking-wide">
+        <span className="marquee-text-active text-[13px] font-extrabold text-white tracking-wide drop-shadow-md">
           {title}
         </span>
       </div>
 
       {subtitle && (
         <div className="marquee-container text-center mt-0.5">
-          <span className="marquee-text text-[11px] font-medium text-neutral-400">
+          <span className="marquee-text-active text-[11px] font-medium text-pink-200/70">
             {subtitle}
           </span>
         </div>
@@ -90,20 +89,21 @@ const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
   );
 };
 
-// Async Image Card for Footer APIs (Highly Optimized Observer)
+// Async Image Card (Highly Optimized Observer to kill Scroll Lag)
 const AsyncImageCard = ({ item, type, onClick }: any) => {
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const fetched = useRef(false);
 
   useEffect(() => {
-    // RootMargin "300px" pre-fetches images right before they scroll into view!
     const observer = new IntersectionObserver((entries) => {
+      // Fetch ONLY when visible and instantly disconnect to save CPU/Memory
       if (entries[0].isIntersecting && !fetched.current) {
         fetched.current = true;
         fetchImage();
+        observer.disconnect(); // MAGIC FIX FOR SCROLL LAG
       }
-    }, { rootMargin: "300px" });
+    }, { rootMargin: "150px" });
 
     if (cardRef.current) observer.observe(cardRef.current);
     return () => observer.disconnect();
@@ -139,7 +139,7 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
       onClick={() => onClick(item)}
       className="flex-shrink-0 snap-start w-32 cursor-pointer group"
     >
-      <div className={`relative overflow-hidden shadow-xl bg-neutral-800 border border-neutral-700/40 mb-3 flex items-center justify-center transition-all duration-300 group-active:scale-95 ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
+      <div className={`relative overflow-hidden bg-white/[0.03] border border-white/10 mb-3 flex items-center justify-center transition-all duration-300 group-active:scale-95 hover:border-cyan-400/50 hover:shadow-[0_0_20px_rgba(34,211,238,0.2)] ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
         {imgUrl ? (
           <img 
             src={imgUrl} 
@@ -150,27 +150,26 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out-expo" 
           />
         ) : (
-          // Premium Skeleton Pulse instead of blocking spinner
-          <div className="w-full h-full bg-neutral-700 animate-pulse" />
+          <div className="w-full h-full bg-white/5 animate-pulse" />
         )}
       </div>
       <div className="marquee-container text-center">
-        <span className="marquee-text text-[13px] font-extrabold text-neutral-100 tracking-wide">{title}</span>
+        <span className="marquee-text-active text-[13px] font-extrabold text-white tracking-wide drop-shadow-md">{title}</span>
       </div>
       <div className="marquee-container text-center mt-0.5">
-        <span className="marquee-text text-[11px] font-medium text-neutral-400 capitalize">{type}</span>
+        <span className="marquee-text-active text-[11px] font-medium text-cyan-200/70 capitalize">{type}</span>
       </div>
     </div>
   );
 };
 
-// Reusable Carousel Wrappers
+// Reusable Carousel Wrappers with vibrant headers
 const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
-    <div className="mb-10 carousel-wrapper animate-fade-in">
-      <h2 className="text-[22px] font-black mb-4 px-4 tracking-tight text-white">{title}</h2>
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4 touch-pan-x">
+    <div className="mb-10 carousel-wrapper">
+      <h2 className="text-[22px] font-black mb-4 px-4 tracking-tight bg-gradient-to-r from-white to-neutral-400 bg-clip-text text-transparent">{title}</h2>
+      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4 touch-pan-x hardware-scroll">
         {items.map((item: any, i: number) => (
           <PremiumCard key={item.id || i} item={item} isCircular={isCircular} hideSubtitle={hideSubtitle} onClick={onItemClick} />
         ))}
@@ -182,9 +181,9 @@ const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onIt
 const AsyncCarousel = ({ title, items, type, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
-    <div className="mb-10 carousel-wrapper animate-fade-in">
-      <h2 className="text-[22px] font-black mb-4 px-4 tracking-tight text-white">{title}</h2>
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4 touch-pan-x">
+    <div className="mb-10 carousel-wrapper">
+      <h2 className="text-[22px] font-black mb-4 px-4 tracking-tight bg-gradient-to-r from-white to-neutral-400 bg-clip-text text-transparent">{title}</h2>
+      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4 touch-pan-x hardware-scroll">
         {items.map((item: any, i: number) => (
           <AsyncImageCard key={item.id || i} item={item} type={type} onClick={onItemClick} />
         ))}
@@ -198,28 +197,27 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const[trending, setTrending] = useState<any[]>([]);
+  const [trending, setTrending] = useState<any[]>([]);
   const [newReleases, setNewReleases] = useState<any[]>([]);
-  const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
-  const [otherPromos, setOtherPromos] = useState<any[]>([]);
+  const[featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
+  const[otherPromos, setOtherPromos] = useState<any[]>([]);
   const [topArtists, setTopArtists] = useState<any[]>([]);
-  const[charts, setCharts] = useState<any[]>([]);
+  const [charts, setCharts] = useState<any[]>([]);
 
-  const [recoArtists, setRecoArtists] = useState<any[]>([]);
-  const [recoActors, setRecoActors] = useState<any[]>([]);
+  const[recoArtists, setRecoArtists] = useState<any[]>([]);
+  const[recoActors, setRecoActors] = useState<any[]>([]);
   const [recoAlbums, setRecoAlbums] = useState<any[]>([]);
-  const[recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
+  const [recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchAllData = async () => {
       setLoading(true);
-      // Wipe state when language changes
       setTrending([]); setNewReleases([]); setFeaturedPlaylists([]);
       setOtherPromos([]); setTopArtists([]); setCharts([]);
       setRecoArtists([]); setRecoActors([]); setRecoAlbums([]); setRecoPlaylists([]);
 
       try {
-        const [launchRes, artistsRes, featuredRes, albumsRes, trendingRes, footerRes] = await Promise.all([
+        const[launchRes, artistsRes, featuredRes, albumsRes, trendingRes, footerRes] = await Promise.all([
           fetch(`/api/jiosaavn?__call=webapi.getLaunchData&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
           fetch(`/api/jiosaavn?__call=social.getTopArtists&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
           fetch(`/api/jiosaavn?__call=content.getFeaturedPlaylists&fetch_from_serialized_files=true&p=1&n=50&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
@@ -249,9 +247,9 @@ export default function Home() {
             .sort((a, b) => a.position - b.position)
             .filter((m) => m.source !== "radio" && m.type !== "radio_station" && m.source !== "artist_recos");
 
-          setCharts(launchJson.charts ||[]);
+          setCharts(launchJson.charts || []);
 
-          const exclude = ["new_trending", "new_albums", "charts", "top_playlists"];
+          const exclude =["new_trending", "new_albums", "charts", "top_playlists"];
           const promos = activeModules.filter((m) => !exclude.includes(m.source));
           setOtherPromos(promos.map((p) => ({ title: p.title, data: launchJson[p.key] ||[] })).filter(p => p.data.length > 0));
         }
@@ -293,11 +291,10 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-[#09090b] text-white">
-        {/* Premium Loading Skeleton Grid */}
+      <div className="flex h-screen flex-col items-center justify-center bg-[#05050A] text-white">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-pulse opacity-40">
            {[...Array(8)].map((_, i) => (
-             <div key={i} className="w-32 h-32 bg-neutral-800 rounded-2xl"></div>
+             <div key={i} className="w-32 h-32 bg-white/10 rounded-2xl"></div>
            ))}
         </div>
       </div>
@@ -305,34 +302,37 @@ export default function Home() {
   }
 
   return (
-    <main className="pt-14 pb-28 bg-[#09090b] min-h-screen">
+    // Rich gradient dark background instead of flat black
+    <main className="pt-14 pb-28 min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-950/40 via-[#05050A] to-[#000000]">
+      
+      {/* Colorful Premium Header */}
       <div className="px-4 mb-10 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="bg-white p-1.5 rounded-full shadow-lg shadow-white/10">
-            <Music2 fill="black" size={20} className="text-black" />
+        <div className="flex items-center gap-3">
+          <div className="bg-gradient-to-br from-pink-500 to-violet-600 p-2 rounded-xl shadow-[0_0_15px_rgba(236,72,153,0.4)]">
+            <Music2 fill="white" size={22} className="text-white" />
           </div>
           <h1 className="text-3xl font-black tracking-tighter text-white">
-            Music<span className="text-neutral-400 font-bold text-xl">@8481</span>
+            Music<span className="bg-gradient-to-r from-pink-500 to-cyan-400 bg-clip-text text-transparent font-bold text-xl ml-1">@8481</span>
           </h1>
         </div>
       </div>
 
-      <Carousel title="Trending" items={trending} onItemClick={handleItemClick} />
-      <Carousel title="New Releases" items={newReleases} onItemClick={handleItemClick} />
-      <Carousel title="Featured Playlists" items={featuredPlaylists} onItemClick={handleItemClick} />
+      <Carousel title="Trending 🔥" items={trending} onItemClick={handleItemClick} />
+      <Carousel title="New Releases ⚡" items={newReleases} onItemClick={handleItemClick} />
+      <Carousel title="Featured Playlists 🎧" items={featuredPlaylists} onItemClick={handleItemClick} />
 
-      <AsyncCarousel title="Recommended Artists" items={recoArtists} type="artist" onItemClick={handleItemClick} />
+      <AsyncCarousel title="Recommended Artists ✨" items={recoArtists} type="artist" onItemClick={handleItemClick} />
 
       {otherPromos.map((promo, idx) => (
         <Carousel key={idx} title={promo.title} items={promo.data} onItemClick={handleItemClick} />
       ))}
 
-      <AsyncCarousel title="Recommended Actors" items={recoActors} type="actor" onItemClick={handleItemClick} />
-      <AsyncCarousel title="Recommended Albums" items={recoAlbums} type="album" onItemClick={handleItemClick} />
-      <AsyncCarousel title="Recommended Playlists" items={recoPlaylists} type="playlist" onItemClick={handleItemClick} />
+      <AsyncCarousel title="Recommended Actors 🎭" items={recoActors} type="actor" onItemClick={handleItemClick} />
+      <AsyncCarousel title="Recommended Albums 💿" items={recoAlbums} type="album" onItemClick={handleItemClick} />
+      <AsyncCarousel title="Recommended Playlists 📻" items={recoPlaylists} type="playlist" onItemClick={handleItemClick} />
 
-      <Carousel title="Top Charts" items={charts} hideSubtitle={true} onItemClick={handleItemClick} />
-      <Carousel title="Top Artists" items={topArtists} isCircular={true} onItemClick={handleItemClick} />
+      <Carousel title="Top Charts 📈" items={charts} hideSubtitle={true} onItemClick={handleItemClick} />
+      <Carousel title="Top Artists 🌟" items={topArtists} isCircular={true} onItemClick={handleItemClick} />
     </main>
   );
 }

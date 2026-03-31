@@ -41,7 +41,6 @@ const formatTime = (time: number) => {
   return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
 };
 
-// Parse Spotify Lyrics TimeTags[00:00.14] into seconds
 const parseTimeTag = (tag: string) => {
   if (!tag) return 0;
   const parts = tag.split(':');
@@ -75,7 +74,6 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
   const tTitle = clean(targetTrack); 
   const tArtist = clean(targetArtist);
   
-  // Fixed TS Error: typed as 'any' instead of letting it infer 'never' from 'null'
   let bestMatch: any = null; 
   let highestScore = 0;
   
@@ -95,9 +93,7 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
               else if (ra.includes(tArtist) || tArtist.includes(ra)) { score += 80; artistMatched = true; break; } 
           }
           if (!artistMatched) score = 0;
-      } else { 
-          score += 50; 
-      }
+      } else { score += 50; }
       
       if (score > 0) { 
           if (rTitle === tTitle) score += 100; 
@@ -110,9 +106,12 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
           bestMatch = track; 
       }
   });
-  return highestScore > 0 ? bestMatch : null;
-};
 
+  // Fallback: If strict match fails, but we have tracks, return the top result so Canvas/Lyrics still work
+  if (highestScore > 0) return bestMatch;
+  if (apiData.tracks && apiData.tracks.length > 0) return apiData.tracks[0].data;
+  return null;
+};
 
 // --- PERFECT MARQUEE COMPONENT ---
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
@@ -155,37 +154,32 @@ export default function Player() {
   const[isExpanded, setIsExpanded] = useState(false);
   const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
 
-  // Enhanced Additions
   const rapidKeyIdxRef = useRef(0);
-  const [spotifyId, setSpotifyId] = useState<string | null>(null);
-  const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
+  const[spotifyId, setSpotifyId] = useState<string | null>(null);
+  const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const[lyrics, setLyrics] = useState<any[]>([]);
   const [syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const [canvasData, setCanvasData] = useState<any>(null);
+  const[canvasData, setCanvasData] = useState<any>(null);
   const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
   
-  // Swipe mechanics
-  const [swipeX, setSwipeX] = useState(0);
+  const[swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
-  
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const title = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
   const artists = currentSong ? decodeEntities(getArtists(currentSong)) : "";
   const coverImage = currentSong ? getImageUrl(currentSong.image) : "";
-  
   const contextType = currentSong?.playlistName ? "PLAYLIST" : (currentSong?.album?.name ? "ALBUM" : "TRACK");
   const contextName = currentSong?.playlistName || currentSong?.album?.name || "Single";
 
-  // Reset Everything on Song Change & Fetch Spotify/Audio Data
+  // Reset Everything on Song Change
   useEffect(() => {
     if (!currentSong) return;
     
-    // Reset Data Maps
     setSpotifyId(null);
     setSpotifyUrl(null);
     setLyrics([]);
@@ -216,28 +210,20 @@ export default function Player() {
       for (let attempt = 0; attempt < RAPID_KEYS.length; attempt++) {
         try {
           const response = await fetch(searchUrl, { 
-              method: 'GET', 
-              headers: { 
-                  'x-rapidapi-key': RAPID_KEYS[rapidKeyIdxRef.current], 
-                  'x-rapidapi-host': RAPID_API_HOST 
-              } 
+              method: 'GET', headers: { 'x-rapidapi-key': RAPID_KEYS[rapidKeyIdxRef.current], 'x-rapidapi-host': RAPID_API_HOST } 
           });
-
           if (response.ok) {
               matchData = await response.json();
               break; 
           } else if (response.status === 429 || response.status === 401 || response.status === 403) {
               rapidKeyIdxRef.current = (rapidKeyIdxRef.current + 1) % RAPID_KEYS.length;
-          } else {
-              break; 
-          }
+          } else break; 
         } catch (e) {
             rapidKeyIdxRef.current = (rapidKeyIdxRef.current + 1) % RAPID_KEYS.length;
         }
       }
 
       if (matchData) {
-        // Fixed TS Error: added ': any' so TS knows 'id' is safe to access
         const match: any = performMatching(matchData, title, searchArtist);
         if (match) {
           setSpotifyId(match.id);
@@ -250,27 +236,22 @@ export default function Player() {
     fetchSpotifyMatch();
   },[currentSong, title, artists]);
 
-  // Fetch Lyrics and Canvas once Spotify Match is found
+  // Fetch Lyrics and Canvas
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
 
     const fetchExtras = async () => {
       try {
-        // Fetch Lyrics
         const lyricsRes = await fetch(`https://lyr-nine.vercel.app/api/lyrics?url=${encodeURIComponent(spotifyUrl)}&format=lrc`);
         if (lyricsRes.ok) {
           const lyricsJson = await lyricsRes.json();
           if (lyricsJson.lines) {
-            const parsedLines = lyricsJson.lines.map((l: any) => ({
-              time: parseTimeTag(l.timeTag),
-              words: l.words
-            }));
+            const parsedLines = lyricsJson.lines.map((l: any) => ({ time: parseTimeTag(l.timeTag), words: l.words }));
             setLyrics(parsedLines);
             setSyncType(lyricsJson.syncType);
           }
         }
 
-        // Fetch Canvas
         const canvasRes = await fetch(`https://ayush-gamma-coral.vercel.app/api/canvas?trackId=${spotifyId}`);
         if (canvasRes.ok) {
           const canvasJson = await canvasRes.json();
@@ -320,7 +301,7 @@ export default function Player() {
       }
       else audioRef.current.pause();
     }
-  }, [isPlaying, audioUrl, volume]);
+  },[isPlaying, audioUrl, volume]);
 
   const syncPosition = useCallback(() => {
     if ('mediaSession' in navigator && audioRef.current && duration > 0) {
@@ -348,12 +329,26 @@ export default function Player() {
     }
   };
 
-  // Scroll active lyric smoothly in Lyrics Card
+  // INTERNAL Scroll active lyric so the main page doesn't bounce
   useEffect(() => {
     if (activeLyricRef.current && lyricsContainerRef.current) {
-      activeLyricRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const container = lyricsContainerRef.current;
+      const element = activeLyricRef.current;
+      
+      const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + (element.clientHeight / 2);
+      
+      container.scrollTo({ top: scrollPos, behavior: 'smooth' });
     }
   }, [activeLyricIndex]);
+
+  // Click on Lyrics to Sync
+  const handleLyricClick = (time: number) => {
+    if (audioRef.current && duration > 0) {
+      audioRef.current.currentTime = time;
+      setCurrentTime(time);
+      syncPosition();
+    }
+  };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
@@ -385,7 +380,6 @@ export default function Player() {
     if (idx > 0) { setCurrentSong(queue[idx - 1]); setIsPlaying(true); }
   };
 
-  // Smooth Swipe to Close Mechanics
   const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
   const handleTouchMove = (e: React.TouchEvent) => {
     const diff = e.touches[0].clientX - touchStartX.current;
@@ -400,10 +394,13 @@ export default function Player() {
 
   if (!currentSong) return null;
 
+  // Render Artist Data gracefully
+  const artistNameToShow = canvasData?.artist?.artistName || artists.split(',')[0];
+  const artistImgToShow = canvasData?.artist?.artistImgUrl || coverImage;
+
   return (
     <>
       <style dangerouslySetInnerHTML={{__html: `
-        /* Premium Spotify Marquee & Animation */
         @keyframes spotify-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
         @keyframes slide-up-lyric { 0% { transform: translateY(10px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
         .animate-spotify-marquee { animation: spotify-marquee 12s linear infinite; display: inline-block; }
@@ -412,7 +409,6 @@ export default function Player() {
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
 
-        /* Pure CSS Apple/Spotify Sliders */
         input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; border-radius: 4px; }
         input[type=range]:focus { outline: none; }
         
@@ -433,9 +429,7 @@ export default function Player() {
 
       <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying} onEnded={playNext} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)} />
 
-      {/* =========================================================================
-          DESKTOP BOTTOM BAR (Hidden on Mobile) 
-      ========================================================================= */}
+      {/* DESKTOP BOTTOM BAR */}
       <div className="hidden md:flex fixed bottom-0 left-0 w-full h-[90px] bg-[#000000] z-[100] items-center px-4 justify-between border-t border-[#282828]">
         <div className="flex items-center w-[30%] min-w-[180px] gap-4">
           <div className="relative w-14 h-14 flex-shrink-0 bg-[#282828] rounded overflow-hidden shadow-md group cursor-pointer">
@@ -482,11 +476,9 @@ export default function Player() {
         </div>
       </div>
 
-      {/* =========================================================================
-          MOBILE FULL SCREEN OVERLAY (Scrollable for Lyrics & Artist Cards)
-      ========================================================================= */}
+      {/* MOBILE FULL SCREEN OVERLAY (Scrollable) */}
       <div 
-        className={`md:hidden fixed inset-0 z-[110] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] overflow-y-auto overflow-x-hidden scrollbar-hide ${isExpanded ? "translate-y-0" : "translate-y-full"}`} 
+        className={`md:hidden fixed inset-0 z-[99999] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] overflow-y-auto overflow-x-hidden scrollbar-hide ${isExpanded ? "translate-y-0" : "translate-y-full"}`} 
         style={{ backgroundColor: isCanvasLoaded ? '#000' : dominantColor }}
       >
         {/* Dynamic Backgrounds */}
@@ -496,26 +488,16 @@ export default function Player() {
         
         {isCanvasLoaded && canvasData?.canvasUrl && (
           <div className="fixed inset-0 pointer-events-none z-0 bg-black">
-            <video 
-              src={canvasData.canvasUrl} 
-              autoPlay 
-              loop 
-              muted 
-              playsInline 
-              onCanPlay={() => setIsCanvasLoaded(true)}
-              className="absolute inset-0 w-full h-full object-cover opacity-90 blur-[2px] scale-105" 
-            />
-            {/* Gradient overlay to ensure text legibility */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
+            <video src={canvasData.canvasUrl} autoPlay loop muted playsInline onCanPlay={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover opacity-90 scale-105 blur-sm" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/90" />
           </div>
         )}
 
         {/* Content Wrapper */}
         <div className="relative z-10 w-full min-h-max flex flex-col">
           
-          {/* PAGE 1: Main Player Controls (Exactly 100dvh) */}
-          <div className="w-full h-[100dvh] flex flex-col flex-shrink-0">
-            {/* Header */}
+          {/* Main Controls (Takes up viewport minus 90px so lyrics card peeks out) */}
+          <div className="w-full flex flex-col flex-shrink-0" style={{ minHeight: 'calc(100dvh - 90px)' }}>
             <div className="flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4">
               <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md">
@@ -525,20 +507,14 @@ export default function Player() {
               <button className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md"><MoreHorizontal size={24} /></button>
             </div>
 
-            {/* Art Container (Hides if Canvas is loaded) */}
             <div className={`flex-1 w-full min-h-0 flex items-center justify-center py-2 px-6 transition-opacity duration-500 ${isCanvasLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-              <div 
-                className="relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden"
-                style={{ height: '100%', aspectRatio: '1 / 1', maxHeight: '450px', maxWidth: 'min(calc(100vw - 48px), 450px)' }}
-              >
+              <div className="relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden" style={{ height: '100%', aspectRatio: '1 / 1', maxHeight: '450px', maxWidth: 'min(calc(100vw - 48px), 450px)' }}>
                 {loading && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
                 <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
               </div>
             </div>
 
-            {/* Bottom Controls Area */}
-            <div className="w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-6 pt-2 flex flex-col justify-end flex-shrink-0">
-              
+            <div className="w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0">
               {/* Dynamic Active Lyric Line (Spotify Style) */}
               {syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && (
                 <div key={activeLyricIndex} className="text-white/95 text-[15px] font-bold text-left mb-2 min-h-[22px] animate-lyric-change drop-shadow-lg pr-4 line-clamp-2">
@@ -546,7 +522,6 @@ export default function Player() {
                 </div>
               )}
 
-              {/* Title & Heart */}
               <div className="flex items-center justify-between mb-5 drop-shadow-md">
                 <div className="flex flex-col overflow-hidden pr-4 flex-1 min-w-0 w-full">
                   <MarqueeText text={title} className="text-[22px] font-bold text-white tracking-tight leading-tight drop-shadow-md" />
@@ -555,7 +530,6 @@ export default function Player() {
                 <button className="text-white flex-shrink-0 ml-2 active:scale-75 transition-transform"><Heart size={26} /></button>
               </div>
 
-              {/* Progress Bar */}
               <div className="w-full flex flex-col gap-1 mb-5 relative drop-shadow-md">
                 <input type="range" min="0" max="100" value={duration > 0 ? progress : 0} onChange={handleSeek} className="w-full mobile-slider relative z-10" style={{ background: `linear-gradient(to right, #fff ${progress}%, rgba(255,255,255,0.2) ${progress}%)` }} />
                 <div className="flex items-center justify-between text-[11px] font-medium text-[#a7a7a7] mt-1 w-full pointer-events-none">
@@ -564,7 +538,6 @@ export default function Player() {
                 </div>
               </div>
 
-              {/* Main Controls Row */}
               <div className="flex items-center justify-between w-full mb-5 px-1 drop-shadow-md">
                 <button className="text-[#1db954] active:opacity-50"><Shuffle size={24} /></button>
                 <button onClick={playPrev} className="text-white active:opacity-50"><SkipBack size={36} fill="white" stroke="white" /></button>
@@ -575,7 +548,6 @@ export default function Player() {
                 <button className="text-white/70 active:opacity-50"><Repeat size={24} /></button>
               </div>
 
-              {/* Bottom Device Actions */}
               <div className="flex items-center justify-between text-[#b3b3b3] w-full px-1 drop-shadow-md">
                 <button className="active:opacity-50"><MonitorSpeaker size={20} /></button>
                 <div className="flex items-center gap-6">
@@ -585,18 +557,22 @@ export default function Player() {
             </div>
           </div>
 
-          {/* PAGE 2: Lyrics & Canvas Cards */}
+          {/* PAGE 2: Lyrics & Artist Cards */}
           <div className="w-full px-5 pb-20 flex flex-col gap-6">
             
-            {/* Spotify Lyrics Card */}
+            {/* Spotify Lyrics Card (Solid Color & Huge Text) */}
             {lyrics.length > 0 && (
-              <div className={`rounded-xl p-5 w-full mx-auto shadow-xl relative overflow-hidden transition-colors duration-500`} style={{ backgroundColor: isCanvasLoaded ? 'rgba(30,30,30,0.85)' : dominantColor, filter: 'brightness(0.9)' }}>
-                <div className="flex items-center justify-between mb-4 sticky top-0 bg-transparent z-10">
-                  <h3 className="text-white font-bold text-[16px]">Lyrics</h3>
-                  <button className="p-1 text-white/70 hover:text-white rounded-full bg-black/20"><Maximize2 size={14} /></button>
+              <div 
+                className="rounded-xl p-6 w-full mx-auto shadow-2xl relative overflow-hidden transition-colors duration-500" 
+                style={{ backgroundColor: dominantColor, filter: 'brightness(0.75)' }} // Solid darkened card color
+              >
+                <div className="flex items-center justify-between mb-6 sticky top-0 bg-transparent z-10">
+                  <h3 className="text-white font-bold text-[18px]">Lyrics</h3>
+                  <button className="p-2 text-white/80 hover:text-white rounded-full bg-black/30"><Maximize2 size={16} /></button>
                 </div>
                 
-                <div className="flex flex-col gap-3 max-h-[250px] overflow-y-auto scrollbar-hide pb-6" ref={lyricsContainerRef}>
+                {/* Lyrics Container (Scrolls Internally) */}
+                <div className="flex flex-col gap-5 max-h-[400px] overflow-y-auto scrollbar-hide pb-10" ref={lyricsContainerRef}>
                   {lyrics.map((line, idx) => {
                     const isActive = idx === activeLyricIndex;
                     const isPast = idx < activeLyricIndex;
@@ -604,7 +580,8 @@ export default function Player() {
                       <p 
                         key={idx} 
                         ref={isActive ? activeLyricRef : null}
-                        className={`text-[16px] transition-all duration-300 ${isActive ? 'text-white text-[20px] font-bold drop-shadow-md' : isPast ? 'text-white/50 font-medium' : 'text-white/30 font-medium'}`}
+                        onClick={() => handleLyricClick(line.time)} // Click to Sync
+                        className={`cursor-pointer transition-all duration-300 hover:text-white ${isActive ? 'text-white text-[24px] font-bold drop-shadow-lg' : isPast ? 'text-white/60 text-[20px] font-semibold' : 'text-white/30 text-[20px] font-semibold'}`}
                       >
                         {line.words || '♪'}
                       </p>
@@ -614,36 +591,28 @@ export default function Player() {
               </div>
             )}
 
-            {/* Artist Card from Canvas API */}
-            {canvasData?.artist && (
-              <div className="bg-[#1e1e1e] rounded-xl w-full mx-auto mb-10 overflow-hidden relative shadow-lg h-[200px] group cursor-pointer">
-                <img src={canvasData.artist.artistImgUrl} className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500" alt={canvasData.artist.artistName} />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
-                <div className="absolute bottom-5 left-5 flex flex-col">
-                  <span className="text-white/80 text-[11px] uppercase tracking-widest font-bold mb-1">Artist</span>
-                  <span className="text-white font-bold text-3xl drop-shadow-lg">{canvasData.artist.artistName}</span>
-                </div>
+            {/* Artist Card */}
+            <div className="bg-[#1e1e1e] rounded-xl w-full mx-auto mb-10 overflow-hidden relative shadow-lg h-[220px] group cursor-pointer border border-white/5">
+              <img src={artistImgToShow} className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500" alt={artistNameToShow} />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent" />
+              <div className="absolute bottom-6 left-6 flex flex-col">
+                <span className="text-white/80 text-[12px] uppercase tracking-widest font-bold mb-1">Artist</span>
+                <span className="text-white font-bold text-3xl drop-shadow-lg">{artistNameToShow}</span>
               </div>
-            )}
-          </div>
+            </div>
 
+          </div>
         </div>
       </div>
 
-      {/* =========================================================================
-          MOBILE MINI PLAYER (Floating at Bottom)
-      ========================================================================= */}
+      {/* MOBILE MINI PLAYER */}
       <div 
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onClick={() => setIsExpanded(true)}
-        className={`md:hidden fixed bottom-[65px] left-[8px] right-[8px] h-[56px] rounded-[6px] z-[105] cursor-pointer overflow-hidden transition-all duration-[400ms] shadow-md ${isExpanded ? 'opacity-0 pointer-events-none translate-y-6 scale-[0.98]' : 'opacity-100 translate-y-0 scale-100'}`}
-        style={{ 
-          backgroundColor: dominantColor,
-          transform: swipeX > 0 ? `translateX(${swipeX}px)` : undefined,
-          transition: swipeX === 0 && !isExpanded ? 'transform 0.4s ease-out, opacity 0.4s' : 'none'
-        }}
+        className={`md:hidden fixed bottom-[65px] left-[8px] right-[8px] h-[56px] rounded-[6px] z-[99990] cursor-pointer overflow-hidden transition-all duration-[400ms] shadow-md ${isExpanded ? 'opacity-0 pointer-events-none translate-y-6 scale-[0.98]' : 'opacity-100 translate-y-0 scale-100'}`}
+        style={{ backgroundColor: dominantColor, transform: swipeX > 0 ? `translateX(${swipeX}px)` : undefined, transition: swipeX === 0 && !isExpanded ? 'transform 0.4s ease-out, opacity 0.4s' : 'none' }}
       >
         <div className="absolute inset-0 bg-black/25 z-0 pointer-events-none" />
         
@@ -652,12 +621,10 @@ export default function Player() {
             {loading && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 size={16} className="animate-spin text-white" /></div>}
             <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
           </div>
-
           <div className="flex flex-col flex-1 min-w-0 pr-3 justify-center">
             <MarqueeText text={title} className="text-[13px] font-bold text-white leading-tight mb-[2px]" />
             <MarqueeText text={artists} className="text-[12px] font-medium text-white/70 leading-tight" />
           </div>
-
           <div className="flex items-center gap-4 flex-shrink-0 pr-2 text-white">
             <button className="active:scale-75 transition-transform" onClick={(e) => { e.stopPropagation(); }}><MonitorSpeaker size={20} className="text-[#1db954]" /></button>
             <button className="active:scale-75 transition-transform" onClick={(e) => { e.stopPropagation(); setIsPlaying(!isPlaying); }}>
@@ -665,7 +632,6 @@ export default function Player() {
             </button>
           </div>
         </div>
-
         <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-white/20 rounded-full z-20 pointer-events-none overflow-hidden">
           <div className="h-full bg-white rounded-full transition-all duration-300 ease-linear" style={{ width: `${progress}%` }} />
         </div>

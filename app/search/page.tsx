@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Search as SearchIcon, Loader2, Music2, Disc, ListMusic, Mic2, X, Sparkles } from "lucide-react";
+import { Search as SearchIcon, Loader2, Music2, Disc, ListMusic, Mic2, X } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 import { useRouter } from "next/navigation";
 
@@ -18,9 +18,15 @@ const decodeEntities = (text: string) => {
   return text.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 };
 
-// Subtitle Extractor - Strictly Artist Name for Songs
+// Subtitle Extractor - Strictly Artist Name for Songs (Updated to handle new JSON structure)
 const getSubtitle = (item: any, type: string) => {
   if (type === "songs" || item.type === "song") {
+    // Check new JSON structure: artists.primary array
+    if (item.artists?.primary && Array.isArray(item.artists.primary)) {
+      return item.artists.primary.map((a: any) => a.name).join(", ");
+    }
+    // Fallbacks for other JioSaavn API variants
+    if (typeof item.artists === "string") return item.artists;
     if (item.primaryArtists) return item.primaryArtists;
     if (item.singers) return item.singers;
     if (item.more_info?.artistMap?.primary_artists?.length > 0) return item.more_info.artistMap.primary_artists.map((a: any) => a.name).join(", ");
@@ -78,23 +84,23 @@ export default function SearchPage() {
   const router = useRouter();
 
   const [query, setQuery] = useState("");
-  const[debouncedQuery, setDebouncedQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
   
-  // FIX: Explicitly typed as <any> to prevent Vercel TypeScript build crash!
-  const[allData, setAllData] = useState<any>({ topMatches: [], songs: [], albums: [], playlists:[], artists:[] });
+  const [allData, setAllData] = useState<any>({ topMatches: [], songs: [], albums: [], playlists:[], artists:[] });
   
   // States for Infinite Scroll Tabs
   const [results, setResults] = useState<any[]>([]);
   const [page, setPage] = useState(1);
-  const[hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  const tabs =[
-    { id: "all", label: "All", icon: Sparkles },
+  // Removed icon from "All" tab
+  const tabs = [
+    { id: "all", label: "All" }, 
     { id: "songs", label: "Songs", icon: Music2 },
     { id: "albums", label: "Albums", icon: Disc },
     { id: "playlists", label: "Playlists", icon: ListMusic },
@@ -135,13 +141,13 @@ export default function SearchPage() {
 
           const [sJson, aJson, pJson, arJson] = await Promise.all([sRes.json(), aRes.json(), pRes.json(), arRes.json()]);
 
-          const songs = sJson.data?.results || sJson.data ||[];
-          const albums = aJson.data?.results || aJson.data ||[];
+          const songs = sJson.data?.results || sJson.data || [];
+          const albums = aJson.data?.results || aJson.data || [];
           const playlists = pJson.data?.results || pJson.data || [];
-          const artists = arJson.data?.results || arJson.data ||[];
+          const artists = arJson.data?.results || arJson.data || [];
 
           // Smart "Best Match" Engine
-          const combined =[
+          const combined = [
             ...songs.map((i: any) => ({ ...i, type: "song" })),
             ...albums.map((i: any) => ({ ...i, type: "album" })),
             ...playlists.map((i: any) => ({ ...i, type: "playlist" })),
@@ -163,7 +169,7 @@ export default function SearchPage() {
           // Fetch specific tab with Infinite Scroll pagination
           const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${activeTab}?query=${encodeURIComponent(debouncedQuery)}&page=${page}`);
           const json = await res.json();
-          const newData = json.data?.results || json.data ||[];
+          const newData = json.data?.results || json.data || [];
 
           if (newData.length === 0) {
             setHasMore(false);
@@ -182,7 +188,7 @@ export default function SearchPage() {
     fetchData();
   }, [debouncedQuery, activeTab, page]);
 
-  // FIX: Properly typed ref to fix Vercel Callback Error
+  // Infinite Scroll Hook
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (loading || loadingMore || !hasMore || activeTab === "all") return;
     if (observerRef.current) observerRef.current.disconnect();
@@ -194,7 +200,7 @@ export default function SearchPage() {
     });
 
     if (node) observerRef.current.observe(node);
-  },[loading, loadingMore, hasMore, activeTab]);
+  }, [loading, loadingMore, hasMore, activeTab]);
 
   // Handle Clicks
   const handleItemClick = (item: any, passedType?: string) => {
@@ -252,7 +258,8 @@ export default function SearchPage() {
                   isActive ? "bg-white text-black scale-105" : "bg-neutral-900 text-neutral-400 border border-neutral-800 active:scale-95"
                 }`}
               >
-                <tab.icon size={14} strokeWidth={isActive ? 2.5 : 2} />
+                {/* Conditionally render icon if exists */}
+                {tab.icon && <tab.icon size={14} strokeWidth={isActive ? 2.5 : 2} />}
                 {tab.label}
               </button>
             );
@@ -273,7 +280,8 @@ export default function SearchPage() {
           <div className="flex flex-col gap-8">
             {allData.topMatches.length > 0 && (
               <div>
-                <h2 className="text-lg font-bold text-white mb-3 flex items-center gap-2"><Sparkles size={18} className="text-amber-400"/> Best Matches</h2>
+                {/* Removed Icon before Best Matches */}
+                <h2 className="text-lg font-bold text-white mb-3">Best Matches</h2>
                 <div className="grid grid-cols-4 gap-3">
                   {allData.topMatches.map((item: any, i: number) => (
                     <SearchCard key={`top-${i}`} item={item} index={i} onClick={handleItemClick} />

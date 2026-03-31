@@ -14,16 +14,18 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #09090b; /* Rich deep black */
+    --background: #05050A; /* Premium Deep Space color */
     --foreground: #ededed;
   }
 }
 
 body {
-  background-color: #09090b;
+  background-color: #05050A;
   color: #ffffff;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Stops scroll rubber-banding artifacting */
+  overscroll-behavior-y: none;
 }
 
 /* Super Smooth Scrollbar hiding with native touch handling */
@@ -32,13 +34,12 @@ body {
   -ms-overflow-style: none; 
   scrollbar-width: none; 
   -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
 }
 
-/* Off-Screen Rendering optimization! Kills all lag natively. */
-.carousel-wrapper {
-  content-visibility: auto;
-  contain-intrinsic-size: 250px; /* Estimates height so scrollbar doesn't jump */
+/* Hardware accelerated scroll containers to fix scroll jank */
+.hardware-scroll {
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* Premium Image Zoom Curve */
@@ -46,46 +47,39 @@ body {
   transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Global fade-in instead of staggering 100+ individual delays */
-@keyframes fadeIn {
-  0% { opacity: 0; transform: translateY(15px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-in {
-  animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
 /* ==================================================== */
-/* MATHEMATICALLY FLAWLESS CSS MARQUEE ANIMATION        */
+/* CONTINUOUS ALWAYS-ON MARQUEE (GPU ACCELERATED)       */
 /* ==================================================== */
 
 .marquee-container {
   width: 100%;
   overflow: hidden;
   white-space: nowrap;
+  position: relative;
+  /* Mask edges for a clean fade effect on text */
+  mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
 }
 
-.marquee-text {
+.marquee-text-active {
   display: block;
-  width: max-content; /* Exactly matches text width */
-  min-width: 100%;    /* But never smaller than container */
+  width: max-content;
+  min-width: 100%;    
   text-align: center;
-  transition: transform 2.5s cubic-bezier(0.25, 1, 0.5, 1);
   
-  /* Show ellipsis when resting */
-  text-overflow: ellipsis;
-  overflow: hidden;
+  /* ALWAYS ANIMATING! Smooth continuous loop */
+  animation: ping-pong-scroll 4.5s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
+  
+  /* Forces rendering entirely onto the GPU, zero main-thread calculation */
+  will-change: transform;
 }
 
-/* MAGIC FIX: Dynamic overflow calculation */
-.group:hover .marquee-text {
-  text-overflow: clip; /* Remove dots to slide cleanly */
-  /* 
-   * 128px is tailwind w-32 size. 
-   * Formula dynamically calculates overflow width. 
-   * If text is shorter than 128px: evaluates to 0px (No move). 
-   * If text is longer: precisely translates exact excess pixels! 
-   */
-  transform: translateX(min(0px, calc(128px - 100%)));
-  transition-delay: 0.1s; /* Tiny delay creates premium feel */
+/* 
+ * FLAWLESS CSS MATH: 
+ * If text is short (<128px): min() forces 0px. Text stays perfectly centered and still.
+ * If text is long  (>128px): calculates exact overflow amount and translates flawlessly.
+ */
+@keyframes ping-pong-scroll {
+  0%, 15% { transform: translate3d(0, 0, 0); }
+  85%, 100% { transform: translate3d(min(0px, calc(128px - 100%)), 0, 0); }
 }

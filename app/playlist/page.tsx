@@ -7,7 +7,6 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Play, ArrowLeft, Loader2, Shuffle, Share2, Info, BadgeAlert, Heart, MoreHorizontal, Clock } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 
-// Robust HTML Entity Decoder
 const decodeEntities = (text: string) => {
   if (!text) return "";
   let decoded = text.replace(/&amp;/g, "&"); 
@@ -53,7 +52,7 @@ const getArtists = (data: any) => {
   } else if (data?.singers) {
     names = data.singers.split(",").map((n: string) => n.trim());
   } else {
-    return "Unknown Artist";
+    return "Various Artists";
   }
   return Array.from(new Set(names)).join(", ");
 };
@@ -105,7 +104,7 @@ const PlayingVisualizer = () => (
 );
 
 const PlaylistSkeleton = () => (
-  <div className="min-h-screen bg-[#0a0a0a] p-4 md:p-8 pt-24 animate-pulse">
+  <div className="min-h-screen bg-[#121212] p-4 md:p-8 pt-24 animate-pulse">
     <div className="flex flex-col md:flex-row gap-6 items-center md:items-end">
       <div className="w-40 h-40 md:w-64 md:h-64 bg-white/10 rounded-2xl shadow-2xl" />
       <div className="flex flex-col gap-4 w-full max-w-xl items-center md:items-start">
@@ -130,7 +129,7 @@ function PlaylistContent() {
   const { currentSong, setCurrentSong, setIsPlaying, setQueue } = useAppContext();
   
   const [playlist, setPlaylist] = useState<any>(null);
-  const [page, setPage] = useState(1);
+  const[page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const[hasMore, setHasMore] = useState(true);
@@ -138,17 +137,22 @@ function PlaylistContent() {
   const [isLiked, setIsLiked] = useState(false);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null); // For buttery smooth scroll logic
 
-  // PERFORMANCE FIX: IntersectionObserver replaces window.addEventListener('scroll')
-  // Completely eliminates scroll lag and screen blanking!
+  // FIX: Optimized requestAnimationFrame listener perfectly tuned to scrollY > 280
+  // Shows banner in header EXACTLY when main banner hides.
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => setIsScrolled(!entry.isIntersecting),
-      { threshold: 0, rootMargin: "-150px 0px 0px 0px" } // Triggers exactly when past the banner
-    );
-    if (sentinelRef.current) observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          setIsScrolled(window.scrollY > 280);
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
   },[]);
 
   useEffect(() => {
@@ -236,7 +240,7 @@ function PlaylistContent() {
 
   if (!playlist) {
     return (
-      <div className="flex flex-col h-screen items-center justify-center bg-[#0a0a0a] text-white gap-4">
+      <div className="flex flex-col h-screen items-center justify-center bg-[#121212] text-white gap-4">
         <Info size={48} className="text-white/30" />
         <p className="text-xl font-bold">Playlist not found</p>
         <button onClick={() => router.back()} className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-full font-bold backdrop-blur-md transition-all">Go Back</button>
@@ -252,10 +256,7 @@ function PlaylistContent() {
   const totalDurationStr = totalSeconds ? `${Math.floor(totalSeconds / 60)} mins` : "";
 
   return (
-    <div className="pb-36 bg-[#0a0a0a] min-h-screen relative text-white selection:bg-[#1ed760]/30 font-sans">
-      
-      {/* Invisible sentinel pixel to trigger sticky header smoothly without scroll listeners */}
-      <div ref={sentinelRef} className="absolute top-0 left-0 w-full h-[10px]" />
+    <div className="pb-36 bg-[#121212] min-h-screen relative text-white selection:bg-[#1ed760]/30 font-sans">
 
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes ping-pong {
@@ -272,24 +273,25 @@ function PlaylistContent() {
         .eq-bar-4 { animation: eq 1s ease-in-out infinite 0.1s; }
       `}} />
 
-      {/* Optimized Background Gradient (GPU friendly) */}
-      <div className="fixed top-0 left-0 w-full h-[60vh] pointer-events-none overflow-hidden z-0">
-        <div 
-          className="absolute inset-0 opacity-30 bg-cover bg-center"
-          style={{ backgroundImage: `url(${coverImage})`, filter: 'blur(30px) saturate(200%)', transform: 'translateZ(0) scale(1.1)' }}
+      {/* FIX: Restored original beautiful color extract background with <img> to stop scroll lag */}
+      <div className="absolute top-0 left-0 w-full h-[550px] pointer-events-none overflow-hidden z-0">
+        <img 
+          src={coverImage} 
+          alt="blur-bg" 
+          className="w-full h-full object-cover blur-[80px] saturate-[200%] opacity-40 scale-150 transform-gpu will-change-transform brightness-75" 
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#0a0a0a]/90 to-[#0a0a0a]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#121212]/90 to-[#121212]" />
       </div>
 
-      {/* Sticky Glass Navbar */}
-      <nav className={`fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 py-3 transition-all duration-300 ${isScrolled ? "bg-[#0a0a0a]/90 backdrop-blur-xl shadow-2xl border-b border-white/5" : "bg-transparent"}`}>
+      <nav className={`fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 py-3 transition-all duration-300 ${isScrolled ? "bg-[#171717] shadow-2xl border-b border-white/5" : "bg-transparent"}`}>
         <div className="flex items-center gap-4 flex-1 min-w-0">
-          <button onClick={() => router.back()} className="p-2.5 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-md transition-all text-white active:scale-90 z-50 flex-shrink-0">
+          <button onClick={() => router.back()} className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md transition-all text-white active:scale-90 z-50 flex-shrink-0">
             <ArrowLeft size={22} />
           </button>
           
+          {/* Appears smoothly only when scroll > 280 */}
           <div className={`flex items-center gap-3 overflow-hidden transition-all duration-300 flex-1 min-w-0 ${isScrolled ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}>
-            <img src={coverImage} className="w-10 h-10 rounded-md object-cover flex-shrink-0 shadow-md border border-white/10" alt="banner" />
+            <img src={coverImage} className="w-9 h-9 rounded-md object-cover flex-shrink-0 shadow-md border border-white/10" alt="banner" />
             <PingPongMarquee text={title} />
           </div>
         </div>
@@ -301,10 +303,9 @@ function PlaylistContent() {
         </div>
       </nav>
 
-      {/* Header Info Banner */}
       <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 px-5 md:px-10 pt-24 md:pt-32 pb-6">
         <div className="w-40 h-40 sm:w-48 sm:h-48 md:w-60 md:h-60 lg:w-64 lg:h-64 flex-shrink-0 rounded-2xl md:rounded-3xl overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.6)] border border-white/10">
-          <img src={coverImage} alt={title} className="w-full h-full object-cover" />
+          <img src={coverImage} alt={title} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-700 ease-out" />
         </div>
         
         <div className="flex flex-col items-center md:items-start text-center md:text-left mt-2 md:mt-0 w-full flex-1 min-w-0">
@@ -334,7 +335,6 @@ function PlaylistContent() {
         </div>
       </div>
 
-      {/* Quick Actions Array */}
       <div className="relative z-10 px-5 md:px-10 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3 md:gap-5">
           <button onClick={handlePlayPlaylist} className="w-14 h-14 md:w-16 md:h-16 bg-[#1ed760] hover:bg-[#3be477] text-black rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-[0_8px_40px_rgba(30,215,96,0.4)]">
@@ -359,15 +359,13 @@ function PlaylistContent() {
         </button>
       </div>
 
-      {/* List Headers */}
-      <div className="relative z-10 px-6 md:px-12 mt-6 hidden md:flex items-center text-[12px] font-bold uppercase tracking-widest text-white/40 border-b border-white/5 pb-3 mb-4 sticky top-[68px] bg-[#0a0a0a]/95 backdrop-blur-xl">
+      <div className="relative z-10 px-6 md:px-12 mt-6 hidden md:flex items-center text-[12px] font-bold uppercase tracking-widest text-white/40 border-b border-white/5 pb-3 mb-4 sticky top-[68px] bg-[#121212]/95 backdrop-blur-xl">
         <div className="w-12 text-center">#</div>
         <div className="flex-1 ml-4">Title</div>
         <div className="flex-1 hidden lg:block">Plays</div>
         <div className="w-16 text-right mr-4"><Clock size={16} className="inline-block" /></div>
       </div>
 
-      {/* Track List rendering */}
       <div className="relative z-10 px-3 md:px-10 flex flex-col gap-1.5">
         {playlist.songs?.map((song: any, index: number) => {
           const isLastItem = index === playlist.songs.length - 1;
@@ -394,8 +392,8 @@ function PlaylistContent() {
               </div>
               
               <div className="relative w-11 h-11 md:w-12 md:h-12 flex-shrink-0 bg-white/5 rounded-md overflow-hidden shadow-md">
-                {/* FIX: Loading="lazy" decoding="async" prevents fast scrolling lag */}
-                <img src={getImageUrl(song.image)} alt={decodeEntities(songTitle)} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                {/* FIX: Removed loading="lazy" & decoding="async" to completely stop scroll flickering! */}
+                <img src={getImageUrl(song.image)} alt={decodeEntities(songTitle)} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 transform-gpu" />
               </div>
               
               <div className="flex-1 min-w-0 pr-2 flex flex-col justify-center gap-0.5 overflow-hidden">

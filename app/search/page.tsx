@@ -47,7 +47,7 @@ const getMatchScore = (title: string, query: string) => {
   return 0;
 };
 
-// Premium Card Component - Explicitly Typed to Prevent Build Errors
+// Premium Card Component
 const SearchCard = forwardRef<HTMLDivElement, any>(({ item, tabType, onClick, isGrid = false }, ref) => {
   const type = item.type || tabType;
   const title = decodeEntities(item.title || item.name || "Unknown");
@@ -101,34 +101,38 @@ const SearchCard = forwardRef<HTMLDivElement, any>(({ item, tabType, onClick, is
 SearchCard.displayName = "SearchCard";
 
 // Horizontal Infinite Carousel Component
-const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore, onItemClick }: any) => {
+const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore, onItemClick, observerReady }: any) => {
   const observerRef = useRef<IntersectionObserver | null>(null);
 
+  // Attach observer specifically to the last item
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
-    if (loadingMore || !hasMore) return;
+    if (loadingMore || !hasMore || !observerReady.current) return;
     if (observerRef.current) observerRef.current.disconnect();
     
-    // Explicitly typed entries to prevent Vercel Build Error
     observerRef.current = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
-      if (entries[0].isIntersecting) loadMore(type);
-    }, { rootMargin: "250px" });
+      if (entries[0].isIntersecting && observerReady.current) {
+        loadMore(type);
+      }
+    }, { rootMargin: "250px", threshold: 0.1 });
 
     if (node) observerRef.current.observe(node);
-  }, [loadingMore, hasMore, loadMore, type]);
+  },[loadingMore, hasMore, loadMore, type, observerReady]);
 
+  // Handle horizontal scroll state synchronously
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const scrolls = JSON.parse(sessionStorage.getItem("search_scrollX") || "{}");
     scrolls[type] = (e.target as HTMLDivElement).scrollLeft;
     sessionStorage.setItem("search_scrollX", JSON.stringify(scrolls));
   };
 
+  // Restore horizontal scroll perfectly
   useEffect(() => {
     const scrolls = JSON.parse(sessionStorage.getItem("search_scrollX") || "{}");
     if (scrolls[type]) {
-      requestAnimationFrame(() => {
+      setTimeout(() => {
         const el = document.getElementById(`carousel-${type}`);
         if (el) el.scrollLeft = scrolls[type];
-      });
+      }, 300); // 300ms wait ensures DOM sizing is complete
     }
   }, [items.length, type]);
 
@@ -141,10 +145,17 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
         className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-2"
       >
         {items.map((item: any, i: number) => {
-          if (i === items.length - 1) {
-            return <SearchCard ref={lastElementRef} key={`${type}-${i}`} item={item} tabType={type} onClick={onItemClick} isGrid={false} />;
-          }
-          return <SearchCard key={`${type}-${i}`} item={item} tabType={type} onClick={onItemClick} isGrid={false} />;
+          const isLast = i === items.length - 1;
+          return (
+            <SearchCard 
+              ref={isLast ? lastElementRef : null} 
+              key={`${type}-${i}`} 
+              item={item} 
+              tabType={type} 
+              onClick={onItemClick} 
+              isGrid={false} 
+            />
+          );
         })}
         {loadingMore && (
           <div className="flex-shrink-0 flex justify-center items-center w-36 aspect-square border border-white/5 rounded-xl bg-white/5">
@@ -159,28 +170,32 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
 export default function SearchPage() {
   const { setCurrentSong, setIsPlaying } = useAppContext();
   const router = useRouter();
-  const CACHE_KEY = "search_page_cache_v4";
+  const CACHE_KEY = "search_page_cache_v5";
 
-  // Prevent SSR Hydration errors by initializing empty states
-  const [isRestored, setIsRestored] = useState(false);
+  const[isRestored, setIsRestored] = useState(false);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
   
-  const[allData, setAllData] = useState<any>({ topMatches:[], songs: [], albums:[], playlists:[], artists:[] });
-  const [allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
-  const[allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
-  const [horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
+  const [allData, setAllData] = useState<any>({ topMatches:[], songs: [], albums:[], playlists:[], artists:[] });
+  const[allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
+  const [allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
+  const[horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
   
-  const[results, setResults] = useState<any[]>([]);
-  const [page, setPage] = useState(1);
+  const [results, setResults] = useState<any[]>([]);
+  const[page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   
-  const[loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const[loadingMore, setLoadingMore] = useState(false);
   
   const lastFetched = useRef({ query: "", tab: "all", page: 1 });
+  
+  // Locks to prevent duplicate fetches & misfires on restore
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const observerReady = useRef(false);
+  const isFetchingVertical = useRef(false);
+  const isFetchingHorizontal = useRef<any>({});
 
   const tabs =[
     { id: "all", label: "All" }, 
@@ -190,7 +205,7 @@ export default function SearchPage() {
     { id: "artists", label: "Artists", icon: Mic2 }
   ];
 
-  // 1. SAFELY Restore State from SessionStorage ONCE mounted
+  // 1. SAFELY Restore State from SessionStorage ONCE
   useEffect(() => {
     const cached = sessionStorage.getItem(CACHE_KEY);
     if (cached) {
@@ -206,21 +221,24 @@ export default function SearchPage() {
         setPage(parsed.page || 1);
         setHasMore(parsed.hasMore ?? true);
         if (parsed.lastFetched) lastFetched.current = parsed.lastFetched;
-      } catch (e) {
-        console.error("Cache parsing error", e);
-      }
+      } catch (e) {}
     }
     setIsRestored(true);
   },[]);
 
-  // 2. Restore Vertical Scroll instantly on Tab Change
+  // 2. Restore Vertical Scroll & Enable Observers
   useEffect(() => {
     if (!isRestored) return;
+    observerReady.current = false; // Disable fetch triggers while restoring scroll
+    
     const y = sessionStorage.getItem(`search_scrollY_${activeTab}`);
     if (y) {
-      requestAnimationFrame(() => {
-        setTimeout(() => window.scrollTo({ top: parseInt(y), behavior: "instant" }), 50);
-      });
+      setTimeout(() => {
+        window.scrollTo({ top: parseInt(y), behavior: "instant" });
+        setTimeout(() => { observerReady.current = true; }, 500); // Re-enable observer after jump
+      }, 100);
+    } else {
+      observerReady.current = true;
     }
   }, [activeTab, isRestored]);
 
@@ -238,7 +256,7 @@ export default function SearchPage() {
     return () => clearTimeout(timer);
   },[query, isRestored]);
 
-  // Main API Fetch Logic
+  // Main Vertical API Fetch Logic
   useEffect(() => {
     if (!isRestored) return;
     if (!debouncedQuery.trim()) {
@@ -255,9 +273,10 @@ export default function SearchPage() {
       return; 
     }
 
-    if (!isNewQueryOrTab && page === lastFetched.current.page) return;
+    if (!isNewQueryOrTab && page === lastFetched.current.page) return; // Prevent duplicate fetch
 
     const fetchData = async () => {
+      isFetchingVertical.current = true;
       if (page === 1) setLoading(true);
       else setLoadingMore(true);
 
@@ -273,9 +292,9 @@ export default function SearchPage() {
           const[sJson, aJson, pJson, arJson] = await Promise.all([sRes.json(), aRes.json(), pRes.json(), arRes.json()]);
 
           const songs = sJson.data?.results || sJson.data ||[];
-          const albums = aJson.data?.results || aJson.data || [];
+          const albums = aJson.data?.results || aJson.data ||[];
           const playlists = pJson.data?.results || pJson.data ||[];
-          const artists = arJson.data?.results || arJson.data || [];
+          const artists = arJson.data?.results || arJson.data ||[];
 
           const combined =[
             ...songs.map((i: any) => ({ ...i, type: "song" })),
@@ -305,10 +324,10 @@ export default function SearchPage() {
         }
         
         lastFetched.current = { query: debouncedQuery, tab: activeTab, page };
-      } catch (err) {
-        console.error(err);
-      } finally {
+      } catch (err) {} 
+      finally {
         setLoading(false); setLoadingMore(false);
+        isFetchingVertical.current = false;
       }
     };
 
@@ -317,8 +336,11 @@ export default function SearchPage() {
 
   // Horizontal Load More Logic ("All" Tab)
   const loadMoreHorizontal = useCallback(async (type: string) => {
-    if (horizontalLoading[type] || !allHasMore[type]) return;
+    if (isFetchingHorizontal.current[type] || !allHasMore[type]) return;
+    
+    isFetchingHorizontal.current[type] = true;
     setHorizontalLoading((prev: any) => ({ ...prev, [type]: true }));
+    
     try {
       const nextPage = allPages[type] + 1;
       const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${type}?query=${encodeURIComponent(debouncedQuery)}&page=${nextPage}`);
@@ -331,28 +353,41 @@ export default function SearchPage() {
         setAllData((prev: any) => ({ ...prev, [type]: [...prev[type], ...newData] }));
         setAllPages((prev: any) => ({ ...prev, [type]: nextPage }));
       }
-    } catch (e) {
-      console.error(e);
-    }
-    setHorizontalLoading((prev: any) => ({ ...prev,[type]: false }));
-  }, [debouncedQuery, allPages, allHasMore, horizontalLoading]);
+    } catch (e) {}
+    
+    setHorizontalLoading((prev: any) => ({ ...prev, [type]: false }));
+    isFetchingHorizontal.current[type] = false;
+  },[debouncedQuery, allPages, allHasMore]);
 
-  // Vertical Infinite Scroll Logic (Dedicated Tabs)
-  const lastElementRef = useCallback((node: HTMLDivElement | null) => {
-    if (loading || loadingMore || !hasMore || activeTab === "all") return;
+  // Vertical Infinite Scroll Logic (Dedicated Tabs) attached to LAST rendered card
+  const lastVerticalElementRef = useCallback((node: HTMLDivElement | null) => {
+    if (loading || loadingMore || !hasMore || activeTab === "all" || !observerReady.current) return;
     if (observerRef.current) observerRef.current.disconnect();
 
     observerRef.current = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
-      if (entries[0].isIntersecting) setPage(prevPage => prevPage + 1);
-    }, { rootMargin: "250px" });
+      if (entries[0].isIntersecting && observerReady.current && !isFetchingVertical.current && hasMore) {
+        setPage(prev => prev + 1);
+      }
+    }, { rootMargin: "350px", threshold: 0.1 }); // Fires a bit earlier for smooth loading
 
     if (node) observerRef.current.observe(node);
   },[loading, loadingMore, hasMore, activeTab]);
 
-  // Handle Item Clicks & Record precise Scroll Point
+  // Record precise Scroll Point Instantly upon click
   const handleItemClick = (item: any, passedType?: string) => {
+    // 1. Save vertical scroll
     sessionStorage.setItem(`search_scrollY_${activeTab}`, window.scrollY.toString());
     
+    // 2. Safely capture instant horizontal scrolls before nav
+    const types =["songs", "albums", "playlists", "artists"];
+    const scrolls = JSON.parse(sessionStorage.getItem("search_scrollX") || "{}");
+    types.forEach(t => {
+      const el = document.getElementById(`carousel-${t}`);
+      if (el) scrolls[t] = el.scrollLeft;
+    });
+    sessionStorage.setItem("search_scrollX", JSON.stringify(scrolls));
+
+    // 3. Navigate
     const type = item.type || passedType || activeTab;
     let link = item.url || item.perma_url || item.action || "";
     if (link && !link.startsWith("http")) link = `https://www.jiosaavn.com${link}`;
@@ -455,18 +490,29 @@ export default function SearchPage() {
                 loadingMore={horizontalLoading[section.type]}
                 loadMore={loadMoreHorizontal}
                 onItemClick={handleItemClick}
+                observerReady={observerReady}
               />
             ))}
           </div>
         ) : (
           <div className="px-4">
             <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-x-4 gap-y-6 justify-items-center">
-              {results.map((item, index) => (
-                <SearchCard key={index} item={item} tabType={activeTab} onClick={handleItemClick} isGrid={true} />
-              ))}
+              {results.map((item, index) => {
+                const isLastItem = index === results.length - 1;
+                return (
+                  <SearchCard 
+                    ref={isLastItem ? lastVerticalElementRef : null} 
+                    key={`${activeTab}-${index}`} 
+                    item={item} 
+                    tabType={activeTab} 
+                    onClick={handleItemClick} 
+                    isGrid={true} 
+                  />
+                );
+              })}
             </div>
             
-            <div ref={lastElementRef} className="h-10 mt-8 mb-6 flex justify-center items-center w-full">
+            <div className="h-10 mt-8 mb-6 flex justify-center items-center w-full">
               {loadingMore && <Loader2 className="animate-spin text-neutral-500" size={24} />}
               {!hasMore && results.length > 0 && <p className="text-sm text-neutral-600 font-medium">End of results</p>}
             </div>

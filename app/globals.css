@@ -19,8 +19,6 @@
   }
 }
 
-
-
 body {
   background-color: #000000;
   color: #ffffff;
@@ -32,31 +30,56 @@ body {
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+/* Premium Snappy Easing for Hover Images */
+.ease-out-expo {
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* Premium Slide Up Animation */
 @keyframes fadeInUp {
-  0% { opacity: 0; transform: translateY(30px); }
+  0% { opacity: 0; transform: translateY(20px); }
   100% { opacity: 1; transform: translateY(0); }
 }
 
 .animate-fade-in-up {
   opacity: 0;
-  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+  animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Flawless Marquee Animation for Text */
+/* ========================================= */
+/* FLAWLESS CSS MARQUEE ANIMATION            */
+/* ========================================= */
+
 .marquee-container {
   width: 100%;
   overflow: hidden;
   white-space: nowrap;
-  position: relative;
 }
 
 .marquee-text {
   display: inline-block;
-  transition: transform 2s linear;
+  min-width: 100%; /* Forces exact width match for short text */
+  text-align: center; /* Centers short text perfectly inside */
+  text-overflow: ellipsis;
+  overflow: hidden;
+  vertical-align: top;
+  will-change: transform; /* Hardware Acceleration */
 }
 
-/* When the group (card) is hovered/pressed, scroll the text */
+/* On hover, clip the ellipsis and activate the smart translation */
 .group:hover .marquee-text {
-  transform: translateX(calc(-100% + 120px)); /* 120px is the card width */
+  text-overflow: clip; 
+  /* 
+   * If text is smaller than 128px, min-width forces it to 128px.
+   * `calc(-100% + 128px)` equals `calc(-128px + 128px) = 0`. So it DOES NOT move.
+   * If text is larger (e.g., 200px), it accurately scrolls the overflow margin! 
+   */
+  animation: marquee-scroll 3.5s cubic-bezier(0.25, 1, 0.5, 1) infinite alternate;
+}
+
+/* 128px is the fixed w-32 tailwind width of your parent card */
+@keyframes marquee-scroll {
+  0%, 15% { transform: translateX(0); }
+  85%, 100% { transform: translateX(calc(-100% + 128px)); } 
 }

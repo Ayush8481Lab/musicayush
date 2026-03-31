@@ -18,14 +18,12 @@ const decodeEntities = (text: string) => {
   return text.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 };
 
-// Subtitle Extractor - Strictly Artist Name for Songs (Updated to handle new JSON structure)
+// Subtitle Extractor - Strictly Artist Name for Songs
 const getSubtitle = (item: any, type: string) => {
   if (type === "songs" || item.type === "song") {
-    // Check new JSON structure: artists.primary array
     if (item.artists?.primary && Array.isArray(item.artists.primary)) {
       return item.artists.primary.map((a: any) => a.name).join(", ");
     }
-    // Fallbacks for other JioSaavn API variants
     if (typeof item.artists === "string") return item.artists;
     if (item.primaryArtists) return item.primaryArtists;
     if (item.singers) return item.singers;
@@ -49,17 +47,24 @@ const getMatchScore = (title: string, query: string) => {
   return 0; // No match
 };
 
-// Premium 4-Grid Card Component
+// Premium 4-Grid Card Component with Marquee Effect
 const SearchCard = ({ item, tabType, index, onClick }: any) => {
   const type = item.type || tabType;
-  const title = decodeEntities(item.title || item.name);
+  const title = decodeEntities(item.title || item.name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, type));
   const isCircular = type === "artists" || type === "artist";
+
+  // Marquee Math Logic (Adjusted threshold for smaller 4-grid layout)
+  const isLongTitle = title.length > 12;
+  const isLongSub = subtitle.length > 15;
+
+  const titleSpeed = `${Math.max(3, title.length * 0.25)}s`;
+  const subSpeed = `${Math.max(3, subtitle.length * 0.25)}s`;
 
   return (
     <div 
       onClick={() => onClick(item, type)} 
-      className="animate-slide-down flex flex-col items-center cursor-pointer group active:scale-95 transition-transform duration-200"
+      className="animate-slide-down flex flex-col items-center cursor-pointer group active:scale-95 transition-transform duration-200 overflow-hidden"
       style={{ animationDelay: `${(index % 12) * 0.03}s` }}
     >
       <div className={`w-full aspect-square overflow-hidden shadow-md bg-neutral-900 border border-white/5 mb-1.5 flex items-center justify-center ${isCircular ? "rounded-full" : "rounded-xl"}`}>
@@ -71,10 +76,28 @@ const SearchCard = ({ item, tabType, index, onClick }: any) => {
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-out" 
         />
       </div>
-      <div className="w-full text-center px-0.5">
-        <p className="text-[11px] font-extrabold text-white leading-tight line-clamp-1">{title}</p>
-        <p className="text-[9px] font-medium text-neutral-400 mt-0.5 line-clamp-1 capitalize">{subtitle}</p>
+      
+      {/* Marquee Title */}
+      <div className="w-full overflow-hidden whitespace-nowrap text-center px-0.5">
+        <span
+          className={`inline-block text-[11px] font-extrabold text-white tracking-wide ${isLongTitle ? "animate-ping-pong" : ""}`}
+          style={isLongTitle ? { animationDuration: titleSpeed } : {}}
+        >
+          {title}
+        </span>
       </div>
+
+      {/* Marquee Subtitle */}
+      {subtitle && (
+        <div className="w-full overflow-hidden whitespace-nowrap text-center px-0.5 mt-0.5">
+          <span
+            className={`inline-block text-[9px] font-medium text-neutral-400 capitalize ${isLongSub ? "animate-ping-pong" : ""}`}
+            style={isLongSub ? { animationDuration: subSpeed } : {}}
+          >
+            {subtitle}
+          </span>
+        </div>
+      )}
     </div>
   );
 };
@@ -85,21 +108,20 @@ export default function SearchPage() {
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("all");
+  const[activeTab, setActiveTab] = useState("all");
   
   const [allData, setAllData] = useState<any>({ topMatches: [], songs: [], albums: [], playlists:[], artists:[] });
   
   // States for Infinite Scroll Tabs
   const [results, setResults] = useState<any[]>([]);
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const[hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const[loadingMore, setLoadingMore] = useState(false);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  // Removed icon from "All" tab
-  const tabs = [
+  const tabs =[
     { id: "all", label: "All" }, 
     { id: "songs", label: "Songs", icon: Music2 },
     { id: "albums", label: "Albums", icon: Disc },
@@ -141,13 +163,13 @@ export default function SearchPage() {
 
           const [sJson, aJson, pJson, arJson] = await Promise.all([sRes.json(), aRes.json(), pRes.json(), arRes.json()]);
 
-          const songs = sJson.data?.results || sJson.data || [];
-          const albums = aJson.data?.results || aJson.data || [];
+          const songs = sJson.data?.results || sJson.data ||[];
+          const albums = aJson.data?.results || aJson.data ||[];
           const playlists = pJson.data?.results || pJson.data || [];
-          const artists = arJson.data?.results || arJson.data || [];
+          const artists = arJson.data?.results || arJson.data ||[];
 
           // Smart "Best Match" Engine
-          const combined = [
+          const combined =[
             ...songs.map((i: any) => ({ ...i, type: "song" })),
             ...albums.map((i: any) => ({ ...i, type: "album" })),
             ...playlists.map((i: any) => ({ ...i, type: "playlist" })),
@@ -169,7 +191,7 @@ export default function SearchPage() {
           // Fetch specific tab with Infinite Scroll pagination
           const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${activeTab}?query=${encodeURIComponent(debouncedQuery)}&page=${page}`);
           const json = await res.json();
-          const newData = json.data?.results || json.data || [];
+          const newData = json.data?.results || json.data ||[];
 
           if (newData.length === 0) {
             setHasMore(false);
@@ -186,7 +208,7 @@ export default function SearchPage() {
     };
 
     fetchData();
-  }, [debouncedQuery, activeTab, page]);
+  },[debouncedQuery, activeTab, page]);
 
   // Infinite Scroll Hook
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
@@ -200,7 +222,7 @@ export default function SearchPage() {
     });
 
     if (node) observerRef.current.observe(node);
-  }, [loading, loadingMore, hasMore, activeTab]);
+  },[loading, loadingMore, hasMore, activeTab]);
 
   // Handle Clicks
   const handleItemClick = (item: any, passedType?: string) => {
@@ -258,7 +280,6 @@ export default function SearchPage() {
                   isActive ? "bg-white text-black scale-105" : "bg-neutral-900 text-neutral-400 border border-neutral-800 active:scale-95"
                 }`}
               >
-                {/* Conditionally render icon if exists */}
                 {tab.icon && <tab.icon size={14} strokeWidth={isActive ? 2.5 : 2} />}
                 {tab.label}
               </button>
@@ -280,7 +301,6 @@ export default function SearchPage() {
           <div className="flex flex-col gap-8">
             {allData.topMatches.length > 0 && (
               <div>
-                {/* Removed Icon before Best Matches */}
                 <h2 className="text-lg font-bold text-white mb-3">Best Matches</h2>
                 <div className="grid grid-cols-4 gap-3">
                   {allData.topMatches.map((item: any, i: number) => (

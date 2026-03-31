@@ -145,10 +145,11 @@ export default function Player() {
   const[loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const[currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const[duration, setDuration] = useState(0);
   const[volume, setVolume] = useState(100);
   const[isExpanded, setIsExpanded] = useState(false);
-  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
 
   const rapidKeyIdxRef = useRef(0);
   const[spotifyId, setSpotifyId] = useState<string | null>(null);
@@ -161,6 +162,7 @@ export default function Player() {
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
+  const canvasVideoRef = useRef<HTMLVideoElement>(null);
   
   const[swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
@@ -183,6 +185,7 @@ export default function Player() {
     setCanvasData(null);
     setIsCanvasLoaded(false);
     setActiveLyricIndex(-1);
+    setIsScrolledPastMain(false);
 
     const fetchUrl = async () => {
       setLoading(true);
@@ -254,19 +257,14 @@ export default function Player() {
         const targetCanvasUrl = `https://ayush-gamma-coral.vercel.app/api/canvas?trackId=${spotifyId}`;
         
         try {
-          // Attempt direct fetch first
           const res = await fetch(targetCanvasUrl);
           if (!res.ok) throw new Error("CORS or Server Error");
           canvasJson = await res.json();
         } catch (e) {
-          // Fallback to Jina Proxy
           try {
-            const jinaRes = await fetch(`https://r.jina.ai/${targetCanvasUrl}`, {
-              headers: { Accept: "application/json" }
-            });
+            const jinaRes = await fetch(`https://r.jina.ai/${targetCanvasUrl}`, { headers: { Accept: "application/json" } });
             const jinaData = await jinaRes.json();
             
-            // Jina might return the JSON directly, or wrapped in a markdown payload
             if (jinaData && jinaData.canvasesList) {
               canvasJson = jinaData;
             } else {
@@ -316,7 +314,7 @@ export default function Player() {
     };
   }, [coverImage]);
 
-  // Audio Execution
+  // Handle Play/Pause for Audio
   useEffect(() => {
     if (audioRef.current && audioUrl) {
       audioRef.current.volume = volume / 100;
@@ -327,6 +325,18 @@ export default function Player() {
       else audioRef.current.pause();
     }
   },[isPlaying, audioUrl, volume]);
+
+  // Handle Play/Pause for Canvas Video based on scroll & player state
+  useEffect(() => {
+    if (canvasVideoRef.current) {
+      if (isPlaying && !isScrolledPastMain) {
+        const playPromise = canvasVideoRef.current.play();
+        if (playPromise !== undefined) playPromise.catch(() => {});
+      } else {
+        canvasVideoRef.current.pause();
+      }
+    }
+  }, [isPlaying, isScrolledPastMain, isCanvasLoaded]);
 
   const syncPosition = useCallback(() => {
     if ('mediaSession' in navigator && audioRef.current && duration > 0) {
@@ -352,6 +362,14 @@ export default function Player() {
       }
     }
   };
+
+  // Listen to Scrolling
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const scrolled = e.currentTarget.scrollTop > 100;
+    if (scrolled !== isScrolledPastMain) {
+      setIsScrolledPastMain(scrolled);
+    }
+  }, [isScrolledPastMain]);
 
   // INTERNAL Scroll active lyric smoothly inside the card
   useEffect(() => {
@@ -502,7 +520,8 @@ export default function Player() {
         className={`md:hidden fixed inset-0 z-[99999] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0" : "translate-y-full"}`} 
       >
         {/* =========================================
-            FIXED BACKGROUND LAYER (Solves Cut-off)
+            FIXED BACKGROUND LAYER (Original Background)
+            Always visible, smoothly blends behind everything
         ========================================= */}
         <div 
           className="absolute inset-0 z-0 pointer-events-none" 
@@ -512,23 +531,31 @@ export default function Player() {
           }} 
         />
         
-        {/* FIXED CANVAS VIDEO LAYER */}
+        {/* =========================================
+            FIXED CANVAS VIDEO LAYER
+            Fades out and pauses when scrolled down
+        ========================================= */}
         {canvasData?.canvasUrl && (
-          <div className={`absolute inset-0 z-0 bg-black pointer-events-none transition-opacity duration-1000 ${isCanvasLoaded ? 'opacity-100' : 'opacity-0'}`}>
+          <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 ${isCanvasLoaded && !isScrolledPastMain ? 'opacity-100' : 'opacity-0'}`}>
             <video 
+              ref={canvasVideoRef}
               src={canvasData.canvasUrl} 
               autoPlay loop muted playsInline 
               onLoadedData={() => setIsCanvasLoaded(true)} 
-              className="absolute inset-0 w-full h-full object-cover opacity-90 scale-105 blur-[2px]" 
+              className="absolute inset-0 w-full h-full object-cover scale-105" 
             />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/70 to-black/95" />
+            {/* Soft top and bottom gradients just to make UI text readable, no heavy black center */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/90" />
           </div>
         )}
 
         {/* =========================================
             SCROLLABLE CONTENT LAYER
         ========================================= */}
-        <div className="absolute inset-0 z-10 overflow-y-auto overflow-x-hidden scrollbar-hide flex flex-col">
+        <div 
+          className="absolute inset-0 z-10 overflow-y-auto overflow-x-hidden scrollbar-hide flex flex-col"
+          onScroll={handleScroll}
+        >
           
           {/* Main Controls (Takes up viewport minus 90px so lyrics card peeks out) */}
           <div className="w-full flex flex-col flex-shrink-0" style={{ minHeight: 'calc(100dvh - 90px)' }}>
@@ -541,7 +568,7 @@ export default function Player() {
               <button className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md"><MoreHorizontal size={24} /></button>
             </div>
 
-            <div className={`flex-1 w-full min-h-0 flex items-center justify-center py-2 px-6 transition-opacity duration-500 ${isCanvasLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+            <div className={`flex-1 w-full min-h-0 flex items-center justify-center py-2 px-6 transition-opacity duration-500 ${isCanvasLoaded && !isScrolledPastMain ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
               <div className="relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden" style={{ height: '100%', aspectRatio: '1 / 1', maxHeight: '450px', maxWidth: 'min(calc(100vw - 48px), 450px)' }}>
                 {loading && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
                 <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
@@ -594,12 +621,11 @@ export default function Player() {
           {/* PAGE 2: Lyrics & Artist Cards */}
           <div className="w-full px-5 pb-24 flex flex-col gap-6">
             
-            {/* Spotify Lyrics Card (Darkened Solid Color & Huge Text) */}
+            {/* Spotify Lyrics Card */}
             {lyrics.length > 0 && (
               <div 
                 className="rounded-xl p-6 w-full mx-auto shadow-2xl relative overflow-hidden transition-colors duration-500 border border-white/5" 
               >
-                {/* The card background uses dominant color with a brightness filter overlaying it for matching contrast */}
                 <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, filter: 'brightness(0.5)' }} />
                 
                 <div className="relative z-10 flex items-center justify-between mb-6 sticky top-0 bg-transparent">

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { useAppContext } from "../context/AppContext";
-import { Loader2, Music2 } from "lucide-react";
+import { Music2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 // Safe image extractor
@@ -44,42 +44,41 @@ const getSubtitle = (item: any, hideSubtitle: boolean) => {
 // Remove duplicates based on ID
 const mergeAndDedupe = (arr1: any[], arr2: any[]) => {
   const map = new Map();
-  [...(arr1 || []), ...(arr2 || [])].forEach(item => {
+  [...(arr1 || []), ...(arr2 ||[])].forEach(item => {
     if (item && item.id && !map.has(item.id)) map.set(item.id, item);
   });
   return Array.from(map.values());
 };
 
-// Premium Card Component with Marquee & Animation
-const PremiumCard = ({ item, isCircular, hideSubtitle, index, onClick }: any) => {
-  // Decode titles and subtitles to fix HTML entities
+// Premium Card Component with Smart Marquee
+const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
   const title = decodeEntities(item.title || item.name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, hideSubtitle));
 
   return (
     <div
       onClick={() => onClick(item)}
-      className="animate-fade-in-up flex-shrink-0 snap-start w-32 cursor-pointer group active:scale-95 transition-all duration-300"
-      style={{ animationDelay: `${index * 0.04}s` }} // Snappier Staggered animation
+      className="flex-shrink-0 snap-start w-32 cursor-pointer group"
     >
-      <div className={`overflow-hidden shadow-lg bg-neutral-800 border border-neutral-800/50 mb-3 ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
+      <div className={`relative overflow-hidden shadow-xl bg-neutral-800 border border-neutral-700/40 mb-3 transition-all duration-300 group-active:scale-95 ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
         <img
           src={getImageUrl(item.image)}
           alt={title}
           loading="lazy"
           decoding="async"
+          onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/500x500?text=Music"; }}
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out-expo"
         />
+        {/* Subtle inner shadow for premium look */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
       </div>
 
-      {/* Title with Smooth Marquee */}
       <div className="marquee-container text-center">
-        <span className="marquee-text text-[13px] font-extrabold text-white tracking-wide">
+        <span className="marquee-text text-[13px] font-extrabold text-neutral-100 tracking-wide">
           {title}
         </span>
       </div>
 
-      {/* Subtitle with Smooth Marquee */}
       {subtitle && (
         <div className="marquee-container text-center mt-0.5">
           <span className="marquee-text text-[11px] font-medium text-neutral-400">
@@ -91,18 +90,21 @@ const PremiumCard = ({ item, isCircular, hideSubtitle, index, onClick }: any) =>
   );
 };
 
-// Async Image Card for Footer APIs (Loads image only when visible)
-const AsyncImageCard = ({ item, type, index, onClick }: any) => {
+// Async Image Card for Footer APIs (Highly Optimized Observer)
+const AsyncImageCard = ({ item, type, onClick }: any) => {
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const fetched = useRef(false);
 
   useEffect(() => {
+    // RootMargin "300px" pre-fetches images right before they scroll into view!
     const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && !imgUrl) {
+      if (entries[0].isIntersecting && !fetched.current) {
+        fetched.current = true;
         fetchImage();
-        observer.disconnect();
       }
-    });
+    }, { rootMargin: "300px" });
+
     if (cardRef.current) observer.observe(cardRef.current);
     return () => observer.disconnect();
   }, [item]);
@@ -135,24 +137,25 @@ const AsyncImageCard = ({ item, type, index, onClick }: any) => {
     <div
       ref={cardRef}
       onClick={() => onClick(item)}
-      className="animate-fade-in-up flex-shrink-0 snap-start w-32 cursor-pointer group active:scale-95 transition-all duration-300"
-      style={{ animationDelay: `${index * 0.04}s` }}
+      className="flex-shrink-0 snap-start w-32 cursor-pointer group"
     >
-      <div className={`overflow-hidden shadow-lg bg-neutral-900 border border-neutral-800/50 mb-3 flex items-center justify-center ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
+      <div className={`relative overflow-hidden shadow-xl bg-neutral-800 border border-neutral-700/40 mb-3 flex items-center justify-center transition-all duration-300 group-active:scale-95 ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
         {imgUrl ? (
           <img 
             src={imgUrl} 
             alt={title} 
             loading="lazy" 
-            decoding="async" 
+            decoding="async"
+            onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/500x500?text=Music"; }}
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out-expo" 
           />
         ) : (
-          <Loader2 className="animate-spin text-neutral-600" size={24} />
+          // Premium Skeleton Pulse instead of blocking spinner
+          <div className="w-full h-full bg-neutral-700 animate-pulse" />
         )}
       </div>
       <div className="marquee-container text-center">
-        <span className="marquee-text text-[13px] font-extrabold text-white tracking-wide">{title}</span>
+        <span className="marquee-text text-[13px] font-extrabold text-neutral-100 tracking-wide">{title}</span>
       </div>
       <div className="marquee-container text-center mt-0.5">
         <span className="marquee-text text-[11px] font-medium text-neutral-400 capitalize">{type}</span>
@@ -165,11 +168,11 @@ const AsyncImageCard = ({ item, type, index, onClick }: any) => {
 const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
-    <div className="mb-10">
-      <h2 className="text-2xl font-black mb-4 px-4 tracking-tight text-white">{title}</h2>
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
+    <div className="mb-10 carousel-wrapper animate-fade-in">
+      <h2 className="text-[22px] font-black mb-4 px-4 tracking-tight text-white">{title}</h2>
+      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4 touch-pan-x">
         {items.map((item: any, i: number) => (
-          <PremiumCard key={item.id || i} item={item} isCircular={isCircular} hideSubtitle={hideSubtitle} index={i} onClick={onItemClick} />
+          <PremiumCard key={item.id || i} item={item} isCircular={isCircular} hideSubtitle={hideSubtitle} onClick={onItemClick} />
         ))}
       </div>
     </div>
@@ -179,11 +182,11 @@ const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onIt
 const AsyncCarousel = ({ title, items, type, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
-    <div className="mb-10">
-      <h2 className="text-2xl font-black mb-4 px-4 tracking-tight text-white">{title}</h2>
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
+    <div className="mb-10 carousel-wrapper animate-fade-in">
+      <h2 className="text-[22px] font-black mb-4 px-4 tracking-tight text-white">{title}</h2>
+      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4 touch-pan-x">
         {items.map((item: any, i: number) => (
-          <AsyncImageCard key={item.id || i} item={item} type={type} index={i} onClick={onItemClick} />
+          <AsyncImageCard key={item.id || i} item={item} type={type} onClick={onItemClick} />
         ))}
       </div>
     </div>
@@ -195,17 +198,17 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const [trending, setTrending] = useState<any[]>([]);
+  const[trending, setTrending] = useState<any[]>([]);
   const [newReleases, setNewReleases] = useState<any[]>([]);
   const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
   const [otherPromos, setOtherPromos] = useState<any[]>([]);
   const [topArtists, setTopArtists] = useState<any[]>([]);
-  const [charts, setCharts] = useState<any[]>([]);
+  const[charts, setCharts] = useState<any[]>([]);
 
   const [recoArtists, setRecoArtists] = useState<any[]>([]);
   const [recoActors, setRecoActors] = useState<any[]>([]);
   const [recoAlbums, setRecoAlbums] = useState<any[]>([]);
-  const [recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
+  const[recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchAllData = async () => {
@@ -232,37 +235,32 @@ export default function Home() {
         const trendingJson = await trendingRes.json();
         const footerJson = await footerRes.json();
 
-        // 1. Trending
-        const trendData = Array.isArray(trendingJson) ? trendingJson : trendingJson.data || [];
+        const trendData = Array.isArray(trendingJson) ? trendingJson : trendingJson.data ||[];
         setTrending(mergeAndDedupe(launchJson.new_trending, trendData));
 
-        // 2. New Releases (Strictly from the custom API requested)
-        const albumsData = Array.isArray(albumsJson) ? albumsJson : albumsJson.data || [];
+        const albumsData = Array.isArray(albumsJson) ? albumsJson : albumsJson.data ||[];
         setNewReleases(albumsData);
 
-        // 3. Featured Playlists
-        setFeaturedPlaylists(Array.isArray(featuredJson) ? featuredJson : featuredJson.data || []);
+        setFeaturedPlaylists(Array.isArray(featuredJson) ? featuredJson : featuredJson.data ||[]);
 
-        // 4. Modules (Excluding Radio & Recommendations)
         if (launchJson.modules) {
           const activeModules = Object.keys(launchJson.modules)
             .map((key) => ({ key, ...launchJson.modules[key] }))
             .sort((a, b) => a.position - b.position)
             .filter((m) => m.source !== "radio" && m.type !== "radio_station" && m.source !== "artist_recos");
 
-          setCharts(launchJson.charts || []);
+          setCharts(launchJson.charts ||[]);
 
           const exclude = ["new_trending", "new_albums", "charts", "top_playlists"];
           const promos = activeModules.filter((m) => !exclude.includes(m.source));
-          setOtherPromos(promos.map((p) => ({ title: p.title, data: launchJson[p.key] || [] })).filter(p => p.data.length > 0));
+          setOtherPromos(promos.map((p) => ({ title: p.title, data: launchJson[p.key] ||[] })).filter(p => p.data.length > 0));
         }
 
-        // 5. Footer Details
-        setTopArtists(artistsJson.top_artists || []);
+        setTopArtists(artistsJson.top_artists ||[]);
         setRecoArtists(footerJson.artist || []);
-        setRecoActors(footerJson.actor || []);
+        setRecoActors(footerJson.actor ||[]);
         setRecoAlbums(footerJson.album || []);
-        setRecoPlaylists(footerJson.playlist || []);
+        setRecoPlaylists(footerJson.playlist ||[]);
 
       } catch (error) {
         console.error("Fetch error:", error);
@@ -295,18 +293,22 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-black text-white">
-        <Loader2 className="animate-spin mb-4 text-neutral-400" size={40} />
+      <div className="flex h-screen flex-col items-center justify-center bg-[#09090b] text-white">
+        {/* Premium Loading Skeleton Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-pulse opacity-40">
+           {[...Array(8)].map((_, i) => (
+             <div key={i} className="w-32 h-32 bg-neutral-800 rounded-2xl"></div>
+           ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <main className="pt-14 pb-28 bg-black min-h-screen">
-      {/* Clean Premium Title */}
+    <main className="pt-14 pb-28 bg-[#09090b] min-h-screen">
       <div className="px-4 mb-10 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="bg-white p-1.5 rounded-full">
+          <div className="bg-white p-1.5 rounded-full shadow-lg shadow-white/10">
             <Music2 fill="black" size={20} className="text-black" />
           </div>
           <h1 className="text-3xl font-black tracking-tighter text-white">
@@ -315,7 +317,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Sections in Exact Requested Order */}
       <Carousel title="Trending" items={trending} onItemClick={handleItemClick} />
       <Carousel title="New Releases" items={newReleases} onItemClick={handleItemClick} />
       <Carousel title="Featured Playlists" items={featuredPlaylists} onItemClick={handleItemClick} />

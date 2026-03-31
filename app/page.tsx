@@ -39,73 +39,127 @@ const mergeAndDedupe = (arr1: any[], arr2: any[]) => {
   return Array.from(map.values());
 };
 
-// Premium Card Component with Marquee & Animation
-const PremiumCard = ({ item, isCircular, hideSubtitle, index, onClick }: any) => {
-  const title = item.title || item.name || "Unknown";
-  const subtitle = getSubtitle(item, hideSubtitle);
+// --- CUSTOM HOOK: SCROLL REVEAL ANIMATION ---
+const useScrollReveal = (onIntersect?: () => void) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const callbackRef = useRef(onIntersect);
+  callbackRef.current = onIntersect;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        el.classList.add('is-visible');
+        if (callbackRef.current) callbackRef.current();
+      } else {
+        // Remove class to animate again on re-entry during side scroll
+        el.classList.remove('is-visible');
+      }
+    }, { threshold: 0.15 });
+    
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  
+  return ref;
+};
+
+// --- COMPONENT: EXACT HTML MARQUEE BEHAVIOR ---
+const MarqueeText = ({ text, className }: { text: string; className?: string }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const el = textRef.current;
+    const container = containerRef.current;
+    if (!el || !container) return;
+
+    const checkMarquee = () => {
+      el.classList.remove('animate-pingpong');
+      el.style.transform = 'translateX(0)';
+      
+      const textWidth = el.scrollWidth;
+      const boxWidth = container.offsetWidth;
+      
+      if (textWidth > boxWidth) {
+        const dist = textWidth - boxWidth + 20; 
+        const duration = Math.max(5, dist * 0.05 + 3);
+        el.style.setProperty('--container-width', `${boxWidth}px`);
+        el.style.setProperty('--duration', `${duration}s`);
+        el.classList.add('animate-pingpong');
+        container.style.justifyContent = 'flex-start';
+      } else {
+        container.style.justifyContent = 'center';
+      }
+    };
+
+    checkMarquee();
+    window.addEventListener('resize', checkMarquee);
+    return () => window.removeEventListener('resize', checkMarquee);
+  }, [text]);
 
   return (
-    <div 
-      onClick={() => onClick(item)} 
-      className="animate-fade-in-up flex-shrink-0 snap-start w-32 cursor-pointer group active:scale-95 transition-all duration-300"
-      style={{ animationDelay: `${index * 0.05}s` }} // Staggered animation
-    >
-      <div className={`overflow-hidden shadow-lg bg-neutral-800 border border-neutral-800/50 mb-3 ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
-        <img 
-          src={getImageUrl(item.image)} 
-          alt={title} 
-          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
-        />
-      </div>
-      
-      {/* Title with Marquee */}
-      <div className="marquee-container text-center">
-        <span className="marquee-text text-[13px] font-extrabold text-white tracking-wide">
-          {title}
-        </span>
-      </div>
-      
-      {/* Subtitle with Marquee */}
-      {subtitle && (
-        <div className="marquee-container text-center mt-0.5">
-          <span className="marquee-text text-[11px] font-medium text-neutral-400">
-            {subtitle}
-          </span>
-        </div>
-      )}
+    <div ref={containerRef} className="marquee-container w-full justify-center">
+      <span ref={textRef} className={`marquee-content ${className}`}>
+        {text}
+      </span>
     </div>
   );
 };
 
-// Async Image Card for Footer APIs (Loads image only when visible)
-const AsyncImageCard = ({ item, type, index, onClick }: any) => {
-  const[imgUrl, setImgUrl] = useState<string | null>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
+// --- PREMIUM CARD COMPONENT ---
+const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
+  const title = item.title || item.name || "Unknown";
+  const subtitle = getSubtitle(item, hideSubtitle);
+  const cardRef = useScrollReveal(); // Triggers the slide-up/scale animation
 
-  useEffect(() => {
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && !imgUrl) {
-        fetchImage();
-        observer.disconnect();
-      }
-    });
-    if (cardRef.current) observer.observe(cardRef.current);
-    return () => observer.disconnect();
-  }, [item]);
+  return (
+    <div 
+      ref={cardRef}
+      onClick={() => onClick(item)} 
+      className="scroll-card flex-shrink-0 snap-start w-[130px] cursor-pointer group active:scale-95 transition-all duration-200"
+    >
+      <div className={`overflow-hidden shadow-lg bg-neutral-800 border border-neutral-800/50 mb-2 ${isCircular ? "rounded-full aspect-square" : "rounded-xl aspect-square"}`}>
+        <img 
+          src={getImageUrl(item.image)} 
+          alt={title} 
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+          loading="lazy"
+        />
+      </div>
+      <MarqueeText text={title} className="text-[13px] font-extrabold text-white tracking-wide" />
+      {subtitle && <MarqueeText text={subtitle} className="text-[11px] font-medium text-neutral-400 mt-0.5" />}
+    </div>
+  );
+};
+
+// --- ASYNC IMAGE CARD ---
+const AsyncImageCard = ({ item, type, onClick }: any) => {
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const fetchedRef = useRef(false);
+
+  // Fetch only when scrolled into view
+  const cardRef = useScrollReveal(() => {
+    if (!fetchedRef.current) {
+      fetchedRef.current = true;
+      fetchImage();
+    }
+  });
 
   const fetchImage = async () => {
     try {
       let res, json;
       if (type === "artist" || type === "actor") {
-        res = await fetch(`https://ayushm-psi.vercel.app/api/artists/${item.id}`);
+        res = await fetch(`/api/artists/${item.id}`);
         json = await res.json();
         setImgUrl(getImageUrl(json.data?.image));
       } else if (type === "album") {
-        res = await fetch(`https://ayushm-psi.vercel.app/api/albums?link=https://www.jiosaavn.com${item.action}`);
+        res = await fetch(`/api/albums?link=https://www.jiosaavn.com${item.action}`);
         json = await res.json();
         setImgUrl(getImageUrl(json.data?.image));
       } else if (type === "playlist") {
-        res = await fetch(`https://ayushm-psi.vercel.app/api/playlists?link=https://www.jiosaavn.com${item.action}`);
+        res = await fetch(`/api/playlists?link=https://www.jiosaavn.com${item.action}`);
         json = await res.json();
         setImgUrl(getImageUrl(json.data?.image));
       }
@@ -121,35 +175,30 @@ const AsyncImageCard = ({ item, type, index, onClick }: any) => {
     <div 
       ref={cardRef} 
       onClick={() => onClick(item)} 
-      className="animate-fade-in-up flex-shrink-0 snap-start w-32 cursor-pointer group active:scale-95 transition-all duration-300"
-      style={{ animationDelay: `${index * 0.05}s` }}
+      className="scroll-card flex-shrink-0 snap-start w-[130px] cursor-pointer group active:scale-95 transition-all duration-200"
     >
-      <div className={`overflow-hidden shadow-lg bg-neutral-900 border border-neutral-800/50 mb-3 flex items-center justify-center ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-square"}`}>
+      <div className={`overflow-hidden shadow-lg bg-neutral-900 border border-neutral-800/50 mb-2 flex items-center justify-center ${isCircular ? "rounded-full aspect-square" : "rounded-xl aspect-square"}`}>
         {imgUrl ? (
-          <img src={imgUrl} alt={title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
+          <img src={imgUrl} alt={title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out" />
         ) : (
           <Loader2 className="animate-spin text-neutral-600" size={24} />
         )}
       </div>
-      <div className="marquee-container text-center">
-        <span className="marquee-text text-[13px] font-extrabold text-white tracking-wide">{title}</span>
-      </div>
-      <div className="marquee-container text-center mt-0.5">
-        <span className="marquee-text text-[11px] font-medium text-neutral-400 capitalize">{type}</span>
-      </div>
+      <MarqueeText text={title} className="text-[13px] font-extrabold text-white tracking-wide" />
+      <MarqueeText text={type} className="text-[11px] font-medium text-neutral-400 mt-0.5 capitalize" />
     </div>
   );
 };
 
-// Reusable Carousel Wrappers
+// --- REUSABLE CAROUSELS ---
 const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
-    <div className="mb-10">
-      <h2 className="text-2xl font-black mb-4 px-4 tracking-tight text-white">{title}</h2>
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
-        {items.map((item: any, i: number) => (
-          <PremiumCard key={item.id || i} item={item} isCircular={isCircular} hideSubtitle={hideSubtitle} index={i} onClick={onItemClick} />
+    <div className="mb-6">
+      <h2 className="text-xl font-bold mb-3 px-4 tracking-tight text-white">{title}</h2>
+      <div className="flex gap-3 overflow-x-auto hide-scrollbar px-4 snap-x pb-2">
+        {items.map((item: any) => (
+          <PremiumCard key={item.id} item={item} isCircular={isCircular} hideSubtitle={hideSubtitle} onClick={onItemClick} />
         ))}
       </div>
     </div>
@@ -159,44 +208,43 @@ const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onIt
 const AsyncCarousel = ({ title, items, type, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
-    <div className="mb-10">
-      <h2 className="text-2xl font-black mb-4 px-4 tracking-tight text-white">{title}</h2>
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
-        {items.map((item: any, i: number) => (
-          <AsyncImageCard key={item.id || i} item={item} type={type} index={i} onClick={onItemClick} />
+    <div className="mb-6">
+      <h2 className="text-xl font-bold mb-3 px-4 tracking-tight text-white">{title}</h2>
+      <div className="flex gap-3 overflow-x-auto hide-scrollbar px-4 snap-x pb-2">
+        {items.map((item: any) => (
+          <AsyncImageCard key={item.id} item={item} type={type} onClick={onItemClick} />
         ))}
       </div>
     </div>
   );
 };
 
+// --- MAIN PAGE ---
 export default function Home() {
   const { language, setCurrentSong, setIsPlaying } = useAppContext();
-  const[loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   const [trending, setTrending] = useState<any[]>([]);
   const [newReleases, setNewReleases] = useState<any[]>([]);
   const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
-  const[otherPromos, setOtherPromos] = useState<any[]>([]);
-  const[topArtists, setTopArtists] = useState<any[]>([]);
+  const [otherPromos, setOtherPromos] = useState<any[]>([]);
+  const [topArtists, setTopArtists] = useState<any[]>([]);
   const [charts, setCharts] = useState<any[]>([]);
-
   const [recoArtists, setRecoArtists] = useState<any[]>([]);
-  const[recoActors, setRecoActors] = useState<any[]>([]);
+  const [recoActors, setRecoActors] = useState<any[]>([]);
   const [recoAlbums, setRecoAlbums] = useState<any[]>([]);
   const [recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchAllData = async () => {
       setLoading(true);
-      // Wipe state when language changes
       setTrending([]); setNewReleases([]); setFeaturedPlaylists([]); 
       setOtherPromos([]); setTopArtists([]); setCharts([]);
       setRecoArtists([]); setRecoActors([]); setRecoAlbums([]); setRecoPlaylists([]);
 
       try {
-        const[launchRes, artistsRes, featuredRes, albumsRes, trendingRes, footerRes] = await Promise.all([
+        const [launchRes, artistsRes, featuredRes, albumsRes, trendingRes, footerRes] = await Promise.all([
           fetch(`/api/jiosaavn?__call=webapi.getLaunchData&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
           fetch(`/api/jiosaavn?__call=social.getTopArtists&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
           fetch(`/api/jiosaavn?__call=content.getFeaturedPlaylists&fetch_from_serialized_files=true&p=1&n=50&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
@@ -212,18 +260,13 @@ export default function Home() {
         const trendingJson = await trendingRes.json();
         const footerJson = await footerRes.json();
 
-        // 1. Trending
         const trendData = Array.isArray(trendingJson) ? trendingJson : trendingJson.data ||[];
         setTrending(mergeAndDedupe(launchJson.new_trending, trendData));
 
-        // 2. New Releases (Strictly from the custom API requested)
         const albumsData = Array.isArray(albumsJson) ? albumsJson : albumsJson.data ||[];
         setNewReleases(albumsData);
-
-        // 3. Featured Playlists
         setFeaturedPlaylists(Array.isArray(featuredJson) ? featuredJson : featuredJson.data ||[]);
 
-        // 4. Modules (Excluding Radio & Recommendations)
         if (launchJson.modules) {
           const activeModules = Object.keys(launchJson.modules)
             .map((key) => ({ key, ...launchJson.modules[key] }))
@@ -237,7 +280,6 @@ export default function Home() {
           setOtherPromos(promos.map((p) => ({ title: p.title, data: launchJson[p.key] ||[] })).filter(p => p.data.length > 0));
         }
 
-        // 5. Footer Details
         setTopArtists(artistsJson.top_artists || []);
         setRecoArtists(footerJson.artist ||[]);
         setRecoActors(footerJson.actor || []);
@@ -282,20 +324,19 @@ export default function Home() {
   }
 
   return (
-    <main className="pt-14 pb-28 bg-black min-h-screen">
-      {/* Clean Premium Title */}
-      <div className="px-4 mb-10 flex items-center justify-between">
+    <main className="pt-6 pb-20 bg-black min-h-screen">
+      {/* Tighter Header */}
+      <div className="px-4 mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="bg-white p-1.5 rounded-full">
-            <Music2 fill="black" size={20} className="text-black" />
+            <Music2 fill="black" size={18} className="text-black" />
           </div>
-          <h1 className="text-3xl font-black tracking-tighter text-white">
-            Music<span className="text-neutral-400 font-bold text-xl">@8481</span>
+          <h1 className="text-2xl font-black tracking-tighter text-white">
+            Music<span className="text-neutral-400 font-bold text-[18px]">@8481</span>
           </h1>
         </div>
       </div>
 
-      {/* Sections in Exact Requested Order */}
       <Carousel title="Trending" items={trending} onItemClick={handleItemClick} />
       <Carousel title="New Releases" items={newReleases} onItemClick={handleItemClick} />
       <Carousel title="Featured Playlists" items={featuredPlaylists} onItemClick={handleItemClick} />
@@ -315,4 +356,4 @@ export default function Home() {
       
     </main>
   );
-            }
+}

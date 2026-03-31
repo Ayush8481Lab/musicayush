@@ -1,519 +1,282 @@
+/* eslint-disable @next/next/no-img-element */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
-import React, { useState, useEffect, useRef, useCallback, forwardRef } from "react";
-import { Search as SearchIcon, Loader2, Music2, Disc, ListMusic, Mic2, X } from "lucide-react";
-import { useAppContext } from "../../context/AppContext";
-import { useRouter } from "next/navigation";
 
-// Safe Image Extractor
-const getImageUrl = (img: any) => {
-  if (!img) return "https://via.placeholder.com/500x500?text=Music";
-  if (typeof img === "string") return img.replace("50x50", "500x500").replace("150x150", "500x500"); 
-  if (Array.isArray(img)) return img[img.length - 1]?.url || img[0]?.url;
-  return "https://via.placeholder.com/500x500?text=Music";
-};
+import React, { useEffect, useState, useRef } from "react";
+import { useAppContext } from "../context/AppContext";
+import { Play, Pause, SkipForward, SkipBack, Loader2 } from "lucide-react";
 
-// HTML Entity Decoder
+// Robust HTML Entity Decoder
 const decodeEntities = (text: string) => {
   if (!text) return "";
-  return text.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  let decoded = text.replace(/&amp;/g, "&"); 
+  return decoded
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&apos;/g, "'");
 };
 
-// Subtitle Extractor
-const getSubtitle = (item: any, type: string) => {
-  if (type === "songs" || item.type === "song") {
-    if (item.artists?.primary && Array.isArray(item.artists.primary)) {
-      return item.artists.primary.map((a: any) => a.name).join(", ");
-    }
-    if (typeof item.artists === "string") return item.artists;
-    if (item.primaryArtists) return item.primaryArtists;
-    if (item.singers) return item.singers;
-    if (item.more_info?.artistMap?.primary_artists?.length > 0) return item.more_info.artistMap.primary_artists.map((a: any) => a.name).join(", ");
-    return "Song";
+// Extracts artist correctly
+const getArtists = (data: any) => {
+  let names: string[] =[];
+  if (data?.artists?.primary && Array.isArray(data.artists.primary)) {
+    names = data.artists.primary.map((a: any) => a.name);
+  } else if (Array.isArray(data?.artists)) {
+    names = data.artists.slice(0, 4).map((a: any) => a.name);
+  } else if (typeof data?.artists === "string") {
+    names = data.artists.split(",").map((n: string) => n.trim());
+  } else if (data?.primaryArtists) {
+    names = data.primaryArtists.split(",").map((n: string) => n.trim());
+  } else if (data?.singers) {
+    names = data.singers.split(",").map((n: string) => n.trim());
+  } else {
+    return "Unknown Artist";
   }
-  if (type === "albums" || item.type === "album") return item.artist || (item.year ? `Album • ${item.year}` : "Album");
-  if (type === "playlists" || item.type === "playlist") return item.language ? `${item.language} Playlist` : "Playlist";
-  if (type === "artists" || item.type === "artist") return "Artist";
-  return item.subtitle || item.description || "";
+  return Array.from(new Set(names)).join(", ");
 };
 
-// Smart Scoring Engine for Best Matches
-const getMatchScore = (title: string, query: string) => {
-  if (!title || !query) return 0;
-  const t = title.toLowerCase();
-  const q = query.toLowerCase();
-  if (t === q) return 100;
-  if (t.startsWith(q)) return 50;
-  if (t.includes(q)) return 10;
-  return 0;
+const getImageUrl = (img: any) => {
+  if (!img) return "https://via.placeholder.com/150";
+  if (typeof img === "string") return img.replace("50x50", "500x500").replace("150x150", "500x500");
+  if (Array.isArray(img)) return img[img.length - 1]?.url || img[0]?.url;
+  return "https://via.placeholder.com/150";
 };
 
-// Premium Card Component
-const SearchCard = forwardRef<HTMLDivElement, any>(({ item, tabType, onClick, isGrid = false }, ref) => {
-  const type = item.type || tabType;
-  const title = decodeEntities(item.title || item.name || "Unknown");
-  const subtitle = decodeEntities(getSubtitle(item, type));
-  const isCircular = type === "artists" || type === "artist";
+const MiniPingPongMarquee = ({ text, isSub }: { text: string, isSub?: boolean }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
+  const [overflowWidth, setOverflowWidth] = useState(0);
 
-  const isLongTitle = title.length > 15;
-  const isLongSub = subtitle.length > 18;
-
-  const titleSpeed = `${Math.max(4, title.length * 0.25)}s`;
-  const subSpeed = `${Math.max(4, subtitle.length * 0.25)}s`;
-
-  return (
-    <div 
-      ref={ref}
-      onClick={() => onClick(item, type)} 
-      className={`cursor-pointer group active:scale-95 transition-transform duration-200 ${isGrid ? "w-full" : "flex-shrink-0 snap-start w-36"}`}
-    >
-      <div className={`relative overflow-hidden shadow-md bg-white/5 border border-white/5 mb-2 flex items-center justify-center ${isCircular ? "rounded-full aspect-square" : "rounded-xl aspect-[1/1]"}`}>
-        <img 
-          src={getImageUrl(item.image)} 
-          alt={title} 
-          loading="lazy" 
-          onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/500x500?text=Music"; }}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out" 
-        />
-      </div>
-      
-      <div className="w-full overflow-hidden whitespace-nowrap text-center">
-        <span
-          className={`inline-block text-[14px] font-extrabold text-white tracking-wide ${isLongTitle ? "animate-ping-pong" : ""}`}
-          style={isLongTitle ? { animationDuration: titleSpeed } : {}}
-        >
-          {title}
-        </span>
-      </div>
-
-      {subtitle && (
-        <div className="w-full overflow-hidden whitespace-nowrap text-center mt-0.5">
-          <span
-            className={`inline-block text-[12px] font-medium text-neutral-400 capitalize ${isLongSub ? "animate-ping-pong" : ""}`}
-            style={isLongSub ? { animationDuration: subSpeed } : {}}
-          >
-            {subtitle}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-});
-SearchCard.displayName = "SearchCard";
-
-// Horizontal Infinite Carousel Component
-const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore, onItemClick }: any) => {
-  const observerRef = useRef<IntersectionObserver | null>(null);
-
-  const lastElementRef = useCallback((node: HTMLDivElement | null) => {
-    if (loadingMore || !hasMore) return; 
-    if (observerRef.current) observerRef.current.disconnect();
-    
-    observerRef.current = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
-      if (entries[0].isIntersecting) loadMore(type);
-    }, { rootMargin: "400px", threshold: 0 });
-
-    if (node) observerRef.current.observe(node);
-  },[loadingMore, hasMore, loadMore, type]);
-
-  // Save Live Horizontal Scroll
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const scrolls = JSON.parse(sessionStorage.getItem("search_scrollX") || "{}");
-    scrolls[type] = (e.target as HTMLDivElement).scrollLeft;
-    sessionStorage.setItem("search_scrollX", JSON.stringify(scrolls));
-  };
-
-  // Restore Horizontal Scroll Flawlessly
   useEffect(() => {
-    const scrolls = JSON.parse(sessionStorage.getItem("search_scrollX") || "{}");
-    if (scrolls[type]) {
-      const restoreScroll = () => {
-        const el = document.getElementById(`carousel-${type}`);
-        if (el) el.scrollLeft = scrolls[type];
-      };
-      restoreScroll();
-      requestAnimationFrame(restoreScroll);
-      setTimeout(restoreScroll, 100);
-    }
-  }, [type]); // NO items.length dependency to prevent resetting!
+    const checkOverflow = () => {
+      if (containerRef.current && textRef.current) {
+        const cWidth = containerRef.current.offsetWidth;
+        const tWidth = textRef.current.scrollWidth;
+        setOverflowWidth(tWidth > cWidth ? tWidth - cWidth + 10 : 0);
+      }
+    };
+    checkOverflow();
+    window.addEventListener("resize", checkOverflow);
+    return () => window.removeEventListener("resize", checkOverflow);
+  },[text]);
 
   return (
-    <div className="mb-6 contain-content">
-      <h2 className="text-[20px] font-bold mb-3 px-4 tracking-tight text-white">{title}</h2>
+    <div ref={containerRef} className="relative overflow-hidden whitespace-nowrap w-full mask-linear-fade-mini">
       <div 
-        id={`carousel-${type}`}
-        onScroll={handleScroll}
-        className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-2"
+        ref={textRef}
+        className={`inline-block ${overflowWidth > 0 ? "animate-ping-pong-mini" : ""} ${isSub ? "text-xs text-white/70 font-medium" : "text-[15px] font-bold text-white"} transition-colors`}
+        style={{ '--overflow-dist': `-${overflowWidth}px` } as React.CSSProperties}
       >
-        {items.map((item: any, i: number) => {
-          const isLast = i === items.length - 1;
-          return (
-            <SearchCard 
-              ref={isLast ? lastElementRef : null} 
-              key={`${type}-${i}`} 
-              item={item} 
-              tabType={type} 
-              onClick={onItemClick} 
-              isGrid={false} 
-            />
-          );
-        })}
-        {loadingMore && (
-          <div className="flex-shrink-0 flex justify-center items-center w-36 aspect-square border border-white/5 rounded-xl bg-white/5">
-            <Loader2 className="animate-spin text-neutral-500" size={24} />
-          </div>
-        )}
+        {decodeEntities(text)}
       </div>
     </div>
   );
 };
 
-export default function SearchPage() {
-  const { setCurrentSong, setIsPlaying } = useAppContext();
-  const router = useRouter();
-  const CACHE_KEY = "search_page_cache_ultimate";
-
-  const [isRestored, setIsRestored] = useState(false);
-  const [query, setQuery] = useState("");
-  const[debouncedQuery, setDebouncedQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("all");
+export default function MiniPlayer() {
+  const { currentSong, isPlaying, setIsPlaying, setCurrentSong, queue } = useAppContext();
   
-  const [allData, setAllData] = useState<any>({ topMatches:[], songs: [], albums:[], playlists:[], artists:[] });
-  const [allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
-  const [allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
-  const [horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
-  
-  const [results, setResults] = useState<any[]>([]);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true); // Default to true!
-  
+  const[audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const[loadingMore, setLoadingMore] = useState(false);
-  
-  const lastFetched = useRef({ query: "", tab: "all", page: 1 });
-  const observerRef = useRef<IntersectionObserver | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [bgColor, setBgColor] = useState("#1a1a1a");
+  const audioRef = useRef<HTMLAudioElement>(null);
 
-  const tabs =[
-    { id: "all", label: "All" }, 
-    { id: "songs", label: "Songs", icon: Music2 },
-    { id: "albums", label: "Albums", icon: Disc },
-    { id: "playlists", label: "Playlists", icon: ListMusic },
-    { id: "artists", label: "Artists", icon: Mic2 }
-  ];
-
-  // 1. Restore State from Cache
+  // VIBRANT COLOR EXTRACTOR (IGNORES WHITE & BLACK)
   useEffect(() => {
-    const cached = sessionStorage.getItem(CACHE_KEY);
-    if (cached) {
+    if (!currentSong) return;
+    const url = getImageUrl(currentSong.image);
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = url;
+    img.onload = () => {
       try {
-        const parsed = JSON.parse(cached);
-        setQuery(parsed.query || "");
-        setDebouncedQuery(parsed.debouncedQuery || "");
-        setActiveTab(parsed.activeTab || "all");
-        setAllData(parsed.allData || { topMatches:[], songs:[], albums:[], playlists:[], artists:[] });
-        setAllPages(parsed.allPages || { songs: 1, albums: 1, playlists: 1, artists: 1 });
-        setAllHasMore(parsed.allHasMore || { songs: true, albums: true, playlists: true, artists: true });
-        setResults(parsed.results ||[]);
-        setPage(parsed.page || 1);
-        setHasMore(parsed.hasMore ?? true);
-        if (parsed.lastFetched) lastFetched.current = parsed.lastFetched;
-      } catch (e) {}
-    }
-    setIsRestored(true);
-  },[]);
+        const canvas = document.createElement("canvas");
+        canvas.width = 40; canvas.height = 40;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, 40, 40);
+        const data = ctx.getImageData(0, 0, 40, 40).data;
+        
+        let maxVibrancy = 0;
+        let bestColor = [26, 26, 26];
 
-  // 2. Restore Vertical Scroll
-  useEffect(() => {
-    if (!isRestored) return;
-    const y = sessionStorage.getItem(`search_scrollY_${activeTab}`);
-    if (y) {
-      const restore = () => window.scrollTo({ top: parseInt(y), behavior: "instant" });
-      restore();
-      requestAnimationFrame(restore);
-      setTimeout(restore, 100);
-    }
-  }, [activeTab, isRestored]);
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i], g = data[i+1], b = data[i+2];
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          const vibrancy = max - min; // Difference between brightest and darkest channel
+          
+          if (max > 230 && min > 230) continue; // Skip near white
+          if (max < 30) continue;               // Skip near black
+          
+          if (vibrancy > maxVibrancy) {
+            maxVibrancy = vibrancy;
+            bestColor = [r, g, b];
+          }
+        }
 
-  // 3. Live Window Scroll Tracker (Ensures Browser Back button works)
-  useEffect(() => {
-    let timeout: any;
-    const handleWinScroll = () => {
-      if (timeout) clearTimeout(timeout);
-      timeout = setTimeout(() => {
-        sessionStorage.setItem(`search_scrollY_${activeTab}`, window.scrollY.toString());
-      }, 100);
+        if (maxVibrancy < 15) {
+          // Mostly grayscale image, fallback to sleek dark
+          setBgColor("#1a1a1a");
+        } else {
+          // Darken the vibrant color slightly to ensure white text pops beautifully
+          setBgColor(`rgb(${Math.floor(bestColor[0]*0.45)}, ${Math.floor(bestColor[1]*0.45)}, ${Math.floor(bestColor[2]*0.45)})`);
+        }
+      } catch (e) {
+        setBgColor("#1a1a1a");
+      }
     };
-    window.addEventListener("scroll", handleWinScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", handleWinScroll);
-      if (timeout) clearTimeout(timeout);
-    };
-  }, [activeTab]);
+  }, [currentSong]);
 
-  // Save Cache Automatically
   useEffect(() => {
-    if (!isRestored) return;
-    const stateToCache = { query, debouncedQuery, activeTab, allData, allPages, allHasMore, results, page, hasMore, lastFetched: lastFetched.current };
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(stateToCache));
-  },[query, debouncedQuery, activeTab, allData, allPages, allHasMore, results, page, hasMore, isRestored]);
-
-  // Debouncer
-  useEffect(() => {
-    if (!isRestored) return;
-    const timer = setTimeout(() => setDebouncedQuery(query), 600);
-    return () => clearTimeout(timer);
-  },[query, isRestored]);
-
-  // Main Vertical API Fetch Logic
-  useEffect(() => {
-    if (!isRestored) return;
-    if (!debouncedQuery.trim()) {
-      setAllData({ topMatches:[], songs: [], albums:[], playlists: [], artists:[] });
-      setResults([]); setHasMore(true);
-      lastFetched.current = { query: "", tab: activeTab, page: 1 };
+    if (!currentSong) {
+      setAudioUrl("");
+      setIsPlaying(false);
       return;
     }
 
-    const isNewQueryOrTab = debouncedQuery !== lastFetched.current.query || activeTab !== lastFetched.current.tab;
-    
-    // Crucial Reset for Tab Swaps
-    if (isNewQueryOrTab && page !== 1) {
-      setPage(1); 
-      setHasMore(true);
-      return; 
-    }
-
-    // Prevent Wasted API Calls on Back Navigation
-    if (!isNewQueryOrTab && page === lastFetched.current.page) return;
-
-    const fetchData = async () => {
-      if (page === 1) setLoading(true);
-      else setLoadingMore(true);
-
+    const fetchPlayableUrl = async () => {
+      setLoading(true);
       try {
-        if (activeTab === "all") {
-          const[sRes, aRes, pRes, arRes] = await Promise.all([
-            fetch(`https://ayushm-psi.vercel.app/api/search/songs?query=${encodeURIComponent(debouncedQuery)}&page=1`),
-            fetch(`https://ayushm-psi.vercel.app/api/search/albums?query=${encodeURIComponent(debouncedQuery)}&page=1`),
-            fetch(`https://ayushm-psi.vercel.app/api/search/playlists?query=${encodeURIComponent(debouncedQuery)}&page=1`),
-            fetch(`https://ayushm-psi.vercel.app/api/search/artists?query=${encodeURIComponent(debouncedQuery)}&page=1`)
-          ]);
-
-          const[sJson, aJson, pJson, arJson] = await Promise.all([sRes.json(), aRes.json(), pRes.json(), arRes.json()]);
-
-          const songs = sJson.data?.results || sJson.data ||[];
-          const albums = aJson.data?.results || aJson.data ||[];
-          const playlists = pJson.data?.results || pJson.data ||[];
-          const artists = arJson.data?.results || arJson.data ||[];
-
-          const combined =[
-            ...songs.map((i: any) => ({ ...i, type: "song" })),
-            ...albums.map((i: any) => ({ ...i, type: "album" })),
-            ...playlists.map((i: any) => ({ ...i, type: "playlist" })),
-            ...artists.map((i: any) => ({ ...i, type: "artist" }))
-          ];
-
-          const sortedMatches = combined
-            .map(item => ({ item, score: getMatchScore(item.title || item.name, debouncedQuery) }))
-            .filter(match => match.score > 0)
-            .sort((a, b) => b.score - a.score)
-            .map(match => match.item)
-            .slice(0, 8);
-
-          setAllData({ topMatches: sortedMatches.length > 0 ? sortedMatches : combined.slice(0, 8), songs, albums, playlists, artists });
-          setAllPages({ songs: 1, albums: 1, playlists: 1, artists: 1 });
-          setAllHasMore({ songs: true, albums: true, playlists: true, artists: true });
-          
-          setHasMore(false); // Valid for "All" tab ONLY
+        if (currentSong.downloadUrl && currentSong.downloadUrl.length > 0) {
+          setAudioUrl(currentSong.downloadUrl[currentSong.downloadUrl.length - 1].url);
         } else {
-          const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${activeTab}?query=${encodeURIComponent(debouncedQuery)}&page=${page}`);
+          const link = currentSong.url || currentSong.perma_url;
+          const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(link)}`);
           const json = await res.json();
-          const newData = json.data?.results || json.data ||[];
-
-          setResults(prev => (isNewQueryOrTab || page === 1) ? newData : [...prev, ...newData]);
-          
-          // CRITICAL BUG FIX: Ensure hasMore becomes TRUE if we got results, fixing the "End of Results" bug
-          setHasMore(newData.length > 0);
+          if (json.data && json.data[0]?.downloadUrl) {
+            const urls = json.data[0].downloadUrl;
+            setAudioUrl(urls[urls.length - 1].url);
+          }
         }
-        
-        lastFetched.current = { query: debouncedQuery, tab: activeTab, page };
-      } catch (err) {} 
-      finally {
-        setLoading(false); setLoadingMore(false);
+      } catch (error) {
+        console.error("Error fetching audio", error);
       }
+      setLoading(false);
     };
 
-    fetchData();
-  },[debouncedQuery, activeTab, page, isRestored]);
+    fetchPlayableUrl();
+  }, [currentSong]);
 
-  // Horizontal Load More Logic ("All" Tab)
-  const loadMoreHorizontal = useCallback(async (type: string) => {
-    if (horizontalLoading[type] || !allHasMore[type]) return;
-    
-    setHorizontalLoading((prev: any) => ({ ...prev, [type]: true }));
-    try {
-      const nextPage = allPages[type] + 1;
-      const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${type}?query=${encodeURIComponent(debouncedQuery)}&page=${nextPage}`);
-      const json = await res.json();
-      const newData = json.data?.results || json.data ||[];
-
-      if (newData.length === 0) {
-        setAllHasMore((prev: any) => ({ ...prev, [type]: false }));
+  useEffect(() => {
+    if (audioRef.current && audioUrl) {
+      if (isPlaying) {
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(e => console.log("Buffering/Autoplay prevented:", e));
+        }
       } else {
-        setAllData((prev: any) => ({ ...prev, [type]: [...prev[type], ...newData] }));
-        setAllPages((prev: any) => ({ ...prev, [type]: nextPage }));
+        audioRef.current.pause();
       }
-    } catch (e) {}
-    
-    setHorizontalLoading((prev: any) => ({ ...prev, [type]: false }));
-  },[debouncedQuery, allPages, allHasMore, horizontalLoading]);
+    }
+  }, [isPlaying, audioUrl]);
 
-  // Vertical Infinite Scroll Logic (Dedicated Tabs)
-  const lastVerticalElementRef = useCallback((node: HTMLDivElement | null) => {
-    if (loading || loadingMore || !hasMore || activeTab === "all") return;
-    if (observerRef.current) observerRef.current.disconnect();
-
-    observerRef.current = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
-      // Increased root margin so it fetches seamlessly before you hit the bottom
-      if (entries[0].isIntersecting && hasMore) {
-        setPage(prev => prev + 1); 
-      }
-    }, { rootMargin: "600px", threshold: 0 });
-
-    if (node) observerRef.current.observe(node);
-  },[loading, loadingMore, hasMore, activeTab]);
-
-  // Navigate & Save Scrolls
-  const handleItemClick = (item: any, passedType?: string) => {
-    const type = item.type || passedType || activeTab;
-    let link = item.url || item.perma_url || item.action || "";
-    if (link && !link.startsWith("http")) link = `https://www.jiosaavn.com${link}`;
-    
-    if (type === "songs" || type === "song") {
-      setCurrentSong(item);
-      setIsPlaying(true);
-    } else if (type === "albums" || type === "album") {
-      router.push(`/album?link=${encodeURIComponent(link)}`);
-    } else if (type === "playlists" || type === "playlist") {
-      router.push(`/playlist?link=${encodeURIComponent(link)}`);
-    } else if (type === "artists" || type === "artist") {
-      router.push(`/artist?id=${item.id}`);
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      const current = audioRef.current.currentTime;
+      const total = audioRef.current.duration;
+      if (total > 0) setProgress((current / total) * 100);
     }
   };
 
-  // Hydration fallback
-  if (!isRestored) return <div className="min-h-screen bg-[#121212]" />;
+  const playNext = () => {
+    if (!queue || queue.length === 0) return;
+    const currentIndex = queue.findIndex((s: any) => s.id === currentSong.id);
+    if (currentIndex !== -1 && currentIndex < queue.length - 1) {
+      setCurrentSong(queue[currentIndex + 1]);
+      setIsPlaying(true);
+    } else {
+      setIsPlaying(false);
+      setProgress(0);
+    }
+  };
+
+  const playPrev = () => {
+    if (!queue || queue.length === 0) return;
+    if (audioRef.current && audioRef.current.currentTime > 3) {
+      audioRef.current.currentTime = 0;
+      return;
+    }
+    const currentIndex = queue.findIndex((s: any) => s.id === currentSong.id);
+    if (currentIndex > 0) {
+      setCurrentSong(queue[currentIndex - 1]);
+      setIsPlaying(true);
+    }
+  };
+
+  if (!currentSong) return null;
+
+  const coverImage = getImageUrl(currentSong.image);
+  const title = currentSong.title || currentSong.name || "Loading...";
+  const artists = getArtists(currentSong);
 
   return (
-    <main className="min-h-screen pt-12 pb-28 bg-[#121212]">
-      <div className="px-4 mb-4">
-        <h1 className="text-3xl font-black tracking-tighter text-white">Search</h1>
-      </div>
+    <>
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes ping-pong-mini {
+          0%, 15% { transform: translateX(0); }
+          85%, 100% { transform: translateX(var(--overflow-dist)); }
+        }
+        .animate-ping-pong-mini { animation: ping-pong-mini 5s ease-in-out infinite alternate; }
+        .mask-linear-fade-mini { mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); }
+      `}} />
 
-      {/* Sticky Header */}
-      <div className="sticky top-0 z-40 bg-[#121212]/90 backdrop-blur-2xl pt-2 pb-3 px-4 border-b border-white/5">
-        <div className="relative flex items-center w-full h-12 rounded-xl bg-white/5 border border-white/10 focus-within:border-white/30 shadow-lg transition-colors">
-          <div className="grid place-items-center h-full w-12 text-neutral-400">
-            <SearchIcon size={18} />
-          </div>
-          <input
-            className="peer h-full w-full outline-none text-[15px] text-white bg-transparent pr-10 placeholder-neutral-500 font-medium tracking-wide"
-            type="text"
-            placeholder="Songs, albums, artists..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {query && (
-            <button onClick={() => setQuery("")} className="absolute right-3 text-neutral-400 hover:text-white transition-colors">
-              <X size={18} />
-            </button>
-          )}
+      {/* Dynamic Background extracted via Canvas */}
+      <div 
+        className="fixed bottom-[75px] left-2 right-2 md:left-1/2 md:-translate-x-1/2 md:w-[500px] h-[64px] rounded-xl overflow-hidden shadow-2xl border border-white/5 z-[99] group cursor-pointer active:scale-[0.98] transition-colors duration-700"
+        style={{ backgroundColor: bgColor }}
+      >
+        {/* Soft dark gradient to give premium 3D feel over the solid color */}
+        <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-black/20 pointer-events-none" />
+
+        <audio 
+          ref={audioRef} 
+          src={audioUrl} 
+          autoPlay={isPlaying} 
+          onEnded={playNext}
+          onTimeUpdate={handleTimeUpdate}
+        />
+
+        {/* Green Line positioned at the absolute bottom */}
+        <div className="absolute bottom-0 left-0 w-full h-[3px] bg-black/20 z-20">
+          <div className="h-full bg-[#1ed760] transition-all duration-300 ease-linear rounded-r-full shadow-[0_0_8px_#1ed760]" style={{ width: `${progress}%` }} />
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mt-4 overflow-x-auto hide-scrollbar pb-1">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-bold transition-all whitespace-nowrap ${
-                  isActive ? "bg-white text-black scale-105" : "bg-white/5 text-neutral-400 border border-white/5 hover:bg-white/10 active:scale-95"
-                }`}
-              >
-                {tab.icon && <tab.icon size={16} strokeWidth={isActive ? 2.5 : 2} />}
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Content Area */}
-      <div className="mt-4">
-        {loading ? (
-          <div className="flex justify-center mt-20"><Loader2 className="animate-spin text-neutral-400" size={32} /></div>
-        ) : !debouncedQuery.trim() ? (
-          <div className="flex flex-col items-center justify-center mt-24 text-neutral-600 animate-slide-down">
-            <SearchIcon size={56} className="mb-4 opacity-20" />
-            <p className="text-lg font-bold text-neutral-400 tracking-tight">Find your music</p>
-          </div>
-        ) : activeTab === "all" ? (
-          <div className="flex flex-col gap-2">
-            {allData.topMatches.length > 0 && (
-              <div className="mb-6 contain-content">
-                <h2 className="text-[20px] font-bold mb-3 px-4 tracking-tight text-white">Best Matches</h2>
-                <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-2">
-                  {allData.topMatches.map((item: any, i: number) => (
-                    <SearchCard key={`top-${i}`} item={item} onClick={handleItemClick} isGrid={false} />
-                  ))}
+        <div className="relative z-10 flex items-center justify-between h-full px-3 w-full pb-[3px]">
+          <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0 pr-2">
+            <div className="relative w-11 h-11 flex-shrink-0 bg-black/20 rounded-md overflow-hidden shadow-lg border border-white/10">
+              {loading ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                  <Loader2 className="animate-spin text-[#1ed760]" size={20} />
                 </div>
-              </div>
-            )}
-            
-            {[
-              { title: "Songs", data: allData.songs, type: "songs" },
-              { title: "Albums", data: allData.albums, type: "albums" },
-              { title: "Artists", data: allData.artists, type: "artists" },
-              { title: "Playlists", data: allData.playlists, type: "playlists" },
-            ].map((section, idx) => section.data.length > 0 && (
-              <HorizontalCarousel
-                key={idx}
-                title={section.title}
-                type={section.type}
-                items={section.data}
-                hasMore={allHasMore[section.type]}
-                loadingMore={horizontalLoading[section.type]}
-                loadMore={loadMoreHorizontal}
-                onItemClick={handleItemClick}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="px-4">
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-x-4 gap-y-6 justify-items-center">
-              {results.map((item, index) => {
-                const isLastItem = index === results.length - 1;
-                return (
-                  <SearchCard 
-                    ref={isLastItem ? lastVerticalElementRef : null} 
-                    key={`${activeTab}-${index}`} 
-                    item={item} 
-                    tabType={activeTab} 
-                    onClick={handleItemClick} 
-                    isGrid={true} 
-                  />
-                );
-              })}
+              ) : null}
+              <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
             </div>
-            
-            <div className="h-10 mt-8 mb-6 flex justify-center items-center w-full">
-              {loadingMore && <Loader2 className="animate-spin text-neutral-500" size={24} />}
-              {!hasMore && results.length > 0 && <p className="text-sm text-neutral-600 font-medium">End of results</p>}
+
+            <div className="flex flex-col overflow-hidden w-full gap-[1px] justify-center">
+              <MiniPingPongMarquee text={title} />
+              <MiniPingPongMarquee text={artists} isSub={true} />
             </div>
           </div>
-        )}
+
+          <div className="flex items-center gap-4 flex-shrink-0 pl-2">
+            <button onClick={(e) => { e.stopPropagation(); playPrev(); }} className="text-white/80 hover:text-white active:scale-90 transition-all hidden sm:block">
+              <SkipBack size={24} fill="currentColor" />
+            </button>
+
+            <button disabled={loading} onClick={(e) => { e.stopPropagation(); setIsPlaying(!isPlaying); }} className={`w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-90 ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10'}`}>
+              {isPlaying ? <Pause fill="white" size={26} /> : <Play fill="white" size={26} className="ml-1" />}
+            </button>
+
+            <button onClick={(e) => { e.stopPropagation(); playNext(); }} className="text-white/80 hover:text-white active:scale-90 transition-all">
+              <SkipForward size={24} fill="currentColor" />
+            </button>
+          </div>
+        </div>
       </div>
-    </main>
+    </>
   );
 }

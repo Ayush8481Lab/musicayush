@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import React, { useEffect, useState, Suspense, useRef, useCallback } from "react";
+import React, { useEffect, useState, Suspense, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Play, ArrowLeft, Loader2, Shuffle, Share2, Info, BadgeAlert, Heart, MoreHorizontal, Clock } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
@@ -104,7 +104,7 @@ const PlayingVisualizer = () => (
 );
 
 const PlaylistSkeleton = () => (
-  <div className="min-h-screen bg-[#121212] p-4 md:p-8 pt-24 animate-pulse">
+  <div className="min-h-screen bg-[#0a0a0a] p-4 md:p-8 pt-24 animate-pulse">
     <div className="flex flex-col md:flex-row gap-6 items-center md:items-end">
       <div className="w-40 h-40 md:w-64 md:h-64 bg-white/10 rounded-2xl shadow-2xl" />
       <div className="flex flex-col gap-4 w-full max-w-xl items-center md:items-start">
@@ -138,8 +138,6 @@ function PlaylistContent() {
 
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  // FIX: Optimized requestAnimationFrame listener perfectly tuned to scrollY > 280
-  // Shows banner in header EXACTLY when main banner hides.
   useEffect(() => {
     let ticking = false;
     const handleScroll = () => {
@@ -236,11 +234,68 @@ function PlaylistContent() {
     }
   };
 
+  // 🚀 CRITICAL PERFORMANCE FIX: MEMOIZE THE ENTIRE SONG LIST
+  // This prevents the browser from lagging/hiding images when the scroll state changes!
+  const renderedSongs = useMemo(() => {
+    return playlist?.songs?.map((song: any, index: number) => {
+      const isLastItem = index === playlist.songs.length - 1;
+      const songTitle = song.name || song.title;
+      const artists = getArtists(song);
+      const plays = formatNumber(song.playCount);
+      const isCurrentPlaying = currentSong?.id === song.id;
+
+      return (
+        <div 
+          key={`${song.id}-${index}`} 
+          ref={isLastItem ? lastElementRef : null}
+          onClick={() => handlePlaySong(song)} 
+          className={`flex items-center gap-3 md:gap-4 p-2.5 md:p-3 rounded-xl cursor-pointer group transition-all duration-300 ${isCurrentPlaying ? "bg-white/10" : "hover:bg-white/5"}`}
+        >
+          <div className="w-8 md:w-12 flex justify-center items-center flex-shrink-0">
+            {isCurrentPlaying ? (
+              <PlayingVisualizer />
+            ) : (
+              <span className="text-white/40 font-semibold text-[14px] group-hover:hidden">{index + 1}</span>
+            )}
+            <Play fill="white" size={16} className={`text-white hidden ${!isCurrentPlaying && 'group-hover:block'} ml-0.5`} />
+          </div>
+          
+          <div className="relative w-11 h-11 md:w-12 md:h-12 flex-shrink-0 bg-white/5 rounded-md overflow-hidden shadow-md">
+            <img src={getImageUrl(song.image)} alt={decodeEntities(songTitle)} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 transform-gpu" />
+          </div>
+          
+          <div className="flex-1 min-w-0 pr-2 flex flex-col justify-center gap-0.5 overflow-hidden">
+            <div className="flex items-center gap-2 w-full">
+              <PingPongMarquee text={songTitle} isPlaying={isCurrentPlaying} />
+              {song.explicitContent && <BadgeAlert size={14} className="text-white/40 flex-shrink-0" />}
+            </div>
+            <PingPongMarquee text={artists} isPlaying={isCurrentPlaying} isSub={true} />
+          </div>
+
+          <div className="flex-1 hidden lg:block overflow-hidden pr-4 text-[13px] font-medium text-white/40 group-hover:text-white/80 transition-colors">
+            {plays ? `${plays}` : ""}
+          </div>
+          
+          <div className="w-12 text-right md:mr-4">
+            <span className={`text-[13px] font-medium transition-colors ${isCurrentPlaying ? "text-[#1ed760]" : "text-white/40 group-hover:text-white/80"}`}>
+              {formatDuration(song.duration)}
+            </span>
+          </div>
+
+          <div className="hidden md:flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+             <button className="p-2 text-white/60 hover:text-white"><Heart size={18} /></button>
+             <button className="p-2 text-white/60 hover:text-white"><MoreHorizontal size={18} /></button>
+          </div>
+        </div>
+      );
+    });
+  },[playlist?.songs, currentSong, lastElementRef]);
+
   if (loading && page === 1) return <PlaylistSkeleton />;
 
   if (!playlist) {
     return (
-      <div className="flex flex-col h-screen items-center justify-center bg-[#121212] text-white gap-4">
+      <div className="flex flex-col h-screen items-center justify-center bg-[#0a0a0a] text-white gap-4">
         <Info size={48} className="text-white/30" />
         <p className="text-xl font-bold">Playlist not found</p>
         <button onClick={() => router.back()} className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-full font-bold backdrop-blur-md transition-all">Go Back</button>
@@ -256,7 +311,7 @@ function PlaylistContent() {
   const totalDurationStr = totalSeconds ? `${Math.floor(totalSeconds / 60)} mins` : "";
 
   return (
-    <div className="pb-36 bg-[#121212] min-h-screen relative text-white selection:bg-[#1ed760]/30 font-sans">
+    <div className="pb-36 bg-[#0a0a0a] min-h-screen relative text-white selection:bg-[#1ed760]/30 font-sans">
 
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes ping-pong {
@@ -273,25 +328,28 @@ function PlaylistContent() {
         .eq-bar-4 { animation: eq 1s ease-in-out infinite 0.1s; }
       `}} />
 
-      {/* FIX: Restored original beautiful color extract background with <img> to stop scroll lag */}
-      <div className="absolute top-0 left-0 w-full h-[550px] pointer-events-none overflow-hidden z-0">
+      {/* RESTORED: The original beautiful saturated background you liked! */}
+      <div className="fixed top-0 left-0 w-full h-[80vh] pointer-events-none overflow-hidden z-0">
         <img 
           src={coverImage} 
           alt="blur-bg" 
-          className="w-full h-full object-cover blur-[80px] saturate-[200%] opacity-40 scale-150 transform-gpu will-change-transform brightness-75" 
+          className="w-full h-full object-cover blur-[100px] saturate-[250%] opacity-60 scale-[1.2] transform-gpu will-change-transform" 
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#121212]/90 to-[#121212]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-[#0a0a0a]/80 to-[#0a0a0a]" />
       </div>
 
-      <nav className={`fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 py-3 transition-all duration-300 ${isScrolled ? "bg-[#171717] shadow-2xl border-b border-white/5" : "bg-transparent"}`}>
+      <nav className={`fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 py-3 transition-all duration-300 ${isScrolled ? "bg-[#0a0a0a]/90 backdrop-blur-2xl shadow-2xl border-b border-white/5" : "bg-transparent"}`}>
         <div className="flex items-center gap-4 flex-1 min-w-0">
-          <button onClick={() => router.back()} className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md transition-all text-white active:scale-90 z-50 flex-shrink-0">
+          <button onClick={() => router.back()} className="p-2.5 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-md transition-all text-white active:scale-90 z-50 flex-shrink-0">
             <ArrowLeft size={22} />
           </button>
           
-          {/* Appears smoothly only when scroll > 280 */}
+          {/* RESTORED: Play button and banner in sticky header */}
           <div className={`flex items-center gap-3 overflow-hidden transition-all duration-300 flex-1 min-w-0 ${isScrolled ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}>
-            <img src={coverImage} className="w-9 h-9 rounded-md object-cover flex-shrink-0 shadow-md border border-white/10" alt="banner" />
+            <button onClick={handlePlayPlaylist} className="w-10 h-10 bg-[#1ed760] text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform flex-shrink-0 shadow-[0_4px_15px_rgba(30,215,96,0.3)]">
+               <Play fill="black" size={18} className="ml-0.5" />
+            </button>
+            <img src={coverImage} className="w-10 h-10 rounded-md object-cover flex-shrink-0 shadow-md border border-white/10 hidden sm:block" alt="banner" />
             <PingPongMarquee text={title} />
           </div>
         </div>
@@ -359,68 +417,16 @@ function PlaylistContent() {
         </button>
       </div>
 
-      <div className="relative z-10 px-6 md:px-12 mt-6 hidden md:flex items-center text-[12px] font-bold uppercase tracking-widest text-white/40 border-b border-white/5 pb-3 mb-4 sticky top-[68px] bg-[#121212]/95 backdrop-blur-xl">
+      <div className="relative z-10 px-6 md:px-12 mt-6 hidden md:flex items-center text-[12px] font-bold uppercase tracking-widest text-white/40 border-b border-white/5 pb-3 mb-4 sticky top-[68px] bg-[#0a0a0a]/95 backdrop-blur-xl">
         <div className="w-12 text-center">#</div>
         <div className="flex-1 ml-4">Title</div>
         <div className="flex-1 hidden lg:block">Plays</div>
         <div className="w-16 text-right mr-4"><Clock size={16} className="inline-block" /></div>
       </div>
 
+      {/* Render the perfectly memoized song list (No more scroll blinking!) */}
       <div className="relative z-10 px-3 md:px-10 flex flex-col gap-1.5">
-        {playlist.songs?.map((song: any, index: number) => {
-          const isLastItem = index === playlist.songs.length - 1;
-          const songTitle = song.name || song.title;
-          const artists = getArtists(song);
-          const plays = formatNumber(song.playCount);
-          
-          const isCurrentPlaying = currentSong?.id === song.id;
-
-          return (
-            <div 
-              key={`${song.id}-${index}`} 
-              ref={isLastItem ? lastElementRef : null}
-              onClick={() => handlePlaySong(song)} 
-              className={`flex items-center gap-3 md:gap-4 p-2.5 md:p-3 rounded-xl cursor-pointer group transition-all duration-300 ${isCurrentPlaying ? "bg-white/10" : "hover:bg-white/5"}`}
-            >
-              <div className="w-8 md:w-12 flex justify-center items-center flex-shrink-0">
-                {isCurrentPlaying ? (
-                  <PlayingVisualizer />
-                ) : (
-                  <span className="text-white/40 font-semibold text-[14px] group-hover:hidden">{index + 1}</span>
-                )}
-                <Play fill="white" size={16} className={`text-white hidden ${!isCurrentPlaying && 'group-hover:block'} ml-0.5`} />
-              </div>
-              
-              <div className="relative w-11 h-11 md:w-12 md:h-12 flex-shrink-0 bg-white/5 rounded-md overflow-hidden shadow-md">
-                {/* FIX: Removed loading="lazy" & decoding="async" to completely stop scroll flickering! */}
-                <img src={getImageUrl(song.image)} alt={decodeEntities(songTitle)} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 transform-gpu" />
-              </div>
-              
-              <div className="flex-1 min-w-0 pr-2 flex flex-col justify-center gap-0.5 overflow-hidden">
-                <div className="flex items-center gap-2 w-full">
-                  <PingPongMarquee text={songTitle} isPlaying={isCurrentPlaying} />
-                  {song.explicitContent && <BadgeAlert size={14} className="text-white/40 flex-shrink-0" />}
-                </div>
-                <PingPongMarquee text={artists} isPlaying={isCurrentPlaying} isSub={true} />
-              </div>
-
-              <div className="flex-1 hidden lg:block overflow-hidden pr-4 text-[13px] font-medium text-white/40 group-hover:text-white/80 transition-colors">
-                {plays ? `${plays}` : ""}
-              </div>
-              
-              <div className="w-12 text-right md:mr-4">
-                <span className={`text-[13px] font-medium transition-colors ${isCurrentPlaying ? "text-[#1ed760]" : "text-white/40 group-hover:text-white/80"}`}>
-                  {formatDuration(song.duration)}
-                </span>
-              </div>
-
-              <div className="hidden md:flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                 <button className="p-2 text-white/60 hover:text-white"><Heart size={18} /></button>
-                 <button className="p-2 text-white/60 hover:text-white"><MoreHorizontal size={18} /></button>
-              </div>
-            </div>
-          );
-        })}
+        {renderedSongs}
       </div>
 
       {loadingMore && (

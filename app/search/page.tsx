@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 // Safe Image Extractor
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/150x150?text=Music";
-  if (typeof img === "string") return img.replace("50x50", "150x150"); // 150 is perfect for 4-grid
+  if (typeof img === "string") return img.replace("50x50", "150x150"); 
   if (Array.isArray(img)) return img[img.length - 1]?.url || img[0]?.url;
   return "https://via.placeholder.com/150x150?text=Music";
 };
@@ -21,13 +21,12 @@ const decodeEntities = (text: string) => {
 // Subtitle Extractor - Strictly Artist Name for Songs
 const getSubtitle = (item: any, type: string) => {
   if (type === "songs" || item.type === "song") {
-    // Extract artist name directly for songs
     if (item.primaryArtists) return item.primaryArtists;
     if (item.singers) return item.singers;
     if (item.more_info?.artistMap?.primary_artists?.length > 0) return item.more_info.artistMap.primary_artists.map((a: any) => a.name).join(", ");
     return "Song";
   }
-  if (type === "albums" || item.type === "album") return item.artist || item.year ? `Album • ${item.year}` : "Album";
+  if (type === "albums" || item.type === "album") return item.artist || (item.year ? `Album • ${item.year}` : "Album");
   if (type === "playlists" || item.type === "playlist") return item.language ? `${item.language} Playlist` : "Playlist";
   if (type === "artists" || item.type === "artist") return "Artist";
   return item.subtitle || item.description || "";
@@ -35,6 +34,7 @@ const getSubtitle = (item: any, type: string) => {
 
 // Smart Scoring Engine for Best Matches
 const getMatchScore = (title: string, query: string) => {
+  if (!title || !query) return 0;
   const t = title.toLowerCase();
   const q = query.toLowerCase();
   if (t === q) return 100; // Exact match
@@ -78,16 +78,16 @@ export default function SearchPage() {
   const router = useRouter();
 
   const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const[activeTab, setActiveTab] = useState("all");
+  const[debouncedQuery, setDebouncedQuery] = useState("");
+  const [activeTab, setActiveTab] = useState("all");
   
-  // States for 'All' Tab
-  const[allData, setAllData] = useState({ topMatches: [], songs: [], albums: [], playlists: [], artists:[] });
+  // FIX: Explicitly typed as <any> to prevent Vercel TypeScript build crash!
+  const[allData, setAllData] = useState<any>({ topMatches: [], songs: [], albums: [], playlists:[], artists:[] });
   
   // States for Infinite Scroll Tabs
   const [results, setResults] = useState<any[]>([]);
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const[hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -101,7 +101,7 @@ export default function SearchPage() {
     { id: "artists", label: "Artists", icon: Mic2 }
   ];
 
-  // Debounce the search input
+  // Debounce input
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 600);
     return () => clearTimeout(timer);
@@ -110,10 +110,10 @@ export default function SearchPage() {
   // Reset states when Query or Tab changes
   useEffect(() => {
     setResults([]);
-    setAllData({ topMatches: [], songs: [], albums: [], playlists:[], artists: [] });
+    setAllData({ topMatches:[], songs: [], albums: [], playlists:[], artists:[] });
     setPage(1);
     setHasMore(true);
-  },[debouncedQuery, activeTab]);
+  }, [debouncedQuery, activeTab]);
 
   // Main Fetch Logic
   useEffect(() => {
@@ -125,7 +125,7 @@ export default function SearchPage() {
 
       try {
         if (activeTab === "all") {
-          // Fetch everything for the 'All' tab simultaneously
+          // Fetch everything simultaneously
           const [sRes, aRes, pRes, arRes] = await Promise.all([
             fetch(`https://ayushm-psi.vercel.app/api/search/songs?query=${encodeURIComponent(debouncedQuery)}&page=1`),
             fetch(`https://ayushm-psi.vercel.app/api/search/albums?query=${encodeURIComponent(debouncedQuery)}&page=1`),
@@ -136,8 +136,8 @@ export default function SearchPage() {
           const [sJson, aJson, pJson, arJson] = await Promise.all([sRes.json(), aRes.json(), pRes.json(), arRes.json()]);
 
           const songs = sJson.data?.results || sJson.data ||[];
-          const albums = aJson.data?.results || aJson.data || [];
-          const playlists = pJson.data?.results || pJson.data ||[];
+          const albums = aJson.data?.results || aJson.data ||[];
+          const playlists = pJson.data?.results || pJson.data || [];
           const artists = arJson.data?.results || arJson.data ||[];
 
           // Smart "Best Match" Engine
@@ -148,7 +148,6 @@ export default function SearchPage() {
             ...artists.map((i: any) => ({ ...i, type: "artist" }))
           ];
 
-          // Sort by text relevance and grab top 4
           const sortedMatches = combined
             .map(item => ({ item, score: getMatchScore(item.title || item.name, debouncedQuery) }))
             .filter(match => match.score > 0)
@@ -156,11 +155,10 @@ export default function SearchPage() {
             .map(match => match.item)
             .slice(0, 4);
 
-          // Fallback to top 1 from each category if no strict match
           const topMatches = sortedMatches.length > 0 ? sortedMatches : combined.slice(0, 4);
 
           setAllData({ topMatches, songs: songs.slice(0, 8), albums: albums.slice(0, 8), playlists: playlists.slice(0, 8), artists: artists.slice(0, 8) });
-          setHasMore(false); // No infinite scroll on 'All' tab
+          setHasMore(false); 
         } else {
           // Fetch specific tab with Infinite Scroll pagination
           const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${activeTab}?query=${encodeURIComponent(debouncedQuery)}&page=${page}`);
@@ -184,8 +182,8 @@ export default function SearchPage() {
     fetchData();
   }, [debouncedQuery, activeTab, page]);
 
-  // Infinite Scroll Observer Setup
-  const lastElementRef = useCallback((node: HTMLDivElement) => {
+  // FIX: Properly typed ref to fix Vercel Callback Error
+  const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (loading || loadingMore || !hasMore || activeTab === "all") return;
     if (observerRef.current) observerRef.current.disconnect();
 
@@ -272,21 +270,18 @@ export default function SearchPage() {
             <p className="text-lg font-bold text-neutral-400">Find your music</p>
           </div>
         ) : activeTab === "all" ? (
-          /* "ALL" TAB LAYOUT */
           <div className="flex flex-col gap-8">
-            {/* Top Results */}
             {allData.topMatches.length > 0 && (
               <div>
                 <h2 className="text-lg font-bold text-white mb-3 flex items-center gap-2"><Sparkles size={18} className="text-amber-400"/> Best Matches</h2>
                 <div className="grid grid-cols-4 gap-3">
-                  {allData.topMatches.map((item: any, i) => (
+                  {allData.topMatches.map((item: any, i: number) => (
                     <SearchCard key={`top-${i}`} item={item} index={i} onClick={handleItemClick} />
                   ))}
                 </div>
               </div>
             )}
             
-            {/* Category Rows */}
             {[
               { title: "Songs", data: allData.songs, type: "songs" },
               { title: "Albums", data: allData.albums, type: "albums" },
@@ -304,7 +299,6 @@ export default function SearchPage() {
             ))}
           </div>
         ) : (
-          /* SPECIFIC TAB LAYOUT (WITH INFINITE SCROLL) */
           <div>
             <div className="grid grid-cols-4 gap-3">
               {results.map((item, index) => (
@@ -312,7 +306,6 @@ export default function SearchPage() {
               ))}
             </div>
             
-            {/* Infinite Scroll Sentinel */}
             <div ref={lastElementRef} className="h-10 mt-6 flex justify-center items-center w-full">
               {loadingMore && <Loader2 className="animate-spin text-neutral-500" size={24} />}
               {!hasMore && results.length > 0 && <p className="text-xs text-neutral-600 font-medium">End of results</p>}

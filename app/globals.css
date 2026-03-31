@@ -1,72 +1,63 @@
+global.css
 @import "tailwindcss";
 
 :root {
-  --background: #000000;
-  --foreground: #ffffff;
+--background: #ffffff;
+--foreground: #171717;
+}
+
+@theme inline {
+--color-background: var(--background);
+--color-foreground: var(--foreground);
+--font-sans: var(--font-geist-sans);
+--font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+:root {
+--background: #0a0a0a;
+--foreground: #ededed;
+}
 }
 
 body {
-  background-color: var(--background);
-  color: var(--foreground);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
-  touch-action: pan-y;
+background-color: #000000;
+color: #ffffff;
+-webkit-font-smoothing: antialiased;
+-moz-osx-font-smoothing: grayscale;
 }
 
 /* Hide Scrollbar */
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* -------------------------------------
-   Ultra-Fast Pure CSS Marquee
--------------------------------------- */
+/* Premium Slide Up Animation */
+@keyframes fadeInUp {
+0% { opacity: 0; transform: translateY(30px); }
+100% { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+opacity: 0;
+animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Flawless Marquee Animation for Text */
 .marquee-container {
-  overflow: hidden;
-  position: relative;
-  width: 100%;
-  display: flex;
-  mask-image: linear-gradient(90deg, transparent 0%, black 5%, black 95%, transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 5%, black 95%, transparent 100%);
+width: 100%;
+overflow: hidden;
+white-space: nowrap;
+position: relative;
 }
 
-.marquee-content {
-  display: inline-block;
-  white-space: nowrap;
-  will-change: transform;
+.marquee-text {
+display: inline-block;
+transition: transform 2s linear;
 }
 
-.animate-pingpong {
-  animation: pingPongAnim var(--duration, 4s) linear infinite alternate;
+/* When the group (card) is hovered/pressed, scroll the text /
+.group:hover .marquee-text {
+transform: translateX(calc(-100% + 120px)); / 120px is the card width */
 }
 
-@keyframes pingPongAnim {
-  0%, 15% { transform: translateX(0); }
-  85%, 100% { transform: translateX(var(--scroll-dist, -20px)); }
-}
-
-/* -------------------------------------
-   Initial Page Load & Scroll Animations
--------------------------------------- */
-@keyframes fadeInUpScale {
-  0% { opacity: 0; transform: translateY(15px) scale(0.95); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.animate-card {
-  animation: fadeInUpScale 0.4s ease-out both;
-}
-
-/* Native CSS Side Scroll Pop Animation (Zero Lag) */
-@supports (animation-timeline: view(inline)) {
-  .scroll-card {
-    animation: sideScrollPop linear both;
-    animation-timeline: view(inline);
-    animation-range: entry 0% cover 25%;
-  }
-}
-
-@keyframes sideScrollPop {
-  0% { opacity: 0; transform: scale(0.85) translateY(10px); }
-  100% { opacity: 1; transform: scale(1) translateY(0); }
-}
+  

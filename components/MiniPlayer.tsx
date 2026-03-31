@@ -41,7 +41,7 @@ const formatTime = (time: number) => {
   return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
 };
 
-// --- PERFECT MARQUEE COMPONENT ---
+// --- MARQUEE COMPONENT ---
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
@@ -50,12 +50,11 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
   useEffect(() => {
     const checkOverflow = () => {
       if (containerRef.current && textRef.current) {
-        // +2px buffer prevents rounding false positives
         setIsOverflowing(textRef.current.scrollWidth > containerRef.current.clientWidth + 2);
       }
     };
     checkOverflow();
-    const timeout = setTimeout(checkOverflow, 150); // Fallback for custom fonts loading
+    const timeout = setTimeout(checkOverflow, 150); 
     window.addEventListener("resize", checkOverflow);
     return () => { clearTimeout(timeout); window.removeEventListener("resize", checkOverflow); };
   }, [text]);
@@ -75,16 +74,22 @@ export default function Player() {
   const { currentSong, isPlaying, setIsPlaying, setCurrentSong, queue } = useAppContext();
   
   const [audioUrl, setAudioUrl] = useState("");
-  const [loading, setLoading] = useState(false);
+  const[loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const[currentTime, setCurrentTime] = useState(0);
-  const[duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const[isExpanded, setIsExpanded] = useState(false);
-  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   
+  // Spotify Integration States
+  const [spotifyExtra, setSpotifyExtra] = useState<any>(null);
+  const[activeLyricIndex, setActiveLyricIndex] = useState(-1);
+  const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
+  const [isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
+
   // Swipe mechanics
-  const[swipeX, setSwipeX] = useState(0);
+  const [swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -93,11 +98,10 @@ export default function Player() {
   const artists = currentSong ? decodeEntities(getArtists(currentSong)) : "";
   const coverImage = currentSong ? getImageUrl(currentSong.image) : "";
   
-  // Dynamic Context Header (Auto Playlist/Album Detection)
   const contextType = currentSong?.playlistName ? "PLAYLIST" : (currentSong?.album?.name ? "ALBUM" : "TRACK");
   const contextName = currentSong?.playlistName || currentSong?.album?.name || "Single";
 
-  // 1. High-Fidelity Accent Color Extraction
+  // 1. Color Extraction
   useEffect(() => {
     if (!coverImage) return;
     const img = new Image();
@@ -123,9 +127,13 @@ export default function Player() {
     };
   }, [coverImage]);
 
-  // 2. Audio Fetching
+  // 2. Audio & Spotify Extra Data Fetching
   useEffect(() => {
     if (!currentSong) return;
+    setSpotifyExtra(null);
+    setIsCanvasLoaded(false);
+    setActiveLyricIndex(-1);
+
     const fetchUrl = async () => {
       setLoading(true);
       try {
@@ -138,7 +146,28 @@ export default function Player() {
       } catch (err) {}
       setLoading(false);
     };
+
+    const fetchSpotifyExtras = async () => {
+      try {
+        // Calls the Next.js API route we created in step 1
+        const res = await fetch(`/api/spotify-match?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artists)}`);
+        const data = await res.json();
+        
+        // Pre-parse the mm:ss.xx time tags into seconds for perfect syncing
+        if (data?.lyrics?.lines) {
+          data.lyrics.lines = data.lyrics.lines.map((line: any) => {
+            if (!line.timeTag) return { ...line, startTime: 0 };
+            const parts = line.timeTag.split(':');
+            const seconds = parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+            return { ...line, startTime: seconds };
+          });
+        }
+        setSpotifyExtra(data);
+      } catch (e) { console.error("Spotify Data Fetch Failed", e) }
+    };
+
     fetchUrl();
+    fetchSpotifyExtras();
   }, [currentSong]);
 
   // 3. Audio Execution
@@ -166,6 +195,16 @@ export default function Player() {
       setCurrentTime(c); setDuration(d || 0);
       if (d > 0) setProgress((c / d) * 100);
       if (d > 0 && duration === 0) syncPosition();
+
+      // Lyric Sync Engine
+      if (spotifyExtra?.lyrics?.syncType === "LINE_SYNCED" && spotifyExtra.lyrics.lines) {
+        let activeIdx = -1;
+        for (let i = 0; i < spotifyExtra.lyrics.lines.length; i++) {
+          if (c >= spotifyExtra.lyrics.lines[i].startTime) activeIdx = i;
+          else break;
+        }
+        setActiveLyricIndex(activeIdx);
+      }
     }
   };
 
@@ -199,14 +238,14 @@ export default function Player() {
     if (idx > 0) { setCurrentSong(queue[idx - 1]); setIsPlaying(true); }
   };
 
-  // 4. Smooth Swipe to Close Mechanics
+  // 4. Swipe Mechanics
   const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
   const handleTouchMove = (e: React.TouchEvent) => {
     const diff = e.touches[0].clientX - touchStartX.current;
     if (diff > 0) setSwipeX(diff);
   };
   const handleTouchEnd = () => {
-    if (swipeX > window.innerWidth * 0.45) { // Adjusted to 45% for a snappier dismiss feel
+    if (swipeX > window.innerWidth * 0.45) { 
       setCurrentSong(null); setIsPlaying(false); setIsExpanded(false); 
     }
     setSwipeX(0); 
@@ -221,45 +260,34 @@ export default function Player() {
         @keyframes spotify-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
         .animate-spotify-marquee { animation: spotify-marquee 12s linear infinite; display: inline-block; }
         .mask-edges { mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); }
+        .mask-lyrics-edges { mask-image: linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%); }
 
-        /* Pure CSS Apple/Spotify Sliders */
+        /* Sliders */
         input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; border-radius: 4px; }
         input[type=range]:focus { outline: none; }
-        
         .desktop-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: #4d4d4d; transition: background 0.1s; }
-        .desktop-slider::-moz-range-track { height: 4px; border-radius: 2px; background: #4d4d4d; }
-        .desktop-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #fff; margin-top: -4px; opacity: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.5); border: 0; }
-        .desktop-slider::-moz-range-thumb { height: 12px; width: 12px; border-radius: 50%; background: #fff; opacity: 0; border: 0; }
-        
+        .desktop-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #fff; margin-top: -4px; opacity: 0; }
         .desktop-slider-group:hover .desktop-slider::-webkit-slider-thumb { opacity: 1; }
-        .desktop-slider-group:hover .desktop-slider::-moz-range-thumb { opacity: 1; }
-        .desktop-slider-group:hover .desktop-slider { --fill-color: #1db954 !important; }
-
         .mobile-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.2); }
-        .mobile-slider::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.2); }
-        .mobile-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #fff; margin-top: -4px; box-shadow: 0 2px 4px rgba(0,0,0,0.4); border: 0; }
-        .mobile-slider::-moz-range-thumb { height: 12px; width: 12px; border-radius: 50%; background: #fff; border: 0; }
+        .mobile-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #fff; margin-top: -4px; }
       `}} />
 
       <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying} onEnded={playNext} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)} />
 
       {/* =========================================================================
-          DESKTOP BOTTOM BAR (Hidden on Mobile) 
+          DESKTOP BOTTOM BAR 
       ========================================================================= */}
       <div className="hidden md:flex fixed bottom-0 left-0 w-full h-[90px] bg-[#000000] z-[100] items-center px-4 justify-between border-t border-[#282828]">
-        
         {/* Left Column: Art & Info */}
         <div className="flex items-center w-[30%] min-w-[180px] gap-4">
-          <div className="relative w-14 h-14 flex-shrink-0 bg-[#282828] rounded overflow-hidden shadow-md group cursor-pointer">
+          <div className="relative w-14 h-14 flex-shrink-0 bg-[#282828] rounded overflow-hidden group cursor-pointer">
             {loading && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><Loader2 size={20} className="animate-spin text-white" /></div>}
             <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
-            <button className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 bg-black/60 rounded-full p-1 transition-opacity"><ChevronDown size={14} className="text-white"/></button>
           </div>
           <div className="flex flex-col min-w-0 pr-2 overflow-hidden">
             <span className="text-[14px] font-medium text-white hover:underline cursor-pointer truncate">{title}</span>
             <span className="text-[11px] font-normal text-[#b3b3b3] hover:underline cursor-pointer truncate mt-[1px]">{artists}</span>
           </div>
-          <button className="flex-shrink-0 text-[#b3b3b3] hover:text-white transition-colors ml-1"><Heart size={16} /></button>
         </div>
 
         {/* Center Column: Controls */}
@@ -267,8 +295,8 @@ export default function Player() {
           <div className="flex items-center gap-6 mb-[6px]">
             <button className="text-[#1db954] hover:text-[#1ed760] transition-colors"><Shuffle size={16} /></button>
             <button onClick={playPrev} className="text-[#b3b3b3] hover:text-white transition-colors"><SkipBack size={16} fill="currentColor" /></button>
-            <button onClick={() => setIsPlaying(!isPlaying)} className="w-8 h-8 rounded-full bg-white flex items-center justify-center hover:scale-105 active:scale-95 transition-transform text-black shadow-md">
-              {isPlaying ? <Pause fill="black" size={14} className="ml-0" /> : <Play fill="black" size={14} className="ml-[2px]" />}
+            <button onClick={() => setIsPlaying(!isPlaying)} className="w-8 h-8 rounded-full bg-white flex items-center justify-center hover:scale-105 transition-transform text-black shadow-md">
+              {isPlaying ? <Pause fill="black" size={14} /> : <Play fill="black" size={14} className="ml-[2px]" />}
             </button>
             <button onClick={playNext} className="text-[#b3b3b3] hover:text-white transition-colors"><SkipForward size={16} fill="currentColor" /></button>
             <button className="text-[#b3b3b3] hover:text-white transition-colors"><Repeat size={16} /></button>
@@ -280,100 +308,181 @@ export default function Player() {
           </div>
         </div>
 
-        {/* Right Column: Volume & Extras */}
+        {/* Right Column: Volume */}
         <div className="flex items-center justify-end w-[30%] min-w-[180px] gap-3 text-[#b3b3b3]">
-          <button className="hover:text-white transition-colors"><SquarePlay size={16} /></button>
-          <button className="hover:text-white transition-colors"><Mic2 size={16} /></button>
+          <button onClick={() => setIsLyricsFullScreen(!isLyricsFullScreen)} className={`hover:text-white transition-colors ${isLyricsFullScreen ? 'text-[#1db954]' : ''}`}><Mic2 size={16} /></button>
           <button className="hover:text-white transition-colors"><ListMusic size={16} /></button>
-          <button className="hover:text-white transition-colors"><MonitorSpeaker size={16} /></button>
           <div className="flex items-center gap-2 w-[93px] desktop-slider-group">
-            <button onClick={() => setVolume(volume > 0 ? 0 : 100)} className="hover:text-white transition-colors flex-shrink-0">
+            <button onClick={() => setVolume(volume > 0 ? 0 : 100)} className="hover:text-white flex-shrink-0">
               {volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
             </button>
             <input type="range" min="0" max="100" value={volume} onChange={handleVolume} className="w-full desktop-slider" style={{ '--fill-color': '#fff', background: `linear-gradient(to right, var(--fill-color) ${volume}%, #4d4d4d ${volume}%)` } as any} />
           </div>
-          <button className="hover:text-white transition-colors"><Maximize2 size={16} /></button>
         </div>
       </div>
 
       {/* =========================================================================
-          MOBILE FULL SCREEN OVERLAY
+          MOBILE SCROLLABLE NOW PLAYING VIEW (WITH CANVAS & LYRICS CARDS)
       ========================================================================= */}
       <div 
-        className={`md:hidden fixed inset-0 z-[110] flex flex-col text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0" : "translate-y-full"}`} 
-        style={{ background: `linear-gradient(to bottom, ${dominantColor} 0%, #121212 100%)` }}
+        className={`md:hidden fixed inset-0 z-[110] flex flex-col text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] overflow-y-auto overflow-x-hidden ${isExpanded ? "translate-y-0" : "translate-y-full"}`} 
+        style={{ background: isCanvasLoaded ? '#000000' : `linear-gradient(to bottom, ${dominantColor} 0%, #121212 100%)` }}
       >
-        {/* Dynamic Header */}
-        <div className="flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4">
-          <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white active:opacity-50"><ChevronDown size={28} /></button>
-          <div className="flex flex-col items-center flex-1 min-w-0 px-2">
-            <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {contextType}</span>
-            <span className="text-[13px] font-bold text-white truncate w-full text-center mt-[2px]">{contextName}</span>
+        
+        {/* CANVAS BACKGROUND (Fixed behind controls) */}
+        {spotifyExtra?.canvas?.canvasUrl && (
+          <div className={`fixed inset-0 pointer-events-none transition-opacity duration-700 z-0 ${isCanvasLoaded ? 'opacity-100' : 'opacity-0'}`}>
+            <video src={spotifyExtra.canvas.canvasUrl} autoPlay loop muted playsInline onCanPlay={() => setIsCanvasLoaded(true)} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/40 to-[#121212] opacity-90" />
           </div>
-          <button className="p-2 -mr-2 text-white active:opacity-50"><MoreHorizontal size={24} /></button>
-        </div>
+        )}
 
-        {/* 100% BULLETPROOF Auto-Adjusting Image Container */}
-        {/* Mathematically fits any device screen perfectly using native aspect-ratio constraints */}
-        <div className="flex-1 w-full min-h-0 flex items-center justify-center py-2 px-6">
-          <div 
-            className="relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-300"
-            style={{
-              height: '100%',
-              aspectRatio: '1 / 1',
-              maxHeight: '450px', 
-              maxWidth: 'min(calc(100vw - 48px), 450px)' // Prevents overlapping padding on sides
-            }}
-          >
-            {loading && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
-            <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
-          </div>
-        </div>
-
-        {/* Bottom Controls Area */}
-        <div className="w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-6 pt-2 flex flex-col justify-end flex-shrink-0">
+        {/* PAGE 1: 100vh Main Player View */}
+        <div className="relative z-10 flex flex-col min-h-[100dvh] w-full flex-shrink-0">
           
-          {/* Marquee Title & Heart */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex flex-col overflow-hidden pr-4 flex-1 min-w-0 w-full">
-              <MarqueeText text={title} className="text-[22px] font-bold text-white tracking-tight leading-tight" />
-              <MarqueeText text={artists} className="text-[15px] font-medium text-[#b3b3b3] mt-1" />
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4">
+            <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white active:opacity-50"><ChevronDown size={28} /></button>
+            <div className="flex flex-col items-center flex-1 min-w-0 px-2">
+              <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {contextType}</span>
+              <span className="text-[13px] font-bold text-white truncate w-full text-center mt-[2px]">{contextName}</span>
             </div>
-            <button className="text-white flex-shrink-0 ml-2 active:scale-75 transition-transform"><Heart size={26} /></button>
+            <button className="p-2 -mr-2 text-white active:opacity-50"><MoreHorizontal size={24} /></button>
           </div>
 
-          {/* Progress Bar */}
-          <div className="w-full flex flex-col gap-1 mb-5 relative">
-            <input type="range" min="0" max="100" value={duration > 0 ? progress : 0} onChange={handleSeek} className="w-full mobile-slider relative z-10" style={{ background: `linear-gradient(to right, #fff ${progress}%, rgba(255,255,255,0.2) ${progress}%)` }} />
-            <div className="flex items-center justify-between text-[11px] font-medium text-[#a7a7a7] mt-1 w-full pointer-events-none">
-              <span>{formatTime(currentTime)}</span>
-              <span>{formatTime(duration)}</span>
+          {/* Cover Art (Hides when Canvas is loaded, keeps layout stable) */}
+          <div className="flex-1 w-full min-h-0 flex items-center justify-center py-2 px-6">
+            <div 
+              className={`relative bg-[#282828] rounded-[8px] shadow-2xl overflow-hidden transition-all duration-[600ms] ${isCanvasLoaded ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'}`}
+              style={{ height: '100%', aspectRatio: '1/1', maxHeight: '400px', maxWidth: 'min(calc(100vw - 48px), 400px)' }}
+            >
+              {loading && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
+              <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
             </div>
           </div>
 
-          {/* Main Controls Row */}
-          <div className="flex items-center justify-between w-full mb-6 px-1">
-            <button className="text-[#1db954] active:opacity-50"><Shuffle size={24} /></button>
-            <button onClick={playPrev} className="text-white active:opacity-50"><SkipBack size={36} fill="white" stroke="white" /></button>
-            <button onClick={() => setIsPlaying(!isPlaying)} className="w-[64px] h-[64px] rounded-full bg-white flex items-center justify-center text-black active:scale-95 transition-transform shadow-lg">
-              {isPlaying ? <Pause fill="black" stroke="black" size={26} /> : <Play fill="black" stroke="black" size={28} className="translate-x-[2px]" />}
-            </button>
-            <button onClick={playNext} className="text-white active:opacity-50"><SkipForward size={36} fill="white" stroke="white" /></button>
-            <button className="text-white/70 active:opacity-50"><Repeat size={24} /></button>
-          </div>
+          {/* Bottom Main Controls */}
+          <div className="w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-6 pt-2 flex flex-col justify-end flex-shrink-0">
+            
+            {/* FLOATING ACTIVE LYRIC OVER TITLE */}
+            {spotifyExtra?.lyrics?.syncType === "LINE_SYNCED" && activeLyricIndex >= 0 && (
+              <div className="w-full overflow-hidden transition-all duration-300 mb-1">
+                <p className="text-white font-bold text-[17px] truncate drop-shadow-md">
+                  {spotifyExtra.lyrics.lines[activeLyricIndex]?.words || "♪"}
+                </p>
+              </div>
+            )}
 
-          {/* Bottom Device/Queue Actions */}
-          <div className="flex items-center justify-between text-[#b3b3b3] w-full px-1">
-            <button className="active:opacity-50"><MonitorSpeaker size={20} /></button>
-            <div className="flex items-center gap-6">
-              <button className="active:opacity-50"><ListMusic size={20} /></button>
+            {/* Marquee Title & Heart */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex flex-col overflow-hidden pr-4 flex-1 min-w-0 w-full">
+                <MarqueeText text={title} className="text-[22px] font-bold text-white tracking-tight leading-tight drop-shadow-md" />
+                <MarqueeText text={artists} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md" />
+              </div>
+              <button className="text-white flex-shrink-0 ml-2 active:scale-75 transition-transform"><Heart size={26} /></button>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full flex flex-col gap-1 mb-5 relative">
+              <input type="range" min="0" max="100" value={duration > 0 ? progress : 0} onChange={handleSeek} className="w-full mobile-slider relative z-10" style={{ background: `linear-gradient(to right, #fff ${progress}%, rgba(255,255,255,0.2) ${progress}%)` }} />
+              <div className="flex items-center justify-between text-[11px] font-medium text-[#a7a7a7] mt-1 w-full pointer-events-none drop-shadow-md">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
+
+            {/* Controls Row */}
+            <div className="flex items-center justify-between w-full mb-6 px-1 drop-shadow-md">
+              <button className="text-[#1db954] active:opacity-50"><Shuffle size={24} /></button>
+              <button onClick={playPrev} className="text-white active:opacity-50"><SkipBack size={36} fill="white" stroke="white" /></button>
+              <button onClick={() => setIsPlaying(!isPlaying)} className="w-[64px] h-[64px] rounded-full bg-white flex items-center justify-center text-black active:scale-95 transition-transform shadow-lg">
+                {isPlaying ? <Pause fill="black" stroke="black" size={26} /> : <Play fill="black" stroke="black" size={28} className="translate-x-[2px]" />}
+              </button>
+              <button onClick={playNext} className="text-white active:opacity-50"><SkipForward size={36} fill="white" stroke="white" /></button>
+              <button className="text-white/70 active:opacity-50"><Repeat size={24} /></button>
             </div>
           </div>
+        </div>
+
+        {/* PAGE 2: LYRICS & ARTIST CARDS (Scroll Down View) */}
+        {(spotifyExtra?.lyrics?.syncType === "LINE_SYNCED" || spotifyExtra?.canvas?.artist) && (
+          <div className="relative z-10 w-full px-5 pb-20 flex flex-col gap-8 bg-[#121212] pt-6 shadow-[0_-20px_50px_rgba(18,18,18,1)]">
+            
+            {/* SPOTIFY LYRICS CARD */}
+            {spotifyExtra?.lyrics?.syncType === "LINE_SYNCED" && (
+              <div className="w-full rounded-2xl p-5 shadow-2xl overflow-hidden transition-all duration-500" style={{ backgroundColor: dominantColor }}>
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-white font-bold text-[15px] tracking-wide">Lyrics</span>
+                  <button onClick={() => setIsLyricsFullScreen(true)} className="p-2 -m-2 rounded-full text-white/80 hover:text-white transition-colors active:scale-90">
+                    <Maximize2 size={18} />
+                  </button>
+                </div>
+                
+                {/* Scrollable animated lyrics box (4-5 lines visible) */}
+                <div className="relative h-[180px] overflow-hidden mask-lyrics-edges">
+                  <div className="absolute w-full transition-transform duration-500 ease-out" style={{ transform: `translateY(calc(70px - ${Math.max(0, activeLyricIndex) * 38}px))` }}>
+                    {spotifyExtra.lyrics.lines.map((line: any, idx: number) => {
+                      let colorClass = "text-white/40"; // upcoming
+                      if (idx === activeLyricIndex) colorClass = "text-white font-bold text-[20px] drop-shadow-lg"; // active
+                      else if (idx < activeLyricIndex) colorClass = "text-white/70"; // played
+                      return (
+                        <p key={idx} className={`h-[38px] flex items-center transition-all duration-300 ${colorClass}`}>
+                          <span className="truncate w-full">{line.words || "♪"}</span>
+                        </p>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ABOUT THE ARTIST CARD */}
+            {spotifyExtra?.canvas?.artist && (
+              <div className="w-full bg-[#282828] rounded-2xl overflow-hidden shadow-2xl">
+                <div className="relative h-56">
+                  <img src={spotifyExtra.canvas.artist.artistImgUrl} alt="Artist" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#282828] via-transparent to-transparent opacity-90" />
+                  <div className="absolute bottom-4 left-5">
+                    <span className="text-white/80 font-semibold text-xs uppercase tracking-wider mb-1 block">About the artist</span>
+                    <h4 className="text-white font-bold text-2xl">{spotifyExtra.canvas.artist.artistName}</h4>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* =========================================================================
+          FULL SCREEN LYRICS MODAL
+      ========================================================================= */}
+      <div className={`fixed inset-0 z-[120] flex flex-col p-6 transition-transform duration-[400ms] ${isLyricsFullScreen ? 'translate-y-0' : 'translate-y-full'}`} style={{ backgroundColor: dominantColor }}>
+        <div className="flex items-center justify-between mb-8 mt-[max(1rem,env(safe-area-inset-top))]">
+          <button onClick={() => setIsLyricsFullScreen(false)} className="p-2 -ml-2 text-white active:opacity-50"><ChevronDown size={30} /></button>
+          <span className="text-white font-bold text-sm tracking-widest uppercase">Lyrics</span>
+          <div className="w-8" />
+        </div>
+        
+        <div className="flex-1 overflow-hidden relative mask-lyrics-edges w-full">
+          {spotifyExtra?.lyrics?.lines && (
+            <div className="absolute w-full transition-transform duration-500 ease-out" style={{ transform: `translateY(calc(35vh - ${Math.max(0, activeLyricIndex) * 48}px))` }}>
+              {spotifyExtra.lyrics.lines.map((line: any, idx: number) => {
+                let colorClass = "text-white/40 blur-[0.5px] scale-[0.98]"; // upcoming
+                if (idx === activeLyricIndex) colorClass = "text-white font-bold text-[32px] drop-shadow-xl scale-100"; // active
+                else if (idx < activeLyricIndex) colorClass = "text-white/80"; // played
+                return (
+                  <p key={idx} className={`min-h-[48px] py-1 transition-all duration-500 origin-left flex items-center ${colorClass}`}>
+                    {line.words || "♪"}
+                  </p>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
       {/* =========================================================================
-          MOBILE MINI PLAYER (Floating at Bottom)
+          MOBILE MINI PLAYER
       ========================================================================= */}
       <div 
         onTouchStart={handleTouchStart}
@@ -388,7 +497,6 @@ export default function Player() {
         }}
       >
         <div className="absolute inset-0 bg-black/25 z-0 pointer-events-none" />
-        
         <div className="relative z-10 w-full h-full flex items-center px-2">
           <div className="w-[40px] h-[40px] flex-shrink-0 rounded-[4px] shadow-sm overflow-hidden bg-[#282828] relative mr-3">
             {loading && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 size={16} className="animate-spin text-white" /></div>}
@@ -407,7 +515,6 @@ export default function Player() {
             </button>
           </div>
         </div>
-
         <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-white/20 rounded-full z-20 pointer-events-none overflow-hidden">
           <div className="h-full bg-white rounded-full transition-all duration-300 ease-linear" style={{ width: `${progress}%` }} />
         </div>

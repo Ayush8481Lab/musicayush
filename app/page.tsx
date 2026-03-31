@@ -1,4 +1,4 @@
-"use client";
+ "use client";
 import { useEffect, useState, useRef } from "react";
 import { useAppContext } from "../context/AppContext";
 import { Loader2, Music2 } from "lucide-react";

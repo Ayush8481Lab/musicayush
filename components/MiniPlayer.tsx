@@ -41,7 +41,7 @@ const formatTime = (time: number) => {
   return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
 };
 
-// --- ROBUST MARQUEE COMPONENT ---
+// --- PERFECT MARQUEE COMPONENT ---
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
@@ -50,22 +50,21 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
   useEffect(() => {
     const checkOverflow = () => {
       if (containerRef.current && textRef.current) {
-        // Adding a slight buffer (2px) to prevent sub-pixel rounding false positives
+        // +2px buffer prevents rounding false positives
         setIsOverflowing(textRef.current.scrollWidth > containerRef.current.clientWidth + 2);
       }
     };
     checkOverflow();
-    // Re-check after font loads or window resizes
-    setTimeout(checkOverflow, 100);
+    const timeout = setTimeout(checkOverflow, 150); // Fallback for custom fonts loading
     window.addEventListener("resize", checkOverflow);
-    return () => window.removeEventListener("resize", checkOverflow);
+    return () => { clearTimeout(timeout); window.removeEventListener("resize", checkOverflow); };
   }, [text]);
 
   return (
     <div ref={containerRef} className={`overflow-hidden whitespace-nowrap w-full ${isOverflowing ? "mask-edges" : ""} ${className}`}>
       <div className={`inline-block ${isOverflowing ? "animate-spotify-marquee" : ""}`}>
-        <span ref={textRef} className={isOverflowing ? "pr-16" : ""}>{text}</span>
-        {isOverflowing && <span className="pr-16">{text}</span>}
+        <span ref={textRef} className={isOverflowing ? "pr-12" : ""}>{text}</span>
+        {isOverflowing && <span className="pr-12">{text}</span>}
       </div>
     </div>
   );
@@ -78,14 +77,14 @@ export default function Player() {
   const [audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
+  const[currentTime, setCurrentTime] = useState(0);
   const[duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const[isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   
   // Swipe mechanics
-  const [swipeX, setSwipeX] = useState(0);
+  const[swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -94,8 +93,8 @@ export default function Player() {
   const artists = currentSong ? decodeEntities(getArtists(currentSong)) : "";
   const coverImage = currentSong ? getImageUrl(currentSong.image) : "";
   
-  // Dynamic Playlist/Album Context Calculation
-  const contextType = currentSong?.playlistName ? "PLAYLIST" : (currentSong?.album?.name ? "ALBUM" : "SINGLE");
+  // Dynamic Context Header (Auto Playlist/Album Detection)
+  const contextType = currentSong?.playlistName ? "PLAYLIST" : (currentSong?.album?.name ? "ALBUM" : "TRACK");
   const contextName = currentSong?.playlistName || currentSong?.album?.name || "Single";
 
   // 1. High-Fidelity Accent Color Extraction
@@ -106,7 +105,7 @@ export default function Player() {
     img.src = coverImage;
     img.onload = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = 50; canvas.height = 50; // Scaled down for blazing fast processing
+      canvas.width = 50; canvas.height = 50; 
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.drawImage(img, 0, 0, 50, 50);
@@ -115,7 +114,6 @@ export default function Player() {
         let r = 0, g = 0, b = 0, count = 0;
         for (let i = 0; i < data.length; i += 16) {
           const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
-          // Filter out deep blacks and harsh whites
           if (brightness > 30 && brightness < 210) { 
             r += data[i]; g += data[i+1]; b += data[i+2]; count++; 
           }
@@ -125,7 +123,7 @@ export default function Player() {
     };
   }, [coverImage]);
 
-  // 2. Audio URL Resolution
+  // 2. Audio Fetching
   useEffect(() => {
     if (!currentSong) return;
     const fetchUrl = async () => {
@@ -143,7 +141,7 @@ export default function Player() {
     fetchUrl();
   }, [currentSong]);
 
-  // 3. Audio Element Sync
+  // 3. Audio Execution
   useEffect(() => {
     if (audioRef.current && audioUrl) {
       audioRef.current.volume = volume / 100;
@@ -155,7 +153,6 @@ export default function Player() {
     }
   }, [isPlaying, audioUrl, volume]);
 
-  // Sync with OS Media Controls (Lock Screen)
   const syncPosition = useCallback(() => {
     if ('mediaSession' in navigator && audioRef.current && duration > 0) {
       try { navigator.mediaSession.setPositionState({ duration, playbackRate: 1, position: audioRef.current.currentTime }); } catch(e) {}
@@ -202,14 +199,14 @@ export default function Player() {
     if (idx > 0) { setCurrentSong(queue[idx - 1]); setIsPlaying(true); }
   };
 
-  // 4. Swipe to Close Mechanics
+  // 4. Smooth Swipe to Close Mechanics
   const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
   const handleTouchMove = (e: React.TouchEvent) => {
     const diff = e.touches[0].clientX - touchStartX.current;
     if (diff > 0) setSwipeX(diff);
   };
   const handleTouchEnd = () => {
-    if (swipeX > window.innerWidth * 0.6) { 
+    if (swipeX > window.innerWidth * 0.45) { // Adjusted to 45% for a snappier dismiss feel
       setCurrentSong(null); setIsPlaying(false); setIsExpanded(false); 
     }
     setSwipeX(0); 
@@ -225,7 +222,7 @@ export default function Player() {
         .animate-spotify-marquee { animation: spotify-marquee 12s linear infinite; display: inline-block; }
         .mask-edges { mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); }
 
-        /* Cross-Browser Pure CSS Sliders */
+        /* Pure CSS Apple/Spotify Sliders */
         input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; border-radius: 4px; }
         input[type=range]:focus { outline: none; }
         
@@ -234,12 +231,10 @@ export default function Player() {
         .desktop-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #fff; margin-top: -4px; opacity: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.5); border: 0; }
         .desktop-slider::-moz-range-thumb { height: 12px; width: 12px; border-radius: 50%; background: #fff; opacity: 0; border: 0; }
         
-        /* Desktop Hover Effects */
         .desktop-slider-group:hover .desktop-slider::-webkit-slider-thumb { opacity: 1; }
         .desktop-slider-group:hover .desktop-slider::-moz-range-thumb { opacity: 1; }
         .desktop-slider-group:hover .desktop-slider { --fill-color: #1db954 !important; }
 
-        /* Mobile Slider */
         .mobile-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.2); }
         .mobile-slider::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.2); }
         .mobile-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #fff; margin-top: -4px; box-shadow: 0 2px 4px rgba(0,0,0,0.4); border: 0; }
@@ -318,9 +313,18 @@ export default function Player() {
           <button className="p-2 -mr-2 text-white active:opacity-50"><MoreHorizontal size={24} /></button>
         </div>
 
-        {/* PERFECTLY Auto-Adjusting Image Container */}
-        <div className="flex-1 w-full min-h-0 flex items-center justify-center px-6 py-4">
-          <div className="relative w-full max-w-[min(100%,_450px)] aspect-square shadow-[0_15px_40px_rgba(0,0,0,0.5)] bg-[#282828] rounded-[8px] overflow-hidden transition-all duration-300">
+        {/* 100% BULLETPROOF Auto-Adjusting Image Container */}
+        {/* Mathematically fits any device screen perfectly using native aspect-ratio constraints */}
+        <div className="flex-1 w-full min-h-0 flex items-center justify-center py-2 px-6">
+          <div 
+            className="relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-300"
+            style={{
+              height: '100%',
+              aspectRatio: '1 / 1',
+              maxHeight: '450px', 
+              maxWidth: 'min(calc(100vw - 48px), 450px)' // Prevents overlapping padding on sides
+            }}
+          >
             {loading && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
             <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
           </div>

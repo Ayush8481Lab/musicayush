@@ -122,31 +122,31 @@ export default function MiniPlayer() {
   const [loading, setLoading] = useState(false);
   const[progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const[duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
-  const [isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const [isUiHidden, setIsUiHidden] = useState(false); 
+  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
+  const[isUiHidden, setIsUiHidden] = useState(false); 
 
   const[isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState(0); 
 
-  const [showQueue, setShowQueue] = useState(false);
+  const[showQueue, setShowQueue] = useState(false);
   const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
 
   const rapidKeyIdxRef = useRef(0);
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
-  const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
+  const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState<any[]>([]);
   const[syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const [canvasData, setCanvasData] = useState<any>(null);
+  const[canvasData, setCanvasData] = useState<any>(null);
   const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
@@ -156,7 +156,7 @@ export default function MiniPlayer() {
   // Queue Buffering
   const fetchedRecsFor = useRef<string | null>(null);
   const fetchingRecsRef = useRef(false);
-  const [isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
+  const[isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
   
   const [swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
@@ -249,11 +249,9 @@ export default function MiniPlayer() {
     return () => window.removeEventListener('message', handleMsg);
   }, [isVideoMode, duration]);
 
-  // Handle Play/Pause Clicks (Sends to both Audio and Video Iframe)
-  const handlePlayPauseToggle = (e?: React.MouseEvent | Event) => {
-    if (e && typeof (e as any).stopPropagation === 'function') {
-      (e as any).stopPropagation();
-    }
+  // Handle Play/Pause Clicks (Sends to both Audio and Video Iframe) - FIXED TYPE DEFINITION
+  const handlePlayPauseToggle = (e?: any) => {
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     const newState = !isPlaying;
     setIsPlaying(newState);
     
@@ -532,7 +530,7 @@ export default function MiniPlayer() {
     }
   },[duration]);
 
-  // Lockscreen Media Controls Hook
+  // Lockscreen Media Controls Hook (FIXED EVENT BINDING ERROR)
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -545,10 +543,10 @@ export default function MiniPlayer() {
           { src: displayImage, sizes: '512x512', type: 'image/jpeg' }
         ]
       });
-      navigator.mediaSession.setActionHandler('play', handlePlayPauseToggle);
-      navigator.mediaSession.setActionHandler('pause', handlePlayPauseToggle);
-      navigator.mediaSession.setActionHandler('previoustrack', playPrev);
-      navigator.mediaSession.setActionHandler('nexttrack', playNext);
+      navigator.mediaSession.setActionHandler('play', () => handlePlayPauseToggle());
+      navigator.mediaSession.setActionHandler('pause', () => handlePlayPauseToggle());
+      navigator.mediaSession.setActionHandler('previoustrack', () => playPrev());
+      navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
     }
   },[currentSong, displayTitle, displayArtists, displayImage, contextName, isVideoMode, isPlaying]);
 

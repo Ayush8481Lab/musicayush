@@ -9,7 +9,7 @@ import { useAppContext } from "../context/AppContext";
 import { 
   Play, Pause, SkipForward, SkipBack, Loader2, ChevronDown, 
   MoreHorizontal, Shuffle, Repeat, Heart, ListMusic, 
-  MonitorSpeaker, Maximize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe
+  MonitorPlay, Maximize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe
 } from "lucide-react";
 
 // --- UTILITIES ---
@@ -58,13 +58,7 @@ const RAPID_KEYS =[
   "6cf7f03014msh787c51a713c0264p15c20djsna1f9a9f6a378",
   "13d48f6bb8msh459c11b91bdcc44p110f4ejsn099443894115",
   "03fc23317fmsh0535ef9ec8c6f5bp1db59bjsn545991df9343",
-  "e54e3fbc4dmshfc16d4417b618fdp1a2fafjsn30c72d8cf3ab",
-  "2f3f6a9ae2mshdc5288abadb0c84p118401jsnd18970b2f26a",
-  "c1efbc2580mshf9e6f81b0e6f996p143edajsn64cf72ed1463",
-  "da6bd1e90dmsh5aab26c0416ad7ep182d57jsnee8be14e0c74",
-  "7dd1f2fad7msh74af897174e65bcp10834ejsnc62fe7ef2611",
-  "2f4d50852bmsh18208c6cdabf7d5p1c8a68jsn6c3a2b8fa7b8",
-  "d3c96044bfmshfb83354c3708e98p1ed394jsnbf4ef41a0837"
+  "e54e3fbc4dmshfc16d4417b618fdp1a2fafjsn30c72d8cf3ab"
 ];
 const RAPID_API_HOST = "spotify81.p.rapidapi.com";
 
@@ -115,15 +109,10 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
     };
     checkOverflow();
     const timeouts =[setTimeout(checkOverflow, 100), setTimeout(checkOverflow, 500)];
-    
     if (!containerRef.current) return;
     const observer = new ResizeObserver(checkOverflow);
     observer.observe(containerRef.current);
-
-    return () => {
-      timeouts.forEach(clearTimeout);
-      observer.disconnect();
-    };
+    return () => { timeouts.forEach(clearTimeout); observer.disconnect(); };
   }, [text]);
 
   return (
@@ -140,44 +129,45 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
 export default function MiniPlayer() {
   const { currentSong, isPlaying, setIsPlaying, setCurrentSong, queue } = useAppContext();
   
-  const [audioUrl, setAudioUrl] = useState("");
+  const[audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const[currentTime, setCurrentTime] = useState(0);
+  const[progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
-  const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
+  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const [isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   const [isUiHidden, setIsUiHidden] = useState(false); 
 
-  const [isShuffle, setIsShuffle] = useState(false);
-  const[repeatMode, setRepeatMode] = useState(0); 
+  const[isShuffle, setIsShuffle] = useState(false);
+  const [repeatMode, setRepeatMode] = useState(0); 
 
   const [showQueue, setShowQueue] = useState(false);
-  const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
-  const[draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
 
   const rapidKeyIdxRef = useRef(0);
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
-  const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
+  const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState<any[]>([]);
-  const[syncType, setSyncType] = useState<string | null>(null);
+  const [syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const [canvasData, setCanvasData] = useState<any>(null);
-  const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
+  const[canvasData, setCanvasData] = useState<any>(null);
+  const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
   const canvasVideoRef = useRef<HTMLVideoElement>(null);
 
-  // Queue Buffering/Recommendation states
+  // Buffer & Recs
   const fetchedRecsFor = useRef<string | null>(null);
-  const[isFetchingRecs, setIsFetchingRecs] = useState(false);
+  const fetchingRecsRef = useRef(false);
+  const[isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
   
   const [swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
@@ -185,12 +175,21 @@ export default function MiniPlayer() {
 
   const [songDetails, setSongDetails] = useState<any>(null);
 
-  // --- Dynamic Variables ---
-  const title = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
-  const artistsText = currentSong ? decodeEntities(getArtistsText(currentSong)) : "";
-  const coverImage = currentSong ? getImageUrl(currentSong.image) : "";
+  // VIDEO PLAYER STATES
+  const [isVideoMode, setIsVideoMode] = useState(false);
+  const [ytVideoId, setYtVideoId] = useState<string | null>(null);
+  const[isVideoLoading, setIsVideoLoading] = useState(false);
+
+  // --- Dynamic Metadata Extractors ---
+  const rawTitle = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
+  const rawArtists = currentSong ? decodeEntities(getArtistsText(currentSong)) : "";
+  const rawImage = currentSong ? getImageUrl(currentSong.image) : "";
+
+  // Override with JioSaavn full details if fetched
+  const displayTitle = songDetails?.name ? decodeEntities(songDetails.name) : rawTitle;
+  const displayArtists = songDetails ? decodeEntities(getArtistsText(songDetails)) : rawArtists;
+  const displayImage = songDetails?.image ? getImageUrl(songDetails.image) : rawImage;
   
-  // Smart Context Extractor
   let contextType = "TRACK";
   let contextName = "Single Track";
   const rawPlaylistName = currentSong?.playlistName || currentSong?.playlist?.name || currentSong?.playlist?.title;
@@ -204,19 +203,18 @@ export default function MiniPlayer() {
   } else if (queue && queue.length > 1 && currentSong?.album?.name) {
     contextType = "ALBUM";
     contextName = currentSong.album.name;
-  } else if (currentSong?.album?.name) {
+  } else if (songDetails?.album?.name) {
     contextType = "ALBUM";
-    contextName = currentSong.album.name;
+    contextName = songDetails.album.name;
   }
 
-  // --- Map and Extract 'ALL' Artists and Merge Roles ---
+  // Map and extract 'ALL' Artists with Merged Roles
   const allArtists = songDetails?.artists?.all ||[];
   const uniqueArtistsMap = new Map();
   allArtists.forEach((artist: any) => {
     if (uniqueArtistsMap.has(artist.id)) {
       const existing = uniqueArtistsMap.get(artist.id);
       const newRole = (artist.role || "Artist").replace(/_/g, ' ');
-      // Prevent duplicate role text if someone is tagged twice with the same role
       if (!existing.role.toLowerCase().includes(newRole.toLowerCase())) {
         existing.role = `${existing.role}, ${newRole}`;
       }
@@ -226,80 +224,124 @@ export default function MiniPlayer() {
   });
   const uniqueArtists = Array.from(uniqueArtistsMap.values());
 
-  // --- Ghost Queue Bug Fix ---
+  // Listen to Video iframe messages to sync Seek & Play/Pause
+  useEffect(() => {
+    const handleMsg = (e: MessageEvent) => {
+      if (e.data?.type === 'YTP_TIME') {
+        if (audioRef.current && isVideoMode) {
+          audioRef.current.currentTime = e.data.time;
+          setCurrentTime(e.data.time);
+          if (duration > 0) setProgress((e.data.time / duration) * 100);
+        }
+      } else if (e.data?.type === 'YTP_STATE') {
+        if (e.data.state === 1) { // Playing
+          audioRef.current?.pause();
+          setIsPlaying(false);
+        }
+      }
+    };
+    window.addEventListener('message', handleMsg);
+    return () => window.removeEventListener('message', handleMsg);
+  }, [isVideoMode, duration]);
+
+  // Video Toggle Action
+  const toggleVideoMode = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isVideoMode) {
+      setIsVideoMode(false);
+      if (audioRef.current) { audioRef.current.play(); setIsPlaying(true); }
+      return;
+    }
+
+    setIsVideoLoading(true);
+    if (audioRef.current) audioRef.current.pause();
+    setIsPlaying(false);
+
+    try {
+      const query = `${displayTitle} ${displayArtists.split(',').slice(0, 3).join(' ')} ${songDetails?.label || ''} official original Full video`;
+      const targetUrl = `https://ayushvid.vercel.app/api?q=${encodeURIComponent(query)}`;
+      
+      let data = null;
+      try {
+        const jinaRes = await fetch(`https://r.jina.ai/${targetUrl}`, { headers: { Accept: "application/json" }});
+        const jinaText = await jinaRes.text();
+        const match = jinaText.match(/\{[\s\S]*\}/);
+        if (match) data = JSON.parse(match[0]);
+      } catch (err) {}
+
+      if (!data?.top_result?.videoId) {
+        const fallbackRes = await fetch(targetUrl);
+        data = await fallbackRes.json();
+      }
+
+      if (data?.top_result?.videoId) {
+        setYtVideoId(data.top_result.videoId);
+        setIsVideoMode(true);
+      }
+    } catch (err) {
+      console.error("Video Fetch Failed", err);
+    } finally {
+      setIsVideoLoading(false);
+    }
+  };
+
+  // Ghost Queue Cleanup
   useEffect(() => {
     if (queue && currentSong) {
       const idx = queue.findIndex((s: any) => s.id === currentSong.id);
-      if (idx !== -1) {
-        setUpcomingQueue(queue.slice(idx + 1));
-      } else {
+      if (idx !== -1) { setUpcomingQueue(queue.slice(idx + 1)); } 
+      else {
         setUpcomingQueue(prev => {
-          if (prev.length > 0 && prev[0].id === currentSong.id) {
-            return prev.slice(1);
-          }
-          return[]; // Flush ghost queue when played outside context
+          if (prev.length > 0 && prev[0].id === currentSong.id) return prev.slice(1);
+          return[]; 
         });
       }
     }
   }, [queue, currentSong]);
 
-  // --- Heavy-Duty Recommendation API Handler (Supports Long Polling & Jina) ---
+  // Auto Build 25 Song Recommendations Engine
   useEffect(() => {
     let isSubscribed = true;
-
     const fetchRecommendations = async () => {
-      // Only fire if queue is running dry, we have a spotify URL, and we haven't fetched for this track
-      if (upcomingQueue.length <= 1 && spotifyUrl && currentSong && fetchedRecsFor.current !== currentSong.id) {
-        fetchedRecsFor.current = currentSong.id;
-        setIsFetchingRecs(true); // Initiate infinite buffering animation
+      if (upcomingQueue.length < 25 && !fetchingRecsRef.current && currentSong) {
+        const baseSong = upcomingQueue.length > 0 ? upcomingQueue[upcomingQueue.length - 1] : currentSong;
+        const targetSpotifyUrl = baseSong?.spotifyUrl || (baseSong.id === currentSong.id ? spotifyUrl : null);
+
+        if (!targetSpotifyUrl || fetchedRecsFor.current === targetSpotifyUrl) return;
+
+        fetchingRecsRef.current = true;
+        setIsFetchingRecsUI(true);
+        fetchedRecsFor.current = targetSpotifyUrl;
         
         let parsedData = null;
-        const targetUrl = `https://ayushdetaser.vercel.app/api?link=${encodeURIComponent(spotifyUrl)}`;
+        const targetUrl = `https://ayushdetaser.vercel.app/api?link=${encodeURIComponent(targetSpotifyUrl)}`;
 
         try {
-          // ATTEMPT 1: R.JINA.AI PROXY (Bypasses serverless strict limits)
           const jinaRes = await fetch(`https://r.jina.ai/${targetUrl}`, { headers: { Accept: "application/json" } });
           const jinaData = await jinaRes.json();
-          
-          if (jinaData && jinaData.status === 'success' && jinaData.recommendations) {
-            parsedData = jinaData;
-          } else {
-            // Extract wrapped JSON using regex if Jina encapsulated it in Markdown
+          if (jinaData && jinaData.status === 'success' && jinaData.recommendations) { parsedData = jinaData; } 
+          else {
             const proxyContent = typeof jinaData === 'string' ? jinaData : (jinaData?.data?.content || jinaData?.content || jinaData?.text || "");
             const jsonStrMatch = proxyContent.match(/\{[\s\S]*\}/);
-            if (jsonStrMatch) {
-              try { parsedData = JSON.parse(jsonStrMatch[0]); } catch(e) {}
-            }
+            if (jsonStrMatch) { try { parsedData = JSON.parse(jsonStrMatch[0]); } catch(e) {} }
           }
-        } catch (error) {
-          console.log("Jina proxy blocked or timed out, triggering fallback...");
-        }
+        } catch (error) {}
 
-        // ATTEMPT 2: DIRECT FALLBACK (If Jina failed or returned null)
         if (!parsedData || !parsedData.recommendations) {
           try {
             const res = await fetch(targetUrl);
             parsedData = await res.json();
-          } catch (error) {
-            console.error("Direct fetch completely failed", error);
-          }
+          } catch (error) {}
         }
 
-        // PARSE & MAP SUCCESSFUL RESULTS
         if (isSubscribed && parsedData && parsedData.status === 'success' && parsedData.recommendations?.length > 0) {
           const mapped = parsedData.recommendations.map((rec: any) => {
             const saavnIdMatch = rec?.jiosaavn_link?.match(/\/([^\/]+)$/);
             const saavnId = saavnIdMatch ? saavnIdMatch[1] : Math.random().toString();
             return {
-              id: saavnId,
-              title: rec.title,
-              name: rec.title,
-              artists: rec.artist,
-              image: rec.banner_link,
-              url: rec.jiosaavn_link,
-              downloadUrl:[{ url: rec.stream_url }],
-              isRecommendation: true,
-              spotifyUrl: rec.spotify_link // Carries over so RapidAPI isn't queried next time!
+              id: saavnId, title: rec.title, name: rec.title, artists: rec.artist,
+              image: rec.banner_link, url: rec.jiosaavn_link, downloadUrl:[{ url: rec.stream_url }],
+              isRecommendation: true, spotifyUrl: rec.spotify_link
             };
           });
           
@@ -307,48 +349,26 @@ export default function MiniPlayer() {
             const existingIds = new Set(prev.map(s => s.id));
             existingIds.add(currentSong.id);
             if (queue) queue.forEach((s: any) => existingIds.add(s.id)); 
-            
             const newSongs = mapped.filter((m: any) => !existingIds.has(m.id));
             return[...prev, ...newSongs];
           });
         }
         
-        if (isSubscribed) setIsFetchingRecs(false); // Stop buffering
+        fetchingRecsRef.current = false;
+        if (isSubscribed) setIsFetchingRecsUI(false);
       }
     };
 
     fetchRecommendations();
+    return () => { isSubscribed = false; };
+  },[upcomingQueue.length, spotifyUrl, currentSong]);
 
-    return () => {
-      isSubscribed = false;
-    };
-  }, [upcomingQueue.length, spotifyUrl, currentSong]);
-
-  useEffect(() => {
-    if ('mediaSession' in navigator && currentSong) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: title || 'Unknown Track',
-        artist: artistsText || 'Unknown Artist',
-        album: decodeEntities(contextName),
-        artwork:[
-          { src: coverImage, sizes: '96x96', type: 'image/jpeg' },
-          { src: coverImage, sizes: '256x256', type: 'image/jpeg' },
-          { src: coverImage, sizes: '512x512', type: 'image/jpeg' }
-        ]
-      });
-
-      navigator.mediaSession.setActionHandler('play', () => setIsPlaying(true));
-      navigator.mediaSession.setActionHandler('pause', () => setIsPlaying(false));
-      navigator.mediaSession.setActionHandler('previoustrack', playPrev);
-      navigator.mediaSession.setActionHandler('nexttrack', playNext);
-    }
-  }, [currentSong, title, artistsText, coverImage, contextName]);
-
+  // Full JioSaavn Override & Direct Play
   useEffect(() => {
     if (!currentSong) return;
     setSpotifyId(null); setSpotifyUrl(null); setLyrics([]); setSyncType(null); setCanvasData(null);
     setIsCanvasLoaded(false); setActiveLyricIndex(-1); setIsScrolledPastMain(false); setIsUiHidden(false);
-    setSongDetails(null);
+    setSongDetails(null); setIsVideoMode(false);
 
     const fetchUrl = async () => {
       setLoading(true);
@@ -358,7 +378,9 @@ export default function MiniPlayer() {
         const json = await res.json();
         
         if (json.data?.[0]) {
-          if (json.data[0].downloadUrl) {
+          if (currentSong.isRecommendation && currentSong.downloadUrl?.length > 0) {
+            setAudioUrl(currentSong.downloadUrl[currentSong.downloadUrl.length - 1].url);
+          } else if (json.data[0].downloadUrl) {
             setAudioUrl(json.data[0].downloadUrl[json.data[0].downloadUrl.length - 1].url);
           }
           setSongDetails(json.data[0]); 
@@ -366,9 +388,7 @@ export default function MiniPlayer() {
           setAudioUrl(currentSong.downloadUrl[currentSong.downloadUrl.length - 1].url);
         }
       } catch (err) {
-        if (currentSong.downloadUrl?.length > 0) {
-          setAudioUrl(currentSong.downloadUrl[currentSong.downloadUrl.length - 1].url);
-        }
+        if (currentSong.downloadUrl?.length > 0) setAudioUrl(currentSong.downloadUrl[currentSong.downloadUrl.length - 1].url);
       }
       setLoading(false);
     };
@@ -378,12 +398,10 @@ export default function MiniPlayer() {
       const cachedUrl = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
       const cachedId = typeof window !== "undefined" ? localStorage.getItem(cacheKey + '_id') : null;
 
-      // 1. FASTEST: Skip API completely if Recommendations API already supplied the Spotify Link
       if (currentSong.spotifyUrl) {
         const extractedId = currentSong.spotifyUrl.split('/track/')[1]?.split('?')[0];
         if (extractedId) {
-          setSpotifyId(extractedId);
-          setSpotifyUrl(currentSong.spotifyUrl);
+          setSpotifyId(extractedId); setSpotifyUrl(currentSong.spotifyUrl);
           if (typeof window !== "undefined") {
             localStorage.setItem(cacheKey, currentSong.spotifyUrl);
             localStorage.setItem(cacheKey + '_id', extractedId);
@@ -392,16 +410,10 @@ export default function MiniPlayer() {
         }
       }
       
-      // 2. FASTER: Load from localStorage cache
-      if (cachedUrl && cachedId) {
-        setSpotifyId(cachedId);
-        setSpotifyUrl(cachedUrl);
-        return;
-      }
+      if (cachedUrl && cachedId) { setSpotifyId(cachedId); setSpotifyUrl(cachedUrl); return; }
 
-      // 3. FALLBACK: Direct search through Rapid API
-      const searchArtist = artistsText ? artistsText.split(',').slice(0, 3).join(' ') : "";
-      const query = `${title} ${searchArtist}`.trim();
+      const searchArtist = displayArtists ? displayArtists.split(',').slice(0, 3).join(' ') : "";
+      const query = `${displayTitle} ${searchArtist}`.trim();
       const searchUrl = `https://${RAPID_API_HOST}/search?q=${encodeURIComponent(query)}&type=tracks&offset=0&limit=25&numberOfTopResults=5`;
 
       let matchData = null;
@@ -415,37 +427,27 @@ export default function MiniPlayer() {
       }
 
       if (matchData) {
-        const match: any = performMatching(matchData, title, searchArtist);
+        const match: any = performMatching(matchData, displayTitle, searchArtist);
         if (match) { 
           const newUrl = `https://open.spotify.com/track/${match.id}`;
-          setSpotifyId(match.id); 
-          setSpotifyUrl(newUrl); 
-          
-          if (typeof window !== "undefined") {
-            localStorage.setItem(cacheKey, newUrl);
-            localStorage.setItem(cacheKey + '_id', match.id);
-          }
+          setSpotifyId(match.id); setSpotifyUrl(newUrl); 
+          if (typeof window !== "undefined") { localStorage.setItem(cacheKey, newUrl); localStorage.setItem(cacheKey + '_id', match.id); }
         }
       }
     };
 
     fetchUrl(); fetchSpotifyMatch();
-  }, [currentSong, title, artistsText]);
+  }, [currentSong]);
 
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
-
     const fetchExtras = async () => {
       try {
         const lyricsRes = await fetch(`https://lyr-nine.vercel.app/api/lyrics?url=${encodeURIComponent(spotifyUrl)}&format=lrc`);
         if (lyricsRes.ok) {
           const lyricsJson = await lyricsRes.json();
-          if (lyricsJson.lines) {
-            setLyrics(lyricsJson.lines.map((l: any) => ({ time: parseTimeTag(l.timeTag), words: l.words })));
-            setSyncType(lyricsJson.syncType);
-          }
+          if (lyricsJson.lines) { setLyrics(lyricsJson.lines.map((l: any) => ({ time: parseTimeTag(l.timeTag), words: l.words }))); setSyncType(lyricsJson.syncType); }
         }
-
         let canvasJson = null;
         const targetCanvasUrl = `https://ayush-gamma-coral.vercel.app/api/canvas?trackId=${spotifyId}`;
         try {
@@ -468,14 +470,13 @@ export default function MiniPlayer() {
       } catch (e) {}
     };
     fetchExtras();
-  },[spotifyId, spotifyUrl]);
+  }, [spotifyId, spotifyUrl]);
 
   useEffect(() => {
-    if (!coverImage) return;
-    const img = new Image(); img.crossOrigin = "Anonymous"; img.src = coverImage;
+    if (!displayImage) return;
+    const img = new Image(); img.crossOrigin = "Anonymous"; img.src = displayImage;
     img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = 50; canvas.height = 50; 
+      const canvas = document.createElement("canvas"); canvas.width = 50; canvas.height = 50; 
       const ctx = canvas.getContext("2d"); if (!ctx) return;
       ctx.drawImage(img, 0, 0, 50, 50);
       try {
@@ -488,36 +489,34 @@ export default function MiniPlayer() {
         setDominantColor(count > 0 ? `rgb(${Math.floor(r/count)}, ${Math.floor(g/count)}, ${Math.floor(b/count)})` : "rgb(83, 83, 83)");
       } catch (e) { setDominantColor("rgb(30, 30, 30)"); }
     };
-  },[coverImage]);
+  }, [displayImage]);
 
   useEffect(() => {
     if (audioRef.current && audioUrl) {
       audioRef.current.volume = volume / 100;
       audioRef.current.loop = repeatMode === 2;
-      if (isPlaying) { const playPromise = audioRef.current.play(); if (playPromise !== undefined) playPromise.catch(() => {}); }
+      if (isPlaying && !isVideoMode) { const playPromise = audioRef.current.play(); if (playPromise !== undefined) playPromise.catch(() => {}); }
       else audioRef.current.pause();
     }
-  }, [isPlaying, audioUrl, volume, repeatMode]);
+  },[isPlaying, audioUrl, volume, repeatMode, isVideoMode]);
 
   useEffect(() => {
     if (canvasVideoRef.current) {
-      if (isPlaying && !isScrolledPastMain && isExpanded && !showQueue) {
+      if (isPlaying && !isScrolledPastMain && isExpanded && !showQueue && !isVideoMode) {
         const playPromise = canvasVideoRef.current.play();
         if (playPromise !== undefined) playPromise.catch(() => {});
-      } else {
-        canvasVideoRef.current.pause();
-      }
+      } else { canvasVideoRef.current.pause(); }
     }
-  },[isPlaying, isScrolledPastMain, isCanvasLoaded, isExpanded, showQueue]);
+  },[isPlaying, isScrolledPastMain, isCanvasLoaded, isExpanded, showQueue, isVideoMode]);
 
   const syncPosition = useCallback(() => {
     if ('mediaSession' in navigator && audioRef.current && duration > 0) {
       try { navigator.mediaSession.setPositionState({ duration, playbackRate: 1, position: audioRef.current.currentTime }); } catch(e) {}
     }
-  }, [duration]);
+  },[duration]);
 
   const handleTimeUpdate = () => {
-    if (audioRef.current) {
+    if (audioRef.current && !isVideoMode) {
       const c = audioRef.current.currentTime; const d = audioRef.current.duration;
       setCurrentTime(c); setDuration(d || 0);
       if (d > 0) setProgress((c / d) * 100);
@@ -545,9 +544,7 @@ export default function MiniPlayer() {
   }, [activeLyricIndex]);
 
   const handleLyricClick = (time: number) => {
-    if (audioRef.current && duration > 0) {
-      audioRef.current.currentTime = time; setCurrentTime(time); syncPosition();
-    }
+    if (audioRef.current && duration > 0) { audioRef.current.currentTime = time; setCurrentTime(time); syncPosition(); }
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -575,11 +572,9 @@ export default function MiniPlayer() {
       const randomIdx = Math.floor(Math.random() * queue.length);
       setCurrentSong(queue[randomIdx]); setIsPlaying(true); return;
     }
-    if (upcomingQueue.length > 0) {
-      setCurrentSong(upcomingQueue[0]); setIsPlaying(true);
-    } else if (repeatMode === 1 && queue && queue.length > 0) {
-      setCurrentSong(queue[0]); setIsPlaying(true);
-    } else { setIsPlaying(false); setProgress(0); }
+    if (upcomingQueue.length > 0) { setCurrentSong(upcomingQueue[0]); setIsPlaying(true); } 
+    else if (repeatMode === 1 && queue && queue.length > 0) { setCurrentSong(queue[0]); setIsPlaying(true); } 
+    else { setIsPlaying(false); setProgress(0); }
   };
 
   const playPrev = () => {
@@ -622,13 +617,13 @@ export default function MiniPlayer() {
       {/* MOBILE FULL SCREEN OVERLAY */}
       <div className={`md:hidden fixed inset-0 z-[99999] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0" : "translate-y-full"}`}>
         
-        {isCanvasLoaded && !isScrolledPastMain && !showQueue && (
+        {isCanvasLoaded && !isScrolledPastMain && !showQueue && !isVideoMode && (
           <div className="absolute inset-0 z-10 cursor-pointer" onClick={() => setIsUiHidden(!isUiHidden)} />
         )}
 
         {/* BACKGROUNDS */}
         <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.85) 100%)' }} />
-        {canvasData?.canvasUrl && (
+        {canvasData?.canvasUrl && !isVideoMode && (
           <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 ${isCanvasLoaded && !isScrolledPastMain && !showQueue ? 'opacity-100' : 'opacity-0'}`}>
             <video ref={canvasVideoRef} src={canvasData.canvasUrl} autoPlay loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover scale-105" />
             <div className={`absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/90 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
@@ -640,8 +635,8 @@ export default function MiniPlayer() {
           
           <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto" style={{ minHeight: 'calc(100dvh - 90px)' }}>
             
-            {/* Header (Smart Context Label) */}
-            <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4 transition-opacity duration-500 ${isUiHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+            {/* Header */}
+            <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4 transition-opacity duration-500 ${isUiHidden && !isVideoMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
               <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md">
                 <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {contextType}</span>
@@ -650,33 +645,42 @@ export default function MiniPlayer() {
               <button className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md"><MoreHorizontal size={24} /></button>
             </div>
 
-            {/* Artwork Wrapper */}
+            {/* Artwork / Video Wrapper */}
             <div className="flex-1 w-full min-h-0 flex items-center justify-center py-2 px-8">
-              <div className={`relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isCanvasLoaded ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'}`} style={{ width: '100%', aspectRatio: '1 / 1', maxWidth: '340px', maxHeight: '340px' }}>
-                {loading && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
-                <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
-              </div>
+              {isVideoMode && ytVideoId ? (
+                <div className="w-full relative shadow-[0_15px_40px_rgba(0,0,0,0.5)] bg-black rounded-[8px] overflow-hidden" style={{ aspectRatio: '16/9', maxWidth: '100%' }}>
+                  <iframe src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${Math.floor(currentTime)}`} style={{ width: "100%", height: "100%", border: "none" }} allow="autoplay; fullscreen" />
+                  <button onClick={toggleVideoMode} className="absolute top-2 right-2 bg-black/60 text-white p-2 rounded-full z-50">
+                     <ChevronDown size={18} />
+                  </button>
+                </div>
+              ) : (
+                <div className={`relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isCanvasLoaded ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'}`} style={{ width: '100%', aspectRatio: '1 / 1', maxWidth: '340px', maxHeight: '340px' }}>
+                  {(loading || isVideoLoading) && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
+                  <img src={displayImage} alt="cover" className="w-full h-full object-cover" />
+                </div>
+              )}
             </div>
 
             {/* Bottom Controls */}
-            <div className={`w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 ${isUiHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+            <div className={`w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 ${isUiHidden && !isVideoMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
               
-              {/* Dynamic Active Lyric Line */}
+              {/* Active Lyric Line */}
               {syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && (
                 <div key={activeLyricIndex} className="text-white/95 text-[15px] font-bold text-left mb-2 min-h-[22px] animate-lyric-change drop-shadow-lg pr-4 line-clamp-2">
                   {lyrics[activeLyricIndex].words || "♪"}
                 </div>
               )}
 
-              {/* Title & Tiny Canvas Banner */}
+              {/* Title & Canvas Banner */}
               <div className="flex items-center justify-between mb-5 drop-shadow-md w-full">
                 <div className="flex items-center gap-3 overflow-hidden pr-4 flex-1 min-w-0 w-full">
-                  {isCanvasLoaded && (
-                    <img src={coverImage} className="w-[48px] h-[48px] rounded-md shadow-md flex-shrink-0" alt="tiny cover" />
+                  {isCanvasLoaded && !isVideoMode && (
+                    <img src={displayImage} className="w-[48px] h-[48px] rounded-md shadow-md flex-shrink-0" alt="tiny cover" />
                   )}
                   <div className="flex flex-col flex-1 min-w-0 w-full overflow-hidden">
-                    <MarqueeText text={title} className="text-[22px] font-bold text-white tracking-tight leading-tight drop-shadow-md" />
-                    <MarqueeText text={artistsText} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md" />
+                    <MarqueeText text={displayTitle} className="text-[22px] font-bold text-white tracking-tight leading-tight drop-shadow-md" />
+                    <MarqueeText text={displayArtists} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md" />
                   </div>
                 </div>
                 <button className="text-white flex-shrink-0 ml-2 active:scale-75 transition-transform"><Heart size={26} /></button>
@@ -705,9 +709,11 @@ export default function MiniPlayer() {
                 </button>
               </div>
 
-              {/* Device Buttons */}
+              {/* Device Buttons (VIDEO ICON REPLACED HERE) */}
               <div className="flex items-center justify-between text-[#b3b3b3] w-full px-1 drop-shadow-md">
-                <button className="active:opacity-50"><MonitorSpeaker size={20} /></button>
+                <button onClick={toggleVideoMode} className={`active:opacity-50 transition-colors ${isVideoMode ? 'text-[#1db954]' : 'text-[#b3b3b3]'}`}>
+                  {isVideoLoading ? <Loader2 size={20} className="animate-spin" /> : <MonitorPlay size={20} />}
+                </button>
                 <div className="flex items-center gap-6">
                   <button onClick={() => setShowQueue(true)} className="active:opacity-50 text-white"><ListMusic size={20} /></button>
                 </div>
@@ -715,7 +721,7 @@ export default function MiniPlayer() {
             </div>
           </div>
 
-          <div className={`w-full px-5 pb-24 flex flex-col gap-6 pointer-events-auto transition-opacity duration-500 ${isUiHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+          <div className={`w-full px-5 pb-24 flex flex-col gap-6 pointer-events-auto transition-opacity duration-500 ${isUiHidden && !isVideoMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             
             {/* Lighter, Vibrant Lyrics Card */}
             {lyrics.length > 0 && (
@@ -725,7 +731,6 @@ export default function MiniPlayer() {
                   <h3 className="text-white font-bold text-[18px]">Lyrics</h3>
                   <button className="p-2 text-white/80 hover:text-white rounded-full bg-black/30"><Maximize2 size={16} /></button>
                 </div>
-                
                 <div className="relative z-10 flex flex-col gap-5 max-h-[300px] overflow-y-auto scrollbar-hide pb-10" ref={lyricsContainerRef}>
                   {lyrics.map((line, idx) => {
                     const isActive = idx === activeLyricIndex;
@@ -741,7 +746,7 @@ export default function MiniPlayer() {
               </div>
             )}
 
-            {/* ARTISTS CIRCULAR LIST (From "All" Section, Merged Roles) */}
+            {/* ARTISTS CIRCULAR LIST */}
             {uniqueArtists.length > 0 && (
               <div className="w-full mt-2">
                 <h3 className="text-white font-bold text-[18px] mb-4 drop-shadow-md">Artists</h3>
@@ -759,11 +764,11 @@ export default function MiniPlayer() {
               </div>
             )}
 
-            {/* ALBUM COMPONENT - Banner uses exactly the song's cover image */}
+            {/* ALBUM COMPONENT */}
             {songDetails?.album && (
               <Link href={`/album/${songDetails.album.id}`} className="w-full mb-6 bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group">
                 <div className="absolute inset-0 z-0 pointer-events-none opacity-30" style={{ backgroundColor: dominantColor }} />
-                <img src={coverImage} className="w-[64px] h-[64px] rounded-md object-cover relative z-10 shadow-md border border-white/5 group-hover:scale-105 transition-transform" alt="Album Cover" />
+                <img src={displayImage} className="w-[64px] h-[64px] rounded-md object-cover relative z-10 shadow-md border border-white/5 group-hover:scale-105 transition-transform" alt="Album Cover" />
                 <div className="flex flex-col relative z-10 flex-1 pr-2">
                   <span className="text-white/60 text-[11px] uppercase tracking-widest font-bold mb-1 drop-shadow-sm">Album</span>
                   <span className="text-white font-bold text-[16px] line-clamp-1 drop-shadow-md">{decodeEntities(songDetails.album.name)}</span>
@@ -774,10 +779,10 @@ export default function MiniPlayer() {
               </Link>
             )}
 
-            {/* DETAILS CARD (Language, Release, Label, Playcount, Duration) */}
+            {/* DETAILS CARD */}
             {songDetails && (
               <div className="w-full mb-10 rounded-2xl p-5 flex flex-col gap-4 border border-white/10 shadow-2xl relative overflow-hidden">
-                <div className="absolute inset-0 z-0 bg-cover bg-center opacity-30 blur-lg scale-110" style={{ backgroundImage: `url(${coverImage})` }} />
+                <div className="absolute inset-0 z-0 bg-cover bg-center opacity-30 blur-lg scale-110" style={{ backgroundImage: `url(${displayImage})` }} />
                 <div className="absolute inset-0 z-0 bg-gradient-to-t from-black/90 via-black/60 to-black/30 pointer-events-none" />
 
                 <h3 className="text-white font-bold text-[18px] drop-shadow-md relative z-10 mb-2">About Song</h3>
@@ -832,9 +837,7 @@ export default function MiniPlayer() {
 
                 {songDetails.copyright && (
                   <div className="relative z-10 mt-3 pt-4 border-t border-white/10">
-                    <p className="text-white/40 text-[10px] font-medium leading-relaxed">
-                      {decodeEntities(songDetails.copyright)}
-                    </p>
+                    <p className="text-white/40 text-[10px] font-medium leading-relaxed">{decodeEntities(songDetails.copyright)}</p>
                   </div>
                 )}
               </div>
@@ -859,11 +862,11 @@ export default function MiniPlayer() {
             <div className="flex items-center justify-between w-full mb-8">
               <div className="flex items-center gap-3 overflow-hidden">
                 <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">
-                  <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
+                  <img src={displayImage} alt="cover" className="w-full h-full object-cover" />
                 </div>
                 <div className="flex flex-col min-w-0 pr-2 overflow-hidden">
-                  <span className="text-[16px] font-bold text-[#1db954] truncate">{title}</span>
-                  <span className="text-[14px] font-medium text-white/60 truncate">{artistsText}</span>
+                  <span className="text-[16px] font-bold text-[#1db954] truncate">{displayTitle}</span>
+                  <span className="text-[14px] font-medium text-white/60 truncate">{displayArtists}</span>
                 </div>
               </div>
               <div className="flex flex-col gap-[3px] items-center justify-center w-5 h-5 opacity-80">
@@ -904,8 +907,7 @@ export default function MiniPlayer() {
               ))}
             </div>
 
-            {/* QUEUE BUFFERING SKELETON (STAYS VISIBLE AS LONG AS API IS FETCHING) */}
-            {isFetchingRecs && (
+            {isFetchingRecsUI && (
               <div className="flex flex-col gap-3 mt-4">
                 {[1, 2, 3, 4, 5].map(i => (
                   <div key={i} className="flex items-center gap-3 w-full animate-pulse px-1">
@@ -951,14 +953,14 @@ export default function MiniPlayer() {
         <div className="relative z-10 w-full h-full flex items-center px-2">
           <div className="w-[40px] h-[40px] flex-shrink-0 rounded-[4px] shadow-sm overflow-hidden bg-[#282828] relative mr-3">
             {loading && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 size={16} className="animate-spin text-white" /></div>}
-            <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
+            <img src={displayImage} alt="cover" className="w-full h-full object-cover" />
           </div>
           <div className="flex flex-col flex-1 min-w-0 pr-3 justify-center">
-            <MarqueeText text={title} className="text-[13px] font-bold text-white leading-tight mb-[2px]" />
-            <MarqueeText text={artistsText} className="text-[12px] font-medium text-white/70 leading-tight" />
+            <MarqueeText text={displayTitle} className="text-[13px] font-bold text-white leading-tight mb-[2px]" />
+            <MarqueeText text={displayArtists} className="text-[12px] font-medium text-white/70 leading-tight" />
           </div>
           <div className="flex items-center gap-4 flex-shrink-0 pr-2 text-white">
-            <button className="active:scale-75 transition-transform" onClick={(e) => { e.stopPropagation(); }}><MonitorSpeaker size={20} className="text-[#1db954]" /></button>
+            <button className="active:scale-75 transition-transform" onClick={(e) => { e.stopPropagation(); }}><MonitorPlay size={20} className="text-[#1db954]" /></button>
             <button className="active:scale-75 transition-transform" onClick={(e) => { e.stopPropagation(); setIsPlaying(!isPlaying); }}>
               {isPlaying ? <Pause fill="white" stroke="white" size={24} /> : <Play fill="white" stroke="white" size={24} className="translate-x-[1px]" />}
             </button>

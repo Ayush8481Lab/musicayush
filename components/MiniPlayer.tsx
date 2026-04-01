@@ -50,7 +50,7 @@ const parseTimeTag = (tag: string) => {
   return 0;
 };
 
-// --- RAPID API ---
+// --- RAPID API EXACT MATCHER LOGIC ---
 const RAPID_KEYS =[
   "d1edce158amshec139440d20658ap1f2545jsnbb7da9add82f",
   "6cf7f03014msh787c51a713c0264p15c20djsna1f9a9f6a378",
@@ -89,7 +89,7 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
   return null;
 };
 
-// --- PERFECT MARQUEE ---
+// --- PERFECT MARQUEE COMPONENT ---
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
@@ -102,7 +102,7 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
     if (!containerRef.current) return;
     const observer = new ResizeObserver(checkOverflow); observer.observe(containerRef.current);
     return () => { timeouts.forEach(clearTimeout); observer.disconnect(); };
-  }, [text]);
+  },[text]);
 
   return (
     <div ref={containerRef} className={`overflow-hidden whitespace-nowrap w-full ${isOverflowing ? "mask-edges" : ""} ${className}`}>
@@ -118,25 +118,25 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
 export default function MiniPlayer() {
   const { currentSong, isPlaying, setIsPlaying, setCurrentSong, queue } = useAppContext();
   
-  const [audioUrl, setAudioUrl] = useState("");
+  const[audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const[progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const[duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
-  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
-  const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const[isUiHidden, setIsUiHidden] = useState(false); 
+  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const [isScrolledPastMain, setIsScrolledPastMain] = useState(false);
+  const [isUiHidden, setIsUiHidden] = useState(false); 
 
-  const [isShuffle, setIsShuffle] = useState(false);
+  const[isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState(0); 
 
-  const[showQueue, setShowQueue] = useState(false);
-  const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  const [showQueue, setShowQueue] = useState(false);
+  const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
 
@@ -144,7 +144,7 @@ export default function MiniPlayer() {
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
   const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState<any[]>([]);
-  const [syncType, setSyncType] = useState<string | null>(null);
+  const[syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const [canvasData, setCanvasData] = useState<any>(null);
   const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
@@ -156,7 +156,7 @@ export default function MiniPlayer() {
   // Queue Buffering
   const fetchedRecsFor = useRef<string | null>(null);
   const fetchingRecsRef = useRef(false);
-  const[isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
+  const [isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
   
   const [swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
@@ -165,9 +165,10 @@ export default function MiniPlayer() {
   const [songDetails, setSongDetails] = useState<any>(null);
 
   // VIDEO PLAYER STATES & REFS
-  const [isVideoMode, setIsVideoMode] = useState(false);
-  const[ytVideoId, setYtVideoId] = useState<string | null>(null);
-  const[isVideoLoading, setIsVideoLoading] = useState(false);
+  const[isVideoMode, setIsVideoMode] = useState(false);
+  const [ytVideoId, setYtVideoId] = useState<string | null>(null);
+  const[prefetchedYtId, setPrefetchedYtId] = useState<string | null>(null);
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
 
   const rawTitle = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
@@ -197,6 +198,40 @@ export default function MiniPlayer() {
   });
   const uniqueArtists = Array.from(uniqueArtistsMap.values());
 
+  // --- BACKGROUND PRE-FETCH YT VIDEO ID (Zero Latency Fix) ---
+  useEffect(() => {
+    if (!displayTitle || !displayArtists) return;
+    let isMounted = true;
+    setPrefetchedYtId(null); 
+
+    const prefetchYT = async () => {
+      try {
+        const query = `${displayTitle} ${displayArtists.split(',').slice(0, 2).join(' ')} official music video`;
+        const targetUrl = `https://ayushvid.vercel.app/api?q=${encodeURIComponent(query)}`;
+        let data = null;
+        try {
+          const jinaRes = await fetch(`https://r.jina.ai/${targetUrl}`, { headers: { Accept: "application/json" }});
+          const jinaText = await jinaRes.text();
+          try { data = JSON.parse(jinaText); } 
+          catch(e) { const match = jinaText.match(/\{[\s\S]*\}/); if(match) data = JSON.parse(match[0]); }
+        } catch (err) {}
+
+        if (!data?.top_result?.videoId) {
+          const fallbackRes = await fetch(targetUrl);
+          data = await fallbackRes.json();
+        }
+
+        if (isMounted && data?.top_result?.videoId) {
+          setPrefetchedYtId(data.top_result.videoId);
+        }
+      } catch (err) {
+        console.error("Background YT prefetch failed or delayed.");
+      }
+    };
+    prefetchYT();
+    return () => { isMounted = false; };
+  }, [displayTitle, displayArtists]);
+
   // --- TWO-WAY SYNC BRIDGE: Receive updates from Iframe ---
   useEffect(() => {
     const handleMsg = (e: MessageEvent) => {
@@ -215,8 +250,10 @@ export default function MiniPlayer() {
   }, [isVideoMode, duration]);
 
   // Handle Play/Pause Clicks (Sends to both Audio and Video Iframe)
-  const handlePlayPauseToggle = (e: React.MouseEvent | Event) => {
-    if (e) e.stopPropagation();
+  const handlePlayPauseToggle = (e?: React.MouseEvent | Event) => {
+    if (e && typeof (e as any).stopPropagation === 'function') {
+      (e as any).stopPropagation();
+    }
     const newState = !isPlaying;
     setIsPlaying(newState);
     
@@ -228,15 +265,27 @@ export default function MiniPlayer() {
     }
   };
 
-  // Video Toggle Action with Jina AI Integration
-  const toggleVideoMode = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  // Video Toggle Action (Uses Prefetched ID for Instant Load)
+  const toggleVideoMode = async (e?: React.MouseEvent) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    
+    // Switch to Audio
     if (isVideoMode) {
       setIsVideoMode(false);
       if (audioRef.current) { audioRef.current.play(); setIsPlaying(true); }
       return;
     }
 
+    // Switch to Video (Instant if pre-fetched)
+    if (prefetchedYtId) {
+      setYtVideoId(prefetchedYtId);
+      setIsVideoMode(true);
+      if (audioRef.current) audioRef.current.pause();
+      setIsPlaying(false); // UI state toggles via iframe messages
+      return;
+    }
+
+    // Fallback if user taps before prefetch finishes
     setIsVideoLoading(true);
     if (audioRef.current) audioRef.current.pause();
     setIsPlaying(false);
@@ -249,12 +298,7 @@ export default function MiniPlayer() {
       try {
         const jinaRes = await fetch(`https://r.jina.ai/${targetUrl}`, { headers: { Accept: "application/json" }});
         const jinaText = await jinaRes.text();
-        try {
-          data = JSON.parse(jinaText);
-        } catch (e) {
-          const match = jinaText.match(/\{[\s\S]*\}/);
-          if (match) data = JSON.parse(match[0]);
-        }
+        try { data = JSON.parse(jinaText); } catch (e) { const match = jinaText.match(/\{[\s\S]*\}/); if (match) data = JSON.parse(match[0]); }
       } catch (err) {}
 
       if (!data?.top_result?.videoId) {
@@ -264,10 +308,13 @@ export default function MiniPlayer() {
 
       if (data?.top_result?.videoId) {
         setYtVideoId(data.top_result.videoId);
+        setPrefetchedYtId(data.top_result.videoId); 
         setIsVideoMode(true);
+      } else {
+        if (audioRef.current) { audioRef.current.play(); setIsPlaying(true); }
       }
     } catch (err) {
-      console.error("Video Fetch Failed", err);
+      if (audioRef.current) { audioRef.current.play(); setIsPlaying(true); }
     } finally {
       setIsVideoLoading(false);
     }
@@ -342,7 +389,7 @@ export default function MiniPlayer() {
     if (!currentSong) return;
     setSpotifyId(null); setSpotifyUrl(null); setLyrics([]); setSyncType(null); setCanvasData(null);
     setIsCanvasLoaded(false); setActiveLyricIndex(-1); setIsScrolledPastMain(false); setIsUiHidden(false);
-    setSongDetails(null); setIsVideoMode(false);
+    setSongDetails(null); setIsVideoMode(false); setYtVideoId(null);
 
     const fetchUrl = async () => {
       setLoading(true);
@@ -485,7 +532,7 @@ export default function MiniPlayer() {
     }
   },[duration]);
 
-  // MediaSession Hook (Locksceen controls)
+  // Lockscreen Media Controls Hook
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -503,7 +550,7 @@ export default function MiniPlayer() {
       navigator.mediaSession.setActionHandler('previoustrack', playPrev);
       navigator.mediaSession.setActionHandler('nexttrack', playNext);
     }
-  }, [currentSong, displayTitle, displayArtists, displayImage, contextName, isVideoMode, isPlaying]);
+  },[currentSong, displayTitle, displayArtists, displayImage, contextName, isVideoMode, isPlaying]);
 
   const handleTimeUpdate = () => {
     if (audioRef.current && !isVideoMode) {
@@ -695,7 +742,7 @@ export default function MiniPlayer() {
                 </div>
               </div>
 
-              {/* Main Buttons (Play Pause Syncs with HandlePlayPauseToggle) */}
+              {/* Main Buttons */}
               <div className="flex items-center justify-between w-full mb-5 px-1 drop-shadow-md">
                 <button onClick={() => setIsShuffle(!isShuffle)} className={`active:opacity-50 ${isShuffle ? 'text-[#1db954]' : 'text-white'}`}><Shuffle size={24} /></button>
                 <button onClick={playPrev} className="text-white active:opacity-50"><SkipBack size={36} fill="white" stroke="white" /></button>
@@ -711,7 +758,7 @@ export default function MiniPlayer() {
                 </button>
               </div>
 
-              {/* Device/Video Buttons */}
+              {/* Device Buttons */}
               <div className="flex items-center justify-between text-[#b3b3b3] w-full px-1 drop-shadow-md">
                 <button onClick={toggleVideoMode} className={`active:opacity-50 transition-colors ${isVideoMode ? 'text-[#1db954]' : 'text-[#b3b3b3]'}`}>
                   {isVideoLoading ? <Loader2 size={20} className="animate-spin" /> : <MonitorPlay size={20} />}
@@ -849,7 +896,7 @@ export default function MiniPlayer() {
         </div>
 
         {/* =========================================
-            QUEUE OVERLAY SHEET
+            QUEUE OVERLAY SHEET 
         ========================================= */}
         <div className={`absolute inset-0 z-[60] bg-[#121212] transition-transform duration-300 flex flex-col pointer-events-auto ${showQueue ? 'translate-y-0' : 'translate-y-full'}`}>
           <div className="flex items-center justify-between px-5 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 sticky top-0 bg-[#121212] z-20 shadow-md">

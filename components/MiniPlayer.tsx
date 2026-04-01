@@ -99,7 +99,7 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
   return null;
 };
 
-// --- PERFECT MARQUEE COMPONENT (Fixed for small devices) ---
+// --- PERFECT MARQUEE COMPONENT ---
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
@@ -112,10 +112,8 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
       }
     };
     checkOverflow();
-    // Allow font renders to catch up
     const timeouts =[setTimeout(checkOverflow, 100), setTimeout(checkOverflow, 500)];
     
-    // Live resize observer for exact device calculation
     if (!containerRef.current) return;
     const observer = new ResizeObserver(checkOverflow);
     observer.observe(containerRef.current);
@@ -174,10 +172,14 @@ export default function Player() {
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
   const canvasVideoRef = useRef<HTMLVideoElement>(null);
+  const loadingRecs = useRef(false);
   
   const[swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // New state to hold fully fetched song details (Album, Artists)
+  const [songDetails, setSongDetails] = useState<any>(null);
 
   const title = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
   const artists = currentSong ? decodeEntities(getArtists(currentSong)) : "";
@@ -187,13 +189,59 @@ export default function Player() {
   const contextType = rawPlaylistName ? "PLAYLIST" : (currentSong?.album?.name ? "ALBUM" : (currentSong?.type ? currentSong.type.toUpperCase() : "TRACK"));
   const contextName = rawPlaylistName || currentSong?.album?.name || "Single";
 
+  // Manage upcoming queue & sync without losing dynamically added recommendations
   useEffect(() => {
     if (queue && currentSong) {
       const idx = queue.findIndex((s: any) => s.id === currentSong.id);
-      if (idx !== -1) setUpcomingQueue(queue.slice(idx + 1));
-      else setUpcomingQueue(queue);
+      if (idx !== -1) {
+        setUpcomingQueue(queue.slice(idx + 1));
+      } else {
+        // If current song isn't in main queue, it's likely a recommendation.
+        // Slice the currently playing out of our local dynamic queue.
+        setUpcomingQueue(prev => {
+          if (prev.length > 0 && prev[0].id === currentSong.id) {
+            return prev.slice(1);
+          }
+          return prev;
+        });
+      }
     }
-  },[queue, currentSong]);
+  }, [queue, currentSong]);
+
+  // Load recommendations when queue is nearly empty to maintain endless play loop
+  useEffect(() => {
+    if (upcomingQueue.length <= 1 && spotifyUrl && currentSong && !loadingRecs.current) {
+      loadingRecs.current = true;
+      fetch(`https://ayushdetaser.vercel.app/api?link=${encodeURIComponent(spotifyUrl)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.status === 'success' && data.recommendations?.length > 0) {
+            const mapped = data.recommendations.map((rec: any) => {
+              const saavnIdMatch = rec.jiosaavn_link.match(/\/([^\/]+)$/);
+              const saavnId = saavnIdMatch ? saavnIdMatch[1] : Math.random().toString();
+              return {
+                id: saavnId,
+                title: rec.title,
+                name: rec.title,
+                artists: rec.artist,
+                image: rec.banner_link,
+                url: rec.jiosaavn_link,
+                downloadUrl: [{ url: rec.stream_url }]
+              };
+            });
+            
+            setUpcomingQueue(prev => {
+              const existingIds = new Set(prev.map(s => s.id));
+              existingIds.add(currentSong.id);
+              const newSongs = mapped.filter(m => !existingIds.has(m.id));
+              return [...prev, ...newSongs];
+            });
+          }
+        })
+        .catch(console.error)
+        .finally(() => { loadingRecs.current = false; });
+    }
+  }, [upcomingQueue.length, spotifyUrl, currentSong]);
 
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
@@ -219,21 +267,42 @@ export default function Player() {
     if (!currentSong) return;
     setSpotifyId(null); setSpotifyUrl(null); setLyrics([]); setSyncType(null); setCanvasData(null);
     setIsCanvasLoaded(false); setActiveLyricIndex(-1); setIsScrolledPastMain(false); setIsUiHidden(false);
+    setSongDetails(null);
 
     const fetchUrl = async () => {
       setLoading(true);
       try {
-        if (currentSong.downloadUrl?.length > 0) setAudioUrl(currentSong.downloadUrl[currentSong.downloadUrl.length - 1].url);
-        else {
-          const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(currentSong.url || currentSong.perma_url)}`);
-          const json = await res.json();
-          if (json.data?.[0]?.downloadUrl) setAudioUrl(json.data[0].downloadUrl[json.data[0].downloadUrl.length - 1].url);
+        const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(currentSong.url || currentSong.perma_url)}`);
+        const json = await res.json();
+        
+        if (json.data?.[0]) {
+          if (json.data[0].downloadUrl) {
+            setAudioUrl(json.data[0].downloadUrl[json.data[0].downloadUrl.length - 1].url);
+          }
+          setSongDetails(json.data[0]); // Save full details for Album & Artists
+        } else if (currentSong.downloadUrl?.length > 0) {
+          setAudioUrl(currentSong.downloadUrl[currentSong.downloadUrl.length - 1].url);
         }
-      } catch (err) {}
+      } catch (err) {
+        if (currentSong.downloadUrl?.length > 0) {
+          setAudioUrl(currentSong.downloadUrl[currentSong.downloadUrl.length - 1].url);
+        }
+      }
       setLoading(false);
     };
 
     const fetchSpotifyMatch = async () => {
+      const cacheKey = `spotify_match_${currentSong.id}`;
+      const cachedUrl = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
+      const cachedId = typeof window !== "undefined" ? localStorage.getItem(cacheKey + '_id') : null;
+      
+      // Load from local storage cache if available
+      if (cachedUrl && cachedId) {
+        setSpotifyId(cachedId);
+        setSpotifyUrl(cachedUrl);
+        return;
+      }
+
       const searchArtist = artists ? artists.split(',').slice(0, 3).join(' ') : "";
       const query = `${title} ${searchArtist}`.trim();
       const searchUrl = `https://${RAPID_API_HOST}/search?q=${encodeURIComponent(query)}&type=tracks&offset=0&limit=25&numberOfTopResults=5`;
@@ -250,7 +319,16 @@ export default function Player() {
 
       if (matchData) {
         const match: any = performMatching(matchData, title, searchArtist);
-        if (match) { setSpotifyId(match.id); setSpotifyUrl(`https://open.spotify.com/track/${match.id}`); }
+        if (match) { 
+          const newUrl = `https://open.spotify.com/track/${match.id}`;
+          setSpotifyId(match.id); 
+          setSpotifyUrl(newUrl); 
+          
+          if (typeof window !== "undefined") {
+            localStorage.setItem(cacheKey, newUrl);
+            localStorage.setItem(cacheKey + '_id', match.id);
+          }
+        }
       }
     };
 
@@ -490,7 +568,7 @@ export default function Player() {
               <button className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md"><MoreHorizontal size={24} /></button>
             </div>
 
-            {/* FIXED JUMPING BUG: This container stays flex-1. Only the inner image fades out/scales. */}
+            {/* Artwork Wrapper */}
             <div className="flex-1 w-full min-h-0 flex items-center justify-center py-2 px-8">
               <div className={`relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isCanvasLoaded ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'}`} style={{ width: '100%', aspectRatio: '1 / 1', maxWidth: '340px', maxHeight: '340px' }}>
                 {loading && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
@@ -501,14 +579,14 @@ export default function Player() {
             {/* Bottom Controls */}
             <div className={`w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 ${isUiHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
               
-              {/* Dynamic Active Lyric Line (Spotify Style) */}
-              {syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && !isCanvasLoaded && (
+              {/* Dynamic Active Lyric Line (Spotify Style) - NO LONGER HIDDEN ON CANVAS */}
+              {syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && (
                 <div key={activeLyricIndex} className="text-white/95 text-[15px] font-bold text-left mb-2 min-h-[22px] animate-lyric-change drop-shadow-lg pr-4 line-clamp-2">
                   {lyrics[activeLyricIndex].words || "♪"}
                 </div>
               )}
 
-              {/* Title & Tiny Canvas Banner (Fixed constraints for mobile) */}
+              {/* Title & Tiny Canvas Banner */}
               <div className="flex items-center justify-between mb-5 drop-shadow-md w-full">
                 <div className="flex items-center gap-3 overflow-hidden pr-4 flex-1 min-w-0 w-full">
                   {isCanvasLoaded && (
@@ -557,7 +635,7 @@ export default function Player() {
 
           <div className={`w-full px-5 pb-24 flex flex-col gap-6 pointer-events-auto transition-opacity duration-500 ${isUiHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             
-            {/* Lighter, Vibrant Lyrics Card (Reduced height & Rounded edges) */}
+            {/* Lighter, Vibrant Lyrics Card */}
             {lyrics.length > 0 && (
               <div className="rounded-2xl p-6 w-full mx-auto shadow-2xl relative overflow-hidden transition-colors duration-500 border border-white/10" style={{ backgroundColor: dominantColor }}>
                 <div className="absolute inset-0 bg-black/5 z-0 pointer-events-none" />
@@ -581,18 +659,36 @@ export default function Player() {
               </div>
             )}
 
-            {/* Smart Artist Card (Only renders if Canvas API explicitly returned an artist image) */}
-            {canvasData?.artist?.artistImgUrl && (
-              <div className="bg-[#1e1e1e] rounded-2xl w-full mx-auto mb-10 overflow-hidden relative shadow-lg h-[240px] group cursor-pointer border border-white/5">
-                <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, filter: 'brightness(0.4)' }} />
-                <img src={canvasData.artist.artistImgUrl} className="relative z-0 w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500" alt={canvasData.artist.artistName} />
-                <div className="absolute inset-0 z-10 bg-gradient-to-t from-black/95 via-black/40 to-transparent" />
-                <div className="absolute z-20 bottom-6 left-6 flex flex-col">
-                  <span className="text-white/80 text-[12px] uppercase tracking-widest font-bold mb-1">Artist</span>
-                  <span className="text-white font-extrabold text-3xl drop-shadow-lg">{canvasData.artist.artistName}</span>
+            {/* ARTISTS CIRCULAR LIST */}
+            {songDetails?.artists?.primary?.length > 0 && (
+              <div className="w-full mt-2">
+                <h3 className="text-white font-bold text-[18px] mb-4 drop-shadow-md">Artists</h3>
+                <div className="flex overflow-x-auto gap-4 scrollbar-hide pb-2">
+                  {songDetails.artists.primary.map((artist: any) => (
+                    <a key={artist.id} href={`/artist/${artist.id}`} className="flex flex-col items-center gap-2 flex-shrink-0 w-[84px] group">
+                      <img src={getImageUrl(artist.image)} className="w-[84px] h-[84px] rounded-full object-cover shadow-lg border border-white/10 group-hover:scale-105 transition-transform bg-[#282828]" alt={artist.name} />
+                      <span className="text-white/90 text-[12px] text-center font-medium line-clamp-2 leading-tight drop-shadow-md">{artist.name}</span>
+                    </a>
+                  ))}
                 </div>
               </div>
             )}
+
+            {/* ALBUM COMPONENT */}
+            {songDetails?.album && (
+              <a href={`/album/${songDetails.album.id}`} className="w-full mb-10 bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group">
+                <div className="absolute inset-0 z-0 pointer-events-none opacity-30" style={{ backgroundColor: dominantColor }} />
+                <img src={getImageUrl(songDetails.album.image) || coverImage} className="w-[64px] h-[64px] rounded-md object-cover relative z-10 shadow-md border border-white/5 group-hover:scale-105 transition-transform" alt="Album Cover" />
+                <div className="flex flex-col relative z-10 flex-1 pr-2">
+                  <span className="text-white/60 text-[11px] uppercase tracking-widest font-bold mb-1 drop-shadow-sm">Album</span>
+                  <span className="text-white font-bold text-[16px] line-clamp-1 drop-shadow-md">{decodeEntities(songDetails.album.name)}</span>
+                </div>
+                <div className="relative z-10 text-white/50 group-hover:text-white transition-colors pl-2">
+                  <ChevronDown size={20} className="-rotate-90" />
+                </div>
+              </a>
+            )}
+
           </div>
         </div>
 

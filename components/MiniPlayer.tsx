@@ -99,20 +99,31 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
   return null;
 };
 
-// --- PERFECT MARQUEE COMPONENT ---
+// --- PERFECT MARQUEE COMPONENT (Fixed for small devices) ---
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const[isOverflowing, setIsOverflowing] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
 
   useEffect(() => {
     const checkOverflow = () => {
-      if (containerRef.current && textRef.current) setIsOverflowing(textRef.current.scrollWidth > containerRef.current.clientWidth + 2);
+      if (containerRef.current && textRef.current) {
+        setIsOverflowing(textRef.current.scrollWidth > containerRef.current.clientWidth + 2);
+      }
     };
     checkOverflow();
-    const timeout = setTimeout(checkOverflow, 150);
-    window.addEventListener("resize", checkOverflow);
-    return () => { clearTimeout(timeout); window.removeEventListener("resize", checkOverflow); };
+    // Allow font renders to catch up
+    const timeouts =[setTimeout(checkOverflow, 100), setTimeout(checkOverflow, 500)];
+    
+    // Live resize observer for exact device calculation
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(containerRef.current);
+
+    return () => {
+      timeouts.forEach(clearTimeout);
+      observer.disconnect();
+    };
   }, [text]);
 
   return (
@@ -138,17 +149,14 @@ export default function Player() {
   const[isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const[isUiHidden, setIsUiHidden] = useState(false); // Tap-to-hide UI feature for Canvas
+  const[isUiHidden, setIsUiHidden] = useState(false); 
 
-  // Playback States
   const[isShuffle, setIsShuffle] = useState(false);
-  const[repeatMode, setRepeatMode] = useState(0); // 0: off, 1: all, 2: one
+  const[repeatMode, setRepeatMode] = useState(0); 
 
-  // Queue States
   const[showQueue, setShowQueue] = useState(false);
   const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
-  // DND specific states to auto-arrange visually
   const[draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
@@ -175,12 +183,10 @@ export default function Player() {
   const artists = currentSong ? decodeEntities(getArtists(currentSong)) : "";
   const coverImage = currentSong ? getImageUrl(currentSong.image) : "";
   
-  // Dynamic Context Parsing with deep fallbacks for exact Playlists
   const rawPlaylistName = currentSong?.playlistName || currentSong?.playlist?.name || currentSong?.playlist?.title;
   const contextType = rawPlaylistName ? "PLAYLIST" : (currentSong?.album?.name ? "ALBUM" : (currentSong?.type ? currentSong.type.toUpperCase() : "TRACK"));
   const contextName = rawPlaylistName || currentSong?.album?.name || "Single";
 
-  // Build Upcoming Queue Array
   useEffect(() => {
     if (queue && currentSong) {
       const idx = queue.findIndex((s: any) => s.id === currentSong.id);
@@ -189,7 +195,6 @@ export default function Player() {
     }
   },[queue, currentSong]);
 
-  // Push Data to OS Media Notification
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -210,7 +215,6 @@ export default function Player() {
     }
   },[currentSong, title, artists, coverImage, contextName]);
 
-  // Reset Everything on Song Change
   useEffect(() => {
     if (!currentSong) return;
     setSpotifyId(null); setSpotifyUrl(null); setLyrics([]); setSyncType(null); setCanvasData(null);
@@ -253,7 +257,6 @@ export default function Player() {
     fetchUrl(); fetchSpotifyMatch();
   },[currentSong, title, artists]);
 
-  // Fetch Lyrics and Canvas with Deep Jina Fallback
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
 
@@ -292,7 +295,6 @@ export default function Player() {
     fetchExtras();
   }, [spotifyId, spotifyUrl]);
 
-  // Extract High-Fidelity Accent Color
   useEffect(() => {
     if (!coverImage) return;
     const img = new Image(); img.crossOrigin = "Anonymous"; img.src = coverImage;
@@ -313,7 +315,6 @@ export default function Player() {
     };
   }, [coverImage]);
 
-  // Audio Execution
   useEffect(() => {
     if (audioRef.current && audioUrl) {
       audioRef.current.volume = volume / 100;
@@ -321,9 +322,8 @@ export default function Player() {
       if (isPlaying) { const playPromise = audioRef.current.play(); if (playPromise !== undefined) playPromise.catch(() => {}); }
       else audioRef.current.pause();
     }
-  }, [isPlaying, audioUrl, volume, repeatMode]);
+  },[isPlaying, audioUrl, volume, repeatMode]);
 
-  // Canvas Playing perfectly synced with state + hides on mini-player
   useEffect(() => {
     if (canvasVideoRef.current) {
       if (isPlaying && !isScrolledPastMain && isExpanded && !showQueue) {
@@ -388,7 +388,6 @@ export default function Player() {
     if (audioRef.current) audioRef.current.volume = val / 100;
   };
 
-  // Improved Smooth Queue Sorting with Visual Gap
   const handleSort = () => {
     if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
       const _upcomingQueue = [...upcomingQueue];
@@ -436,7 +435,6 @@ export default function Player() {
     <>
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes spotify-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-        /* Premium Silk Animation for Lyrics */
         @keyframes slide-up-lyric { 0% { transform: translateY(12px) scale(0.98); opacity: 0; filter: blur(3px); } 100% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0); } }
         .animate-spotify-marquee { animation: spotify-marquee 12s linear infinite; display: inline-block; }
         .animate-lyric-change { animation: slide-up-lyric 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
@@ -457,7 +455,7 @@ export default function Player() {
 
       {/* DESKTOP BOTTOM BAR (Hidden on Mobile) */}
       <div className="hidden md:flex fixed bottom-0 left-0 w-full h-[90px] bg-[#000000] z-[100] items-center px-4 justify-between border-t border-[#282828]">
-        {/* Desktop Controls (unchanged) */}
+        {/* Desktop Controls */}
       </div>
 
       {/* MOBILE FULL SCREEN OVERLAY */}
@@ -492,9 +490,9 @@ export default function Player() {
               <button className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md"><MoreHorizontal size={24} /></button>
             </div>
 
-            {/* Main Big Banner (Smaller safely, Hidden if Canvas plays) */}
-            <div className={`flex-1 w-full min-h-0 flex items-center justify-center py-2 px-8 transition-all duration-500 ${isCanvasLoaded ? 'opacity-0 h-0 hidden' : 'opacity-100'}`}>
-              <div className="relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden" style={{ width: '100%', aspectRatio: '1 / 1', maxWidth: '340px', maxHeight: '340px' }}>
+            {/* FIXED JUMPING BUG: This container stays flex-1. Only the inner image fades out/scales. */}
+            <div className="flex-1 w-full min-h-0 flex items-center justify-center py-2 px-8">
+              <div className={`relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isCanvasLoaded ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'}`} style={{ width: '100%', aspectRatio: '1 / 1', maxWidth: '340px', maxHeight: '340px' }}>
                 {loading && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
                 <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
               </div>
@@ -510,13 +508,13 @@ export default function Player() {
                 </div>
               )}
 
-              {/* Title & Tiny Canvas Banner */}
-              <div className="flex items-center justify-between mb-5 drop-shadow-md">
-                <div className="flex items-center gap-3 overflow-hidden pr-4 flex-1 min-w-0">
+              {/* Title & Tiny Canvas Banner (Fixed constraints for mobile) */}
+              <div className="flex items-center justify-between mb-5 drop-shadow-md w-full">
+                <div className="flex items-center gap-3 overflow-hidden pr-4 flex-1 min-w-0 w-full">
                   {isCanvasLoaded && (
                     <img src={coverImage} className="w-[48px] h-[48px] rounded-md shadow-md flex-shrink-0" alt="tiny cover" />
                   )}
-                  <div className="flex flex-col overflow-hidden w-full">
+                  <div className="flex flex-col flex-1 min-w-0 w-full overflow-hidden">
                     <MarqueeText text={title} className="text-[22px] font-bold text-white tracking-tight leading-tight drop-shadow-md" />
                     <MarqueeText text={artists} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md" />
                   </div>

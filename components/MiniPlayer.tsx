@@ -46,13 +46,11 @@ const formatTime = (time: number) => {
 const parseTimeTag = (tag: string) => {
   if (!tag) return 0;
   const parts = tag.split(':');
-  if (parts.length >= 2) {
-    return parseInt(parts[0], 10) * 60 + parseFloat(parts[1]);
-  }
+  if (parts.length >= 2) { return parseInt(parts[0], 10) * 60 + parseFloat(parts[1]); }
   return 0;
 };
 
-// --- RAPID API EXACT MATCHER LOGIC ---
+// --- RAPID API ---
 const RAPID_KEYS =[
   "d1edce158amshec139440d20658ap1f2545jsnbb7da9add82f",
   "6cf7f03014msh787c51a713c0264p15c20djsna1f9a9f6a378",
@@ -65,16 +63,13 @@ const RAPID_API_HOST = "spotify81.p.rapidapi.com";
 const performMatching = (apiData: any, targetTrack: string, targetArtist: string): any => {
   if (!apiData.tracks || apiData.tracks.length === 0) return null;
   const clean = (s: string) => (s || "").toLowerCase().replace(/[^\w\s]|_/g, "").replace(/\s+/g, " ").trim();
-  const tTitle = clean(targetTrack); 
-  const tArtist = clean(targetArtist);
+  const tTitle = clean(targetTrack); const tArtist = clean(targetArtist);
   let bestMatch: any = null; let highestScore = 0;
   
   apiData.tracks.forEach((item: any) => {
       const track = item.data; if (!track) return;
-      const rTitle = clean(track.name); 
-      const rArtists = track.artists.items.map((a: any) => clean(a.profile.name));
+      const rTitle = clean(track.name); const rArtists = track.artists.items.map((a: any) => clean(a.profile.name));
       let score = 0; let artistMatched = false;
-      
       if (tArtist.length > 0) {
           for (let ra of rArtists) { 
               if (ra === tArtist) { score += 100; artistMatched = true; break; } 
@@ -82,7 +77,6 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
           }
           if (!artistMatched) score = 0;
       } else { score += 50; }
-      
       if (score > 0) { 
           if (rTitle === tTitle) score += 100; 
           else if (rTitle.startsWith(tTitle) || tTitle.startsWith(rTitle)) score += 80; 
@@ -95,23 +89,18 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
   return null;
 };
 
-// --- PERFECT MARQUEE COMPONENT ---
+// --- PERFECT MARQUEE ---
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
   const [isOverflowing, setIsOverflowing] = useState(false);
 
   useEffect(() => {
-    const checkOverflow = () => {
-      if (containerRef.current && textRef.current) {
-        setIsOverflowing(textRef.current.scrollWidth > containerRef.current.clientWidth + 2);
-      }
-    };
+    const checkOverflow = () => { if (containerRef.current && textRef.current) setIsOverflowing(textRef.current.scrollWidth > containerRef.current.clientWidth + 2); };
     checkOverflow();
     const timeouts =[setTimeout(checkOverflow, 100), setTimeout(checkOverflow, 500)];
     if (!containerRef.current) return;
-    const observer = new ResizeObserver(checkOverflow);
-    observer.observe(containerRef.current);
+    const observer = new ResizeObserver(checkOverflow); observer.observe(containerRef.current);
     return () => { timeouts.forEach(clearTimeout); observer.disconnect(); };
   }, [text]);
 
@@ -125,46 +114,46 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
   );
 };
 
-// --- MAIN PLAYER COMPONENT ---
+// --- MAIN COMPONENT ---
 export default function MiniPlayer() {
   const { currentSong, isPlaying, setIsPlaying, setCurrentSong, queue } = useAppContext();
   
-  const[audioUrl, setAudioUrl] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const[progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const[duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
-  const [isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const [isUiHidden, setIsUiHidden] = useState(false); 
+  const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
+  const[isUiHidden, setIsUiHidden] = useState(false); 
 
-  const[isShuffle, setIsShuffle] = useState(false);
+  const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState(0); 
 
-  const [showQueue, setShowQueue] = useState(false);
-  const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  const[showQueue, setShowQueue] = useState(false);
+  const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
 
   const rapidKeyIdxRef = useRef(0);
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
-  const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
+  const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState<any[]>([]);
   const [syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const[canvasData, setCanvasData] = useState<any>(null);
+  const [canvasData, setCanvasData] = useState<any>(null);
   const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
   const canvasVideoRef = useRef<HTMLVideoElement>(null);
 
-  // Buffer & Recs
+  // Queue Buffering
   const fetchedRecsFor = useRef<string | null>(null);
   const fetchingRecsRef = useRef(false);
   const[isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
@@ -175,76 +164,71 @@ export default function MiniPlayer() {
 
   const [songDetails, setSongDetails] = useState<any>(null);
 
-  // VIDEO PLAYER STATES
+  // VIDEO PLAYER STATES & REFS
   const [isVideoMode, setIsVideoMode] = useState(false);
-  const [ytVideoId, setYtVideoId] = useState<string | null>(null);
+  const[ytVideoId, setYtVideoId] = useState<string | null>(null);
   const[isVideoLoading, setIsVideoLoading] = useState(false);
+  const videoIframeRef = useRef<HTMLIFrameElement>(null);
 
-  // --- Dynamic Metadata Extractors ---
   const rawTitle = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
   const rawArtists = currentSong ? decodeEntities(getArtistsText(currentSong)) : "";
   const rawImage = currentSong ? getImageUrl(currentSong.image) : "";
 
-  // Override with JioSaavn full details if fetched
   const displayTitle = songDetails?.name ? decodeEntities(songDetails.name) : rawTitle;
   const displayArtists = songDetails ? decodeEntities(getArtistsText(songDetails)) : rawArtists;
   const displayImage = songDetails?.image ? getImageUrl(songDetails.image) : rawImage;
   
-  let contextType = "TRACK";
-  let contextName = "Single Track";
+  let contextType = "TRACK"; let contextName = "Single Track";
   const rawPlaylistName = currentSong?.playlistName || currentSong?.playlist?.name || currentSong?.playlist?.title;
 
-  if (upcomingQueue.length > 0 && upcomingQueue[0]?.isRecommendation) {
-    contextType = "RADIO";
-    contextName = "Similar Tracks";
-  } else if (rawPlaylistName) {
-    contextType = "PLAYLIST";
-    contextName = rawPlaylistName;
-  } else if (queue && queue.length > 1 && currentSong?.album?.name) {
-    contextType = "ALBUM";
-    contextName = currentSong.album.name;
-  } else if (songDetails?.album?.name) {
-    contextType = "ALBUM";
-    contextName = songDetails.album.name;
-  }
+  if (upcomingQueue.length > 0 && upcomingQueue[0]?.isRecommendation) { contextType = "RADIO"; contextName = "Similar Tracks"; } 
+  else if (rawPlaylistName) { contextType = "PLAYLIST"; contextName = rawPlaylistName; } 
+  else if (queue && queue.length > 1 && currentSong?.album?.name) { contextType = "ALBUM"; contextName = currentSong.album.name; } 
+  else if (songDetails?.album?.name) { contextType = "ALBUM"; contextName = songDetails.album.name; }
 
-  // Map and extract 'ALL' Artists with Merged Roles
   const allArtists = songDetails?.artists?.all ||[];
   const uniqueArtistsMap = new Map();
   allArtists.forEach((artist: any) => {
     if (uniqueArtistsMap.has(artist.id)) {
       const existing = uniqueArtistsMap.get(artist.id);
       const newRole = (artist.role || "Artist").replace(/_/g, ' ');
-      if (!existing.role.toLowerCase().includes(newRole.toLowerCase())) {
-        existing.role = `${existing.role}, ${newRole}`;
-      }
-    } else {
-      uniqueArtistsMap.set(artist.id, { ...artist, role: (artist.role || "Artist").replace(/_/g, ' ') });
-    }
+      if (!existing.role.toLowerCase().includes(newRole.toLowerCase())) existing.role = `${existing.role}, ${newRole}`;
+    } else { uniqueArtistsMap.set(artist.id, { ...artist, role: (artist.role || "Artist").replace(/_/g, ' ') }); }
   });
   const uniqueArtists = Array.from(uniqueArtistsMap.values());
 
-  // Listen to Video iframe messages to sync Seek & Play/Pause
+  // --- TWO-WAY SYNC BRIDGE: Receive updates from Iframe ---
   useEffect(() => {
     const handleMsg = (e: MessageEvent) => {
       if (e.data?.type === 'YTP_TIME') {
-        if (audioRef.current && isVideoMode) {
-          audioRef.current.currentTime = e.data.time;
+        if (isVideoMode) {
           setCurrentTime(e.data.time);
           if (duration > 0) setProgress((e.data.time / duration) * 100);
         }
       } else if (e.data?.type === 'YTP_STATE') {
-        if (e.data.state === 1) { // Playing
-          audioRef.current?.pause();
-          setIsPlaying(false);
-        }
+        if (e.data.state === 1) { audioRef.current?.pause(); setIsPlaying(true); } // Playing
+        else if (e.data.state === 2) { setIsPlaying(false); } // Paused
       }
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
   }, [isVideoMode, duration]);
 
-  // Video Toggle Action
+  // Handle Play/Pause Clicks (Sends to both Audio and Video Iframe)
+  const handlePlayPauseToggle = (e: React.MouseEvent | Event) => {
+    if (e) e.stopPropagation();
+    const newState = !isPlaying;
+    setIsPlaying(newState);
+    
+    if (isVideoMode && videoIframeRef.current?.contentWindow) {
+      videoIframeRef.current.contentWindow.postMessage({ type: newState ? 'MUSIC_PLAY' : 'MUSIC_PAUSE' }, '*');
+    } else {
+      if (newState) audioRef.current?.play().catch(()=>{});
+      else audioRef.current?.pause();
+    }
+  };
+
+  // Video Toggle Action with Jina AI Integration
   const toggleVideoMode = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isVideoMode) {
@@ -258,15 +242,19 @@ export default function MiniPlayer() {
     setIsPlaying(false);
 
     try {
-      const query = `${displayTitle} ${displayArtists.split(',').slice(0, 3).join(' ')} ${songDetails?.label || ''} official original Full video`;
+      const query = `${displayTitle} ${displayArtists.split(',').slice(0, 2).join(' ')} official music video`;
       const targetUrl = `https://ayushvid.vercel.app/api?q=${encodeURIComponent(query)}`;
       
       let data = null;
       try {
         const jinaRes = await fetch(`https://r.jina.ai/${targetUrl}`, { headers: { Accept: "application/json" }});
         const jinaText = await jinaRes.text();
-        const match = jinaText.match(/\{[\s\S]*\}/);
-        if (match) data = JSON.parse(match[0]);
+        try {
+          data = JSON.parse(jinaText);
+        } catch (e) {
+          const match = jinaText.match(/\{[\s\S]*\}/);
+          if (match) data = JSON.parse(match[0]);
+        }
       } catch (err) {}
 
       if (!data?.top_result?.videoId) {
@@ -290,12 +278,7 @@ export default function MiniPlayer() {
     if (queue && currentSong) {
       const idx = queue.findIndex((s: any) => s.id === currentSong.id);
       if (idx !== -1) { setUpcomingQueue(queue.slice(idx + 1)); } 
-      else {
-        setUpcomingQueue(prev => {
-          if (prev.length > 0 && prev[0].id === currentSong.id) return prev.slice(1);
-          return[]; 
-        });
-      }
+      else { setUpcomingQueue(prev => { if (prev.length > 0 && prev[0].id === currentSong.id) return prev.slice(1); return[]; }); }
     }
   }, [queue, currentSong]);
 
@@ -309,8 +292,7 @@ export default function MiniPlayer() {
 
         if (!targetSpotifyUrl || fetchedRecsFor.current === targetSpotifyUrl) return;
 
-        fetchingRecsRef.current = true;
-        setIsFetchingRecsUI(true);
+        fetchingRecsRef.current = true; setIsFetchingRecsUI(true);
         fetchedRecsFor.current = targetSpotifyUrl;
         
         let parsedData = null;
@@ -318,20 +300,13 @@ export default function MiniPlayer() {
 
         try {
           const jinaRes = await fetch(`https://r.jina.ai/${targetUrl}`, { headers: { Accept: "application/json" } });
-          const jinaData = await jinaRes.json();
-          if (jinaData && jinaData.status === 'success' && jinaData.recommendations) { parsedData = jinaData; } 
-          else {
-            const proxyContent = typeof jinaData === 'string' ? jinaData : (jinaData?.data?.content || jinaData?.content || jinaData?.text || "");
-            const jsonStrMatch = proxyContent.match(/\{[\s\S]*\}/);
-            if (jsonStrMatch) { try { parsedData = JSON.parse(jsonStrMatch[0]); } catch(e) {} }
-          }
+          const jinaText = await jinaRes.text();
+          try { parsedData = JSON.parse(jinaText); } 
+          catch(e) { const jsonMatch = jinaText.match(/\{[\s\S]*\}/); if (jsonMatch) parsedData = JSON.parse(jsonMatch[0]); }
         } catch (error) {}
 
         if (!parsedData || !parsedData.recommendations) {
-          try {
-            const res = await fetch(targetUrl);
-            parsedData = await res.json();
-          } catch (error) {}
+          try { const res = await fetch(targetUrl); parsedData = await res.json(); } catch (error) {}
         }
 
         if (isSubscribed && parsedData && parsedData.status === 'success' && parsedData.recommendations?.length > 0) {
@@ -358,12 +333,11 @@ export default function MiniPlayer() {
         if (isSubscribed) setIsFetchingRecsUI(false);
       }
     };
-
     fetchRecommendations();
     return () => { isSubscribed = false; };
   },[upcomingQueue.length, spotifyUrl, currentSong]);
 
-  // Full JioSaavn Override & Direct Play
+  // Full Metadata Override & Fast Load
   useEffect(() => {
     if (!currentSong) return;
     setSpotifyId(null); setSpotifyUrl(null); setLyrics([]); setSyncType(null); setCanvasData(null);
@@ -402,10 +376,7 @@ export default function MiniPlayer() {
         const extractedId = currentSong.spotifyUrl.split('/track/')[1]?.split('?')[0];
         if (extractedId) {
           setSpotifyId(extractedId); setSpotifyUrl(currentSong.spotifyUrl);
-          if (typeof window !== "undefined") {
-            localStorage.setItem(cacheKey, currentSong.spotifyUrl);
-            localStorage.setItem(cacheKey + '_id', extractedId);
-          }
+          if (typeof window !== "undefined") { localStorage.setItem(cacheKey, currentSong.spotifyUrl); localStorage.setItem(cacheKey + '_id', extractedId); }
           return;
         }
       }
@@ -435,7 +406,6 @@ export default function MiniPlayer() {
         }
       }
     };
-
     fetchUrl(); fetchSpotifyMatch();
   }, [currentSong]);
 
@@ -515,6 +485,26 @@ export default function MiniPlayer() {
     }
   },[duration]);
 
+  // MediaSession Hook (Locksceen controls)
+  useEffect(() => {
+    if ('mediaSession' in navigator && currentSong) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: displayTitle || 'Unknown Track',
+        artist: displayArtists || 'Unknown Artist',
+        album: decodeEntities(contextName),
+        artwork:[
+          { src: displayImage, sizes: '96x96', type: 'image/jpeg' },
+          { src: displayImage, sizes: '256x256', type: 'image/jpeg' },
+          { src: displayImage, sizes: '512x512', type: 'image/jpeg' }
+        ]
+      });
+      navigator.mediaSession.setActionHandler('play', handlePlayPauseToggle);
+      navigator.mediaSession.setActionHandler('pause', handlePlayPauseToggle);
+      navigator.mediaSession.setActionHandler('previoustrack', playPrev);
+      navigator.mediaSession.setActionHandler('nexttrack', playNext);
+    }
+  }, [currentSong, displayTitle, displayArtists, displayImage, contextName, isVideoMode, isPlaying]);
+
   const handleTimeUpdate = () => {
     if (audioRef.current && !isVideoMode) {
       const c = audioRef.current.currentTime; const d = audioRef.current.duration;
@@ -541,17 +531,26 @@ export default function MiniPlayer() {
       const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + (element.clientHeight / 2);
       container.scrollTo({ top: scrollPos, behavior: 'smooth' });
     }
-  }, [activeLyricIndex]);
+  },[activeLyricIndex]);
 
   const handleLyricClick = (time: number) => {
-    if (audioRef.current && duration > 0) { audioRef.current.currentTime = time; setCurrentTime(time); syncPosition(); }
+    if (isVideoMode && videoIframeRef.current?.contentWindow) {
+      videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_SEEK', time: time }, '*');
+    } else if (audioRef.current && duration > 0) {
+      audioRef.current.currentTime = time; setCurrentTime(time); syncPosition();
+    }
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value); setProgress(val);
-    if (audioRef.current && duration > 0) {
-      audioRef.current.currentTime = (val / 100) * duration;
-      setCurrentTime(audioRef.current.currentTime); syncPosition();
+    const newTime = (val / 100) * duration;
+    
+    if (isVideoMode && videoIframeRef.current?.contentWindow) {
+      videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_SEEK', time: newTime }, '*');
+      setCurrentTime(newTime);
+    } else if (audioRef.current && duration > 0) {
+      audioRef.current.currentTime = newTime;
+      setCurrentTime(newTime); syncPosition();
     }
   };
 
@@ -612,7 +611,7 @@ export default function MiniPlayer() {
         .mobile-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #fff; margin-top: -4px; box-shadow: 0 2px 4px rgba(0,0,0,0.4); border: 0; }
       `}} />
 
-      <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying} onEnded={playNext} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)} />
+      <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)} />
 
       {/* MOBILE FULL SCREEN OVERLAY */}
       <div className={`md:hidden fixed inset-0 z-[99999] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0" : "translate-y-full"}`}>
@@ -649,7 +648,8 @@ export default function MiniPlayer() {
             <div className="flex-1 w-full min-h-0 flex items-center justify-center py-2 px-8">
               {isVideoMode && ytVideoId ? (
                 <div className="w-full relative shadow-[0_15px_40px_rgba(0,0,0,0.5)] bg-black rounded-[8px] overflow-hidden" style={{ aspectRatio: '16/9', maxWidth: '100%' }}>
-                  <iframe src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${Math.floor(currentTime)}`} style={{ width: "100%", height: "100%", border: "none" }} allow="autoplay; fullscreen" />
+                  {/* TWO WAY SYNC IFRAME */}
+                  <iframe ref={videoIframeRef} src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${Math.floor(currentTime)}`} style={{ width: "100%", height: "100%", border: "none" }} allow="autoplay; fullscreen" />
                   <button onClick={toggleVideoMode} className="absolute top-2 right-2 bg-black/60 text-white p-2 rounded-full z-50">
                      <ChevronDown size={18} />
                   </button>
@@ -666,13 +666,13 @@ export default function MiniPlayer() {
             <div className={`w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 ${isUiHidden && !isVideoMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
               
               {/* Active Lyric Line */}
-              {syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && (
+              {syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && !isVideoMode && (
                 <div key={activeLyricIndex} className="text-white/95 text-[15px] font-bold text-left mb-2 min-h-[22px] animate-lyric-change drop-shadow-lg pr-4 line-clamp-2">
                   {lyrics[activeLyricIndex].words || "♪"}
                 </div>
               )}
 
-              {/* Title & Canvas Banner */}
+              {/* Title Banner */}
               <div className="flex items-center justify-between mb-5 drop-shadow-md w-full">
                 <div className="flex items-center gap-3 overflow-hidden pr-4 flex-1 min-w-0 w-full">
                   {isCanvasLoaded && !isVideoMode && (
@@ -695,13 +695,15 @@ export default function MiniPlayer() {
                 </div>
               </div>
 
-              {/* Main Buttons */}
+              {/* Main Buttons (Play Pause Syncs with HandlePlayPauseToggle) */}
               <div className="flex items-center justify-between w-full mb-5 px-1 drop-shadow-md">
                 <button onClick={() => setIsShuffle(!isShuffle)} className={`active:opacity-50 ${isShuffle ? 'text-[#1db954]' : 'text-white'}`}><Shuffle size={24} /></button>
                 <button onClick={playPrev} className="text-white active:opacity-50"><SkipBack size={36} fill="white" stroke="white" /></button>
-                <button onClick={() => setIsPlaying(!isPlaying)} className="w-[64px] h-[64px] rounded-full bg-white flex items-center justify-center text-black active:scale-95 transition-transform shadow-lg">
+                
+                <button onClick={handlePlayPauseToggle} className="w-[64px] h-[64px] rounded-full bg-white flex items-center justify-center text-black active:scale-95 transition-transform shadow-lg">
                   {isPlaying ? <Pause fill="black" stroke="black" size={26} /> : <Play fill="black" stroke="black" size={28} className="translate-x-[2px]" />}
                 </button>
+                
                 <button onClick={playNext} className="text-white active:opacity-50"><SkipForward size={36} fill="white" stroke="white" /></button>
                 <button onClick={() => setRepeatMode((prev) => (prev + 1) % 3)} className={`active:opacity-50 relative ${repeatMode > 0 ? 'text-[#1db954]' : 'text-white/70'}`}>
                   <Repeat size={24} />
@@ -709,7 +711,7 @@ export default function MiniPlayer() {
                 </button>
               </div>
 
-              {/* Device Buttons (VIDEO ICON REPLACED HERE) */}
+              {/* Device/Video Buttons */}
               <div className="flex items-center justify-between text-[#b3b3b3] w-full px-1 drop-shadow-md">
                 <button onClick={toggleVideoMode} className={`active:opacity-50 transition-colors ${isVideoMode ? 'text-[#1db954]' : 'text-[#b3b3b3]'}`}>
                   {isVideoLoading ? <Loader2 size={20} className="animate-spin" /> : <MonitorPlay size={20} />}
@@ -723,7 +725,7 @@ export default function MiniPlayer() {
 
           <div className={`w-full px-5 pb-24 flex flex-col gap-6 pointer-events-auto transition-opacity duration-500 ${isUiHidden && !isVideoMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             
-            {/* Lighter, Vibrant Lyrics Card */}
+            {/* Lyrics Card */}
             {lyrics.length > 0 && (
               <div className="rounded-2xl p-6 w-full mx-auto shadow-2xl relative overflow-hidden transition-colors duration-500 border border-white/10" style={{ backgroundColor: dominantColor }}>
                 <div className="absolute inset-0 bg-black/5 z-0 pointer-events-none" />
@@ -847,7 +849,7 @@ export default function MiniPlayer() {
         </div>
 
         {/* =========================================
-            QUEUE OVERLAY SHEET (WITH INFINITE SKELETON)
+            QUEUE OVERLAY SHEET
         ========================================= */}
         <div className={`absolute inset-0 z-[60] bg-[#121212] transition-transform duration-300 flex flex-col pointer-events-auto ${showQueue ? 'translate-y-0' : 'translate-y-full'}`}>
           <div className="flex items-center justify-between px-5 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 sticky top-0 bg-[#121212] z-20 shadow-md">
@@ -952,7 +954,7 @@ export default function MiniPlayer() {
         <div className="absolute inset-0 bg-black/25 z-0 pointer-events-none" />
         <div className="relative z-10 w-full h-full flex items-center px-2">
           <div className="w-[40px] h-[40px] flex-shrink-0 rounded-[4px] shadow-sm overflow-hidden bg-[#282828] relative mr-3">
-            {loading && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 size={16} className="animate-spin text-white" /></div>}
+            {(loading || isVideoLoading) && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 size={16} className="animate-spin text-white" /></div>}
             <img src={displayImage} alt="cover" className="w-full h-full object-cover" />
           </div>
           <div className="flex flex-col flex-1 min-w-0 pr-3 justify-center">
@@ -960,8 +962,8 @@ export default function MiniPlayer() {
             <MarqueeText text={displayArtists} className="text-[12px] font-medium text-white/70 leading-tight" />
           </div>
           <div className="flex items-center gap-4 flex-shrink-0 pr-2 text-white">
-            <button className="active:scale-75 transition-transform" onClick={(e) => { e.stopPropagation(); }}><MonitorPlay size={20} className="text-[#1db954]" /></button>
-            <button className="active:scale-75 transition-transform" onClick={(e) => { e.stopPropagation(); setIsPlaying(!isPlaying); }}>
+            <button className="active:scale-75 transition-transform" onClick={toggleVideoMode}><MonitorPlay size={20} className={isVideoMode ? "text-[#1db954]" : ""} /></button>
+            <button className="active:scale-75 transition-transform" onClick={handlePlayPauseToggle}>
               {isPlaying ? <Pause fill="white" stroke="white" size={24} /> : <Play fill="white" stroke="white" size={24} className="translate-x-[1px]" />}
             </button>
           </div>

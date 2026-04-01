@@ -18,7 +18,7 @@ const decodeEntities = (text: string) => {
   return text.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'");
 };
 
-const getArtists = (data: any) => {
+const getArtistsText = (data: any) => {
   let names: string[] =[];
   if (data?.artists?.primary && Array.isArray(data.artists.primary)) names = data.artists.primary.map((a: any) => a.name);
   else if (Array.isArray(data?.artists)) names = data.artists.slice(0, 4).map((a: any) => a.name);
@@ -105,7 +105,7 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const[isOverflowing, setIsOverflowing] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
 
   useEffect(() => {
     const checkOverflow = () => {
@@ -114,7 +114,7 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
       }
     };
     checkOverflow();
-    const timeouts =[setTimeout(checkOverflow, 100), setTimeout(checkOverflow, 500)];
+    const timeouts = [setTimeout(checkOverflow, 100), setTimeout(checkOverflow, 500)];
     
     if (!containerRef.current) return;
     const observer = new ResizeObserver(checkOverflow);
@@ -124,7 +124,7 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
       timeouts.forEach(clearTimeout);
       observer.disconnect();
     };
-  },[text]);
+  }, [text]);
 
   return (
     <div ref={containerRef} className={`overflow-hidden whitespace-nowrap w-full ${isOverflowing ? "mask-edges" : ""} ${className}`}>
@@ -140,36 +140,36 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
 export default function MiniPlayer() {
   const { currentSong, isPlaying, setIsPlaying, setCurrentSong, queue } = useAppContext();
   
-  const[audioUrl, setAudioUrl] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const[volume, setVolume] = useState(100);
+  const[duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
-  const [isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const [isUiHidden, setIsUiHidden] = useState(false); 
+  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
+  const[isUiHidden, setIsUiHidden] = useState(false); 
 
-  const[isShuffle, setIsShuffle] = useState(false);
+  const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState(0); 
 
-  const [showQueue, setShowQueue] = useState(false);
-  const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  const[showQueue, setShowQueue] = useState(false);
+  const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
-  const[draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
 
   const rapidKeyIdxRef = useRef(0);
-  const [spotifyId, setSpotifyId] = useState<string | null>(null);
+  const[spotifyId, setSpotifyId] = useState<string | null>(null);
   const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
-  const[lyrics, setLyrics] = useState<any[]>([]);
+  const [lyrics, setLyrics] = useState<any[]>([]);
   const [syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const [canvasData, setCanvasData] = useState<any>(null);
-  const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
+  const[canvasData, setCanvasData] = useState<any>(null);
+  const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
@@ -183,14 +183,14 @@ export default function MiniPlayer() {
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const [songDetails, setSongDetails] = useState<any>(null);
+  const[songDetails, setSongDetails] = useState<any>(null);
 
   // --- Dynamic Variables ---
   const title = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
-  const artists = currentSong ? decodeEntities(getArtists(currentSong)) : "";
+  const artistsText = currentSong ? decodeEntities(getArtistsText(currentSong)) : "";
   const coverImage = currentSong ? getImageUrl(currentSong.image) : "";
   
-  // Smart Context Extractor (Handles Home vs Search vs Playlist vs Album vs Radio seamlessly)
+  // Smart Context Extractor
   let contextType = "TRACK";
   let contextName = "Single Track";
   const rawPlaylistName = currentSong?.playlistName || currentSong?.playlist?.name || currentSong?.playlist?.title;
@@ -209,6 +209,22 @@ export default function MiniPlayer() {
     contextName = currentSong.album.name;
   }
 
+  // Extract and Format ALL Artists for the Circular List
+  const allArtists = songDetails?.artists?.all ||[];
+  const uniqueArtistsMap = new Map();
+  allArtists.forEach((artist: any) => {
+    if (uniqueArtistsMap.has(artist.id)) {
+      const existing = uniqueArtistsMap.get(artist.id);
+      const newRole = artist.role || "Artist";
+      if (!existing.role.includes(newRole)) {
+        existing.role = `${existing.role}, ${newRole}`;
+      }
+    } else {
+      uniqueArtistsMap.set(artist.id, { ...artist, role: artist.role || "Artist" });
+    }
+  });
+  const uniqueArtists = Array.from(uniqueArtistsMap.values());
+
   // --- Ghost Queue Bug Fix ---
   useEffect(() => {
     if (queue && currentSong) {
@@ -220,7 +236,7 @@ export default function MiniPlayer() {
           if (prev.length > 0 && prev[0].id === currentSong.id) {
             return prev.slice(1);
           }
-          return[]; // Flush ghost queue
+          return[]; // Flush ghost queue when played outside context
         });
       }
     }
@@ -228,16 +244,20 @@ export default function MiniPlayer() {
 
   // Load recommendations when queue is nearly empty to maintain endless play loop
   useEffect(() => {
-    // We only trigger this if we have the current spotifyUrl and it hasn't been fetched yet
-    if (upcomingQueue.length <= 1 && spotifyUrl && currentSong && fetchedRecsFor.current !== currentSong.id) {
-      fetchedRecsFor.current = currentSong.id;
-      setIsFetchingRecs(true); // Show buffering UI in queue sheet
-      
-      // Call API (Handles the 10-25s latency naturally asynchronously)
-      fetch(`https://ayushdetaser.vercel.app/api?link=${encodeURIComponent(spotifyUrl)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === 'success' && data.recommendations?.length > 0) {
+    let isSubscribed = true;
+
+    const fetchRecommendations = async () => {
+      if (upcomingQueue.length <= 1 && spotifyUrl && currentSong && fetchedRecsFor.current !== currentSong.id) {
+        fetchedRecsFor.current = currentSong.id;
+        setIsFetchingRecs(true);
+        
+        try {
+          // Native fetch waits automatically. Handles latency up to 300s safely.
+          const res = await fetch(`https://ayushdetaser.vercel.app/api?link=${encodeURIComponent(spotifyUrl)}`);
+          if (!res.ok) throw new Error("Recs API Error");
+          const data = await res.json();
+          
+          if (isSubscribed && data.status === 'success' && data.recommendations?.length > 0) {
             const mapped = data.recommendations.map((rec: any) => {
               const saavnIdMatch = rec?.jiosaavn_link?.match(/\/([^\/]+)$/);
               const saavnId = saavnIdMatch ? saavnIdMatch[1] : Math.random().toString();
@@ -250,28 +270,39 @@ export default function MiniPlayer() {
                 url: rec.jiosaavn_link,
                 downloadUrl: [{ url: rec.stream_url }],
                 isRecommendation: true,
-                spotifyUrl: rec.spotify_link // Passing this directly so it skips RapidAPI later!
+                spotifyUrl: rec.spotify_link // Skip Rapid API check entirely!
               };
             });
             
             setUpcomingQueue((prev: any[]) => {
               const existingIds = new Set(prev.map(s => s.id));
               existingIds.add(currentSong.id);
+              if (queue) queue.forEach((s: any) => existingIds.add(s.id)); // Avoid old tracks
+              
               const newSongs = mapped.filter((m: any) => !existingIds.has(m.id));
               return [...prev, ...newSongs];
             });
           }
-        })
-        .catch(console.error)
-        .finally(() => { setIsFetchingRecs(false); });
-    }
+        } catch (error) {
+          console.error("Failed to load recommendations", error);
+        } finally {
+          if (isSubscribed) setIsFetchingRecs(false);
+        }
+      }
+    };
+
+    fetchRecommendations();
+
+    return () => {
+      isSubscribed = false;
+    };
   },[upcomingQueue.length, spotifyUrl, currentSong]);
 
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: title || 'Unknown Track',
-        artist: artists || 'Unknown Artist',
+        artist: artistsText || 'Unknown Artist',
         album: decodeEntities(contextName),
         artwork:[
           { src: coverImage, sizes: '96x96', type: 'image/jpeg' },
@@ -285,7 +316,7 @@ export default function MiniPlayer() {
       navigator.mediaSession.setActionHandler('previoustrack', playPrev);
       navigator.mediaSession.setActionHandler('nexttrack', playNext);
     }
-  }, [currentSong, title, artists, coverImage, contextName]);
+  },[currentSong, title, artistsText, coverImage, contextName]);
 
   useEffect(() => {
     if (!currentSong) return;
@@ -304,7 +335,7 @@ export default function MiniPlayer() {
           if (json.data[0].downloadUrl) {
             setAudioUrl(json.data[0].downloadUrl[json.data[0].downloadUrl.length - 1].url);
           }
-          setSongDetails(json.data[0]); // Save full details for Album & Details Card
+          setSongDetails(json.data[0]); 
         } else if (currentSong.downloadUrl?.length > 0) {
           setAudioUrl(currentSong.downloadUrl[currentSong.downloadUrl.length - 1].url);
         }
@@ -321,7 +352,7 @@ export default function MiniPlayer() {
       const cachedUrl = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
       const cachedId = typeof window !== "undefined" ? localStorage.getItem(cacheKey + '_id') : null;
 
-      // 1. FASTEST: Is it already provided by the recommendation API mapper?
+      // 1. O(1) Instantly load if already provided by Recommendation API!
       if (currentSong.spotifyUrl) {
         const extractedId = currentSong.spotifyUrl.split('/track/')[1]?.split('?')[0];
         if (extractedId) {
@@ -335,15 +366,15 @@ export default function MiniPlayer() {
         }
       }
       
-      // 2. FAST: Check local storage Cache
+      // 2. Load from local storage Cache
       if (cachedUrl && cachedId) {
         setSpotifyId(cachedId);
         setSpotifyUrl(cachedUrl);
         return;
       }
 
-      // 3. FALLBACK: Fetch via Rapid API EXACT Matcher
-      const searchArtist = artists ? artists.split(',').slice(0, 3).join(' ') : "";
+      // 3. Fallback: Search via Rapid API
+      const searchArtist = artistsText ? artistsText.split(',').slice(0, 3).join(' ') : "";
       const query = `${title} ${searchArtist}`.trim();
       const searchUrl = `https://${RAPID_API_HOST}/search?q=${encodeURIComponent(query)}&type=tracks&offset=0&limit=25&numberOfTopResults=5`;
 
@@ -373,7 +404,7 @@ export default function MiniPlayer() {
     };
 
     fetchUrl(); fetchSpotifyMatch();
-  }, [currentSong, title, artists]);
+  }, [currentSong, title, artistsText]);
 
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
@@ -477,7 +508,7 @@ export default function MiniPlayer() {
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
-  },[isScrolledPastMain]);
+  }, [isScrolledPastMain]);
 
   useEffect(() => {
     if (activeLyricRef.current && lyricsContainerRef.current) {
@@ -503,7 +534,7 @@ export default function MiniPlayer() {
 
   const handleSort = () => {
     if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
-      const _upcomingQueue = [...upcomingQueue];
+      const _upcomingQueue =[...upcomingQueue];
       const draggedItemContent = _upcomingQueue.splice(dragItem.current, 1)[0];
       _upcomingQueue.splice(dragOverItem.current, 0, draggedItemContent);
       setUpcomingQueue(_upcomingQueue);
@@ -619,7 +650,7 @@ export default function MiniPlayer() {
                   )}
                   <div className="flex flex-col flex-1 min-w-0 w-full overflow-hidden">
                     <MarqueeText text={title} className="text-[22px] font-bold text-white tracking-tight leading-tight drop-shadow-md" />
-                    <MarqueeText text={artists} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md" />
+                    <MarqueeText text={artistsText} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md" />
                   </div>
                 </div>
                 <button className="text-white flex-shrink-0 ml-2 active:scale-75 transition-transform"><Heart size={26} /></button>
@@ -684,15 +715,18 @@ export default function MiniPlayer() {
               </div>
             )}
 
-            {/* ARTISTS CIRCULAR LIST */}
-            {(songDetails?.artists?.primary?.length || 0) > 0 && (
+            {/* ARTISTS CIRCULAR LIST (From "All" Section, Joined Roles) */}
+            {uniqueArtists.length > 0 && (
               <div className="w-full mt-2">
                 <h3 className="text-white font-bold text-[18px] mb-4 drop-shadow-md">Artists</h3>
                 <div className="flex overflow-x-auto gap-4 scrollbar-hide pb-2">
-                  {songDetails.artists.primary.map((artist: any) => (
+                  {uniqueArtists.map((artist: any) => (
                     <Link key={artist.id} href={`/artist/${artist.id}`} className="flex flex-col items-center gap-2 flex-shrink-0 w-[84px] group">
                       <img src={getImageUrl(artist.image)} className="w-[84px] h-[84px] rounded-full object-cover shadow-lg border border-white/10 group-hover:scale-105 transition-transform bg-[#282828]" alt={artist.name} />
-                      <span className="text-white/90 text-[12px] text-center font-medium line-clamp-2 leading-tight drop-shadow-md">{artist.name}</span>
+                      <div className="flex flex-col items-center w-full px-1">
+                        <span className="text-white/90 text-[12px] text-center font-bold line-clamp-1 leading-tight drop-shadow-md">{decodeEntities(artist.name)}</span>
+                        <span className="text-white/50 text-[10px] text-center font-medium line-clamp-1 capitalize mt-[2px]">{artist.role.replace(/_/g, ' ')}</span>
+                      </div>
                     </Link>
                   ))}
                 </div>
@@ -803,7 +837,7 @@ export default function MiniPlayer() {
                 </div>
                 <div className="flex flex-col min-w-0 pr-2 overflow-hidden">
                   <span className="text-[16px] font-bold text-[#1db954] truncate">{title}</span>
-                  <span className="text-[14px] font-medium text-white/60 truncate">{artists}</span>
+                  <span className="text-[14px] font-medium text-white/60 truncate">{artistsText}</span>
                 </div>
               </div>
               <div className="flex flex-col gap-[3px] items-center justify-center w-5 h-5 opacity-80">
@@ -834,7 +868,7 @@ export default function MiniPlayer() {
                     </div>
                     <div className="flex flex-col min-w-0 pr-2 overflow-hidden">
                       <span className="text-[16px] font-bold text-white truncate">{decodeEntities(track.title || track.name)}</span>
-                      <span className="text-[14px] font-medium text-white/60 truncate">{decodeEntities(getArtists(track))}</span>
+                      <span className="text-[14px] font-medium text-white/60 truncate">{decodeEntities(getArtistsText(track))}</span>
                     </div>
                   </div>
                   <div className="flex-shrink-0 px-2 cursor-grab active:cursor-grabbing text-white/50 hover:text-white transition-colors">
@@ -895,7 +929,7 @@ export default function MiniPlayer() {
           </div>
           <div className="flex flex-col flex-1 min-w-0 pr-3 justify-center">
             <MarqueeText text={title} className="text-[13px] font-bold text-white leading-tight mb-[2px]" />
-            <MarqueeText text={artists} className="text-[12px] font-medium text-white/70 leading-tight" />
+            <MarqueeText text={artistsText} className="text-[12px] font-medium text-white/70 leading-tight" />
           </div>
           <div className="flex items-center gap-4 flex-shrink-0 pr-2 text-white">
             <button className="active:scale-75 transition-transform" onClick={(e) => { e.stopPropagation(); }}><MonitorSpeaker size={20} className="text-[#1db954]" /></button>

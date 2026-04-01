@@ -114,7 +114,7 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
       }
     };
     checkOverflow();
-    const timeouts = [setTimeout(checkOverflow, 100), setTimeout(checkOverflow, 500)];
+    const timeouts =[setTimeout(checkOverflow, 100), setTimeout(checkOverflow, 500)];
     
     if (!containerRef.current) return;
     const observer = new ResizeObserver(checkOverflow);
@@ -143,32 +143,32 @@ export default function MiniPlayer() {
   const [audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const[duration, setDuration] = useState(0);
+  const[currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
-  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const[isUiHidden, setIsUiHidden] = useState(false); 
+  const [isUiHidden, setIsUiHidden] = useState(false); 
 
   const [isShuffle, setIsShuffle] = useState(false);
-  const [repeatMode, setRepeatMode] = useState(0); 
+  const[repeatMode, setRepeatMode] = useState(0); 
 
-  const[showQueue, setShowQueue] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
   const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const[draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
 
   const rapidKeyIdxRef = useRef(0);
-  const[spotifyId, setSpotifyId] = useState<string | null>(null);
+  const [spotifyId, setSpotifyId] = useState<string | null>(null);
   const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState<any[]>([]);
-  const [syncType, setSyncType] = useState<string | null>(null);
+  const[syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const[canvasData, setCanvasData] = useState<any>(null);
+  const [canvasData, setCanvasData] = useState<any>(null);
   const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
@@ -177,13 +177,13 @@ export default function MiniPlayer() {
 
   // Queue Buffering/Recommendation states
   const fetchedRecsFor = useRef<string | null>(null);
-  const [isFetchingRecs, setIsFetchingRecs] = useState(false);
+  const[isFetchingRecs, setIsFetchingRecs] = useState(false);
   
   const [swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const[songDetails, setSongDetails] = useState<any>(null);
+  const [songDetails, setSongDetails] = useState<any>(null);
 
   // --- Dynamic Variables ---
   const title = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
@@ -209,18 +209,19 @@ export default function MiniPlayer() {
     contextName = currentSong.album.name;
   }
 
-  // Extract and Format ALL Artists for the Circular List
+  // --- Map and Extract 'ALL' Artists and Merge Roles ---
   const allArtists = songDetails?.artists?.all ||[];
   const uniqueArtistsMap = new Map();
   allArtists.forEach((artist: any) => {
     if (uniqueArtistsMap.has(artist.id)) {
       const existing = uniqueArtistsMap.get(artist.id);
-      const newRole = artist.role || "Artist";
-      if (!existing.role.includes(newRole)) {
+      const newRole = (artist.role || "Artist").replace(/_/g, ' ');
+      // Prevent duplicate role text if someone is tagged twice with the same role
+      if (!existing.role.toLowerCase().includes(newRole.toLowerCase())) {
         existing.role = `${existing.role}, ${newRole}`;
       }
     } else {
-      uniqueArtistsMap.set(artist.id, { ...artist, role: artist.role || "Artist" });
+      uniqueArtistsMap.set(artist.id, { ...artist, role: (artist.role || "Artist").replace(/_/g, ' ') });
     }
   });
   const uniqueArtists = Array.from(uniqueArtistsMap.values());
@@ -242,52 +243,77 @@ export default function MiniPlayer() {
     }
   }, [queue, currentSong]);
 
-  // Load recommendations when queue is nearly empty to maintain endless play loop
+  // --- Heavy-Duty Recommendation API Handler (Supports Long Polling & Jina) ---
   useEffect(() => {
     let isSubscribed = true;
 
     const fetchRecommendations = async () => {
+      // Only fire if queue is running dry, we have a spotify URL, and we haven't fetched for this track
       if (upcomingQueue.length <= 1 && spotifyUrl && currentSong && fetchedRecsFor.current !== currentSong.id) {
         fetchedRecsFor.current = currentSong.id;
-        setIsFetchingRecs(true);
+        setIsFetchingRecs(true); // Initiate infinite buffering animation
         
+        let parsedData = null;
+        const targetUrl = `https://ayushdetaser.vercel.app/api?link=${encodeURIComponent(spotifyUrl)}`;
+
         try {
-          // Native fetch waits automatically. Handles latency up to 300s safely.
-          const res = await fetch(`https://ayushdetaser.vercel.app/api?link=${encodeURIComponent(spotifyUrl)}`);
-          if (!res.ok) throw new Error("Recs API Error");
-          const data = await res.json();
+          // ATTEMPT 1: R.JINA.AI PROXY (Bypasses serverless strict limits)
+          const jinaRes = await fetch(`https://r.jina.ai/${targetUrl}`, { headers: { Accept: "application/json" } });
+          const jinaData = await jinaRes.json();
           
-          if (isSubscribed && data.status === 'success' && data.recommendations?.length > 0) {
-            const mapped = data.recommendations.map((rec: any) => {
-              const saavnIdMatch = rec?.jiosaavn_link?.match(/\/([^\/]+)$/);
-              const saavnId = saavnIdMatch ? saavnIdMatch[1] : Math.random().toString();
-              return {
-                id: saavnId,
-                title: rec.title,
-                name: rec.title,
-                artists: rec.artist,
-                image: rec.banner_link,
-                url: rec.jiosaavn_link,
-                downloadUrl: [{ url: rec.stream_url }],
-                isRecommendation: true,
-                spotifyUrl: rec.spotify_link // Skip Rapid API check entirely!
-              };
-            });
-            
-            setUpcomingQueue((prev: any[]) => {
-              const existingIds = new Set(prev.map(s => s.id));
-              existingIds.add(currentSong.id);
-              if (queue) queue.forEach((s: any) => existingIds.add(s.id)); // Avoid old tracks
-              
-              const newSongs = mapped.filter((m: any) => !existingIds.has(m.id));
-              return [...prev, ...newSongs];
-            });
+          if (jinaData && jinaData.status === 'success' && jinaData.recommendations) {
+            parsedData = jinaData;
+          } else {
+            // Extract wrapped JSON using regex if Jina encapsulated it in Markdown
+            const proxyContent = typeof jinaData === 'string' ? jinaData : (jinaData?.data?.content || jinaData?.content || jinaData?.text || "");
+            const jsonStrMatch = proxyContent.match(/\{[\s\S]*\}/);
+            if (jsonStrMatch) {
+              try { parsedData = JSON.parse(jsonStrMatch[0]); } catch(e) {}
+            }
           }
         } catch (error) {
-          console.error("Failed to load recommendations", error);
-        } finally {
-          if (isSubscribed) setIsFetchingRecs(false);
+          console.log("Jina proxy blocked or timed out, triggering fallback...");
         }
+
+        // ATTEMPT 2: DIRECT FALLBACK (If Jina failed or returned null)
+        if (!parsedData || !parsedData.recommendations) {
+          try {
+            const res = await fetch(targetUrl);
+            parsedData = await res.json();
+          } catch (error) {
+            console.error("Direct fetch completely failed", error);
+          }
+        }
+
+        // PARSE & MAP SUCCESSFUL RESULTS
+        if (isSubscribed && parsedData && parsedData.status === 'success' && parsedData.recommendations?.length > 0) {
+          const mapped = parsedData.recommendations.map((rec: any) => {
+            const saavnIdMatch = rec?.jiosaavn_link?.match(/\/([^\/]+)$/);
+            const saavnId = saavnIdMatch ? saavnIdMatch[1] : Math.random().toString();
+            return {
+              id: saavnId,
+              title: rec.title,
+              name: rec.title,
+              artists: rec.artist,
+              image: rec.banner_link,
+              url: rec.jiosaavn_link,
+              downloadUrl:[{ url: rec.stream_url }],
+              isRecommendation: true,
+              spotifyUrl: rec.spotify_link // Carries over so RapidAPI isn't queried next time!
+            };
+          });
+          
+          setUpcomingQueue((prev: any[]) => {
+            const existingIds = new Set(prev.map(s => s.id));
+            existingIds.add(currentSong.id);
+            if (queue) queue.forEach((s: any) => existingIds.add(s.id)); 
+            
+            const newSongs = mapped.filter((m: any) => !existingIds.has(m.id));
+            return[...prev, ...newSongs];
+          });
+        }
+        
+        if (isSubscribed) setIsFetchingRecs(false); // Stop buffering
       }
     };
 
@@ -296,7 +322,7 @@ export default function MiniPlayer() {
     return () => {
       isSubscribed = false;
     };
-  },[upcomingQueue.length, spotifyUrl, currentSong]);
+  }, [upcomingQueue.length, spotifyUrl, currentSong]);
 
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
@@ -316,7 +342,7 @@ export default function MiniPlayer() {
       navigator.mediaSession.setActionHandler('previoustrack', playPrev);
       navigator.mediaSession.setActionHandler('nexttrack', playNext);
     }
-  },[currentSong, title, artistsText, coverImage, contextName]);
+  }, [currentSong, title, artistsText, coverImage, contextName]);
 
   useEffect(() => {
     if (!currentSong) return;
@@ -352,7 +378,7 @@ export default function MiniPlayer() {
       const cachedUrl = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
       const cachedId = typeof window !== "undefined" ? localStorage.getItem(cacheKey + '_id') : null;
 
-      // 1. O(1) Instantly load if already provided by Recommendation API!
+      // 1. FASTEST: Skip API completely if Recommendations API already supplied the Spotify Link
       if (currentSong.spotifyUrl) {
         const extractedId = currentSong.spotifyUrl.split('/track/')[1]?.split('?')[0];
         if (extractedId) {
@@ -366,14 +392,14 @@ export default function MiniPlayer() {
         }
       }
       
-      // 2. Load from local storage Cache
+      // 2. FASTER: Load from localStorage cache
       if (cachedUrl && cachedId) {
         setSpotifyId(cachedId);
         setSpotifyUrl(cachedUrl);
         return;
       }
 
-      // 3. Fallback: Search via Rapid API
+      // 3. FALLBACK: Direct search through Rapid API
       const searchArtist = artistsText ? artistsText.split(',').slice(0, 3).join(' ') : "";
       const query = `${title} ${searchArtist}`.trim();
       const searchUrl = `https://${RAPID_API_HOST}/search?q=${encodeURIComponent(query)}&type=tracks&offset=0&limit=25&numberOfTopResults=5`;
@@ -442,7 +468,7 @@ export default function MiniPlayer() {
       } catch (e) {}
     };
     fetchExtras();
-  }, [spotifyId, spotifyUrl]);
+  },[spotifyId, spotifyUrl]);
 
   useEffect(() => {
     if (!coverImage) return;
@@ -462,7 +488,7 @@ export default function MiniPlayer() {
         setDominantColor(count > 0 ? `rgb(${Math.floor(r/count)}, ${Math.floor(g/count)}, ${Math.floor(b/count)})` : "rgb(83, 83, 83)");
       } catch (e) { setDominantColor("rgb(30, 30, 30)"); }
     };
-  }, [coverImage]);
+  },[coverImage]);
 
   useEffect(() => {
     if (audioRef.current && audioUrl) {
@@ -508,7 +534,7 @@ export default function MiniPlayer() {
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
-  }, [isScrolledPastMain]);
+  },[isScrolledPastMain]);
 
   useEffect(() => {
     if (activeLyricRef.current && lyricsContainerRef.current) {
@@ -534,7 +560,7 @@ export default function MiniPlayer() {
 
   const handleSort = () => {
     if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
-      const _upcomingQueue =[...upcomingQueue];
+      const _upcomingQueue = [...upcomingQueue];
       const draggedItemContent = _upcomingQueue.splice(dragItem.current, 1)[0];
       _upcomingQueue.splice(dragOverItem.current, 0, draggedItemContent);
       setUpcomingQueue(_upcomingQueue);
@@ -715,7 +741,7 @@ export default function MiniPlayer() {
               </div>
             )}
 
-            {/* ARTISTS CIRCULAR LIST (From "All" Section, Joined Roles) */}
+            {/* ARTISTS CIRCULAR LIST (From "All" Section, Merged Roles) */}
             {uniqueArtists.length > 0 && (
               <div className="w-full mt-2">
                 <h3 className="text-white font-bold text-[18px] mb-4 drop-shadow-md">Artists</h3>
@@ -725,7 +751,7 @@ export default function MiniPlayer() {
                       <img src={getImageUrl(artist.image)} className="w-[84px] h-[84px] rounded-full object-cover shadow-lg border border-white/10 group-hover:scale-105 transition-transform bg-[#282828]" alt={artist.name} />
                       <div className="flex flex-col items-center w-full px-1">
                         <span className="text-white/90 text-[12px] text-center font-bold line-clamp-1 leading-tight drop-shadow-md">{decodeEntities(artist.name)}</span>
-                        <span className="text-white/50 text-[10px] text-center font-medium line-clamp-1 capitalize mt-[2px]">{artist.role.replace(/_/g, ' ')}</span>
+                        <span className="text-white/50 text-[10px] text-center font-medium line-clamp-1 capitalize mt-[2px]">{artist.role}</span>
                       </div>
                     </Link>
                   ))}
@@ -733,7 +759,7 @@ export default function MiniPlayer() {
               </div>
             )}
 
-            {/* ALBUM COMPONENT - Banner uses the song's exact cover image as requested */}
+            {/* ALBUM COMPONENT - Banner uses exactly the song's cover image */}
             {songDetails?.album && (
               <Link href={`/album/${songDetails.album.id}`} className="w-full mb-6 bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group">
                 <div className="absolute inset-0 z-0 pointer-events-none opacity-30" style={{ backgroundColor: dominantColor }} />
@@ -818,7 +844,7 @@ export default function MiniPlayer() {
         </div>
 
         {/* =========================================
-            QUEUE OVERLAY SHEET
+            QUEUE OVERLAY SHEET (WITH INFINITE SKELETON)
         ========================================= */}
         <div className={`absolute inset-0 z-[60] bg-[#121212] transition-transform duration-300 flex flex-col pointer-events-auto ${showQueue ? 'translate-y-0' : 'translate-y-full'}`}>
           <div className="flex items-center justify-between px-5 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 sticky top-0 bg-[#121212] z-20 shadow-md">
@@ -878,10 +904,10 @@ export default function MiniPlayer() {
               ))}
             </div>
 
-            {/* QUEUE BUFFERING SKELETON */}
+            {/* QUEUE BUFFERING SKELETON (STAYS VISIBLE AS LONG AS API IS FETCHING) */}
             {isFetchingRecs && (
               <div className="flex flex-col gap-3 mt-4">
-                {[1, 2, 3].map(i => (
+                {[1, 2, 3, 4, 5].map(i => (
                   <div key={i} className="flex items-center gap-3 w-full animate-pulse px-1">
                     <div className="w-12 h-12 bg-white/10 rounded-[4px]" />
                     <div className="flex flex-col gap-2 flex-1">

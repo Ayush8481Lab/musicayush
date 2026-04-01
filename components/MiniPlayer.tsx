@@ -138,14 +138,19 @@ export default function Player() {
   const[isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
+  const[isUiHidden, setIsUiHidden] = useState(false); // Tap-to-hide UI feature for Canvas
 
   // Playback States
-  const [isShuffle, setIsShuffle] = useState(false);
+  const[isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); // 0: off, 1: all, 2: one
 
   // Queue States
-  const [showQueue, setShowQueue] = useState(false);
+  const[showQueue, setShowQueue] = useState(false);
   const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  
+  // DND specific states to auto-arrange visually
+  const[draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
 
@@ -170,9 +175,10 @@ export default function Player() {
   const artists = currentSong ? decodeEntities(getArtists(currentSong)) : "";
   const coverImage = currentSong ? getImageUrl(currentSong.image) : "";
   
-  // Dynamic Context Parsing
-  const contextType = currentSong?.playlistName ? "PLAYLIST" : (currentSong?.album?.name ? "ALBUM" : (currentSong?.type ? currentSong.type.toUpperCase() : "TRACK"));
-  const contextName = currentSong?.playlistName || currentSong?.album?.name || "Single";
+  // Dynamic Context Parsing with deep fallbacks for exact Playlists
+  const rawPlaylistName = currentSong?.playlistName || currentSong?.playlist?.name || currentSong?.playlist?.title;
+  const contextType = rawPlaylistName ? "PLAYLIST" : (currentSong?.album?.name ? "ALBUM" : (currentSong?.type ? currentSong.type.toUpperCase() : "TRACK"));
+  const contextName = rawPlaylistName || currentSong?.album?.name || "Single";
 
   // Build Upcoming Queue Array
   useEffect(() => {
@@ -181,7 +187,7 @@ export default function Player() {
       if (idx !== -1) setUpcomingQueue(queue.slice(idx + 1));
       else setUpcomingQueue(queue);
     }
-  }, [queue, currentSong]);
+  },[queue, currentSong]);
 
   // Push Data to OS Media Notification
   useEffect(() => {
@@ -202,13 +208,13 @@ export default function Player() {
       navigator.mediaSession.setActionHandler('previoustrack', playPrev);
       navigator.mediaSession.setActionHandler('nexttrack', playNext);
     }
-  }, [currentSong, title, artists, coverImage, contextName]);
+  },[currentSong, title, artists, coverImage, contextName]);
 
   // Reset Everything on Song Change
   useEffect(() => {
     if (!currentSong) return;
     setSpotifyId(null); setSpotifyUrl(null); setLyrics([]); setSyncType(null); setCanvasData(null);
-    setIsCanvasLoaded(false); setActiveLyricIndex(-1); setIsScrolledPastMain(false);
+    setIsCanvasLoaded(false); setActiveLyricIndex(-1); setIsScrolledPastMain(false); setIsUiHidden(false);
 
     const fetchUrl = async () => {
       setLoading(true);
@@ -317,14 +323,17 @@ export default function Player() {
     }
   }, [isPlaying, audioUrl, volume, repeatMode]);
 
+  // Canvas Playing perfectly synced with state + hides on mini-player
   useEffect(() => {
     if (canvasVideoRef.current) {
-      if (isPlaying && !isScrolledPastMain) {
+      if (isPlaying && !isScrolledPastMain && isExpanded && !showQueue) {
         const playPromise = canvasVideoRef.current.play();
         if (playPromise !== undefined) playPromise.catch(() => {});
-      } else canvasVideoRef.current.pause();
+      } else {
+        canvasVideoRef.current.pause();
+      }
     }
-  },[isPlaying, isScrolledPastMain, isCanvasLoaded]);
+  },[isPlaying, isScrolledPastMain, isCanvasLoaded, isExpanded, showQueue]);
 
   const syncPosition = useCallback(() => {
     if ('mediaSession' in navigator && audioRef.current && duration > 0) {
@@ -379,15 +388,16 @@ export default function Player() {
     if (audioRef.current) audioRef.current.volume = val / 100;
   };
 
-  // Queue Handling & DND
+  // Improved Smooth Queue Sorting with Visual Gap
   const handleSort = () => {
-    if (dragItem.current !== null && dragOverItem.current !== null) {
+    if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
       const _upcomingQueue = [...upcomingQueue];
       const draggedItemContent = _upcomingQueue.splice(dragItem.current, 1)[0];
       _upcomingQueue.splice(dragOverItem.current, 0, draggedItemContent);
       setUpcomingQueue(_upcomingQueue);
     }
     dragItem.current = null; dragOverItem.current = null;
+    setDraggedIndex(null); setDropTargetIndex(null);
   };
 
   const playNext = () => {
@@ -426,9 +436,10 @@ export default function Player() {
     <>
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes spotify-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-        @keyframes slide-up-lyric { 0% { transform: translateY(10px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+        /* Premium Silk Animation for Lyrics */
+        @keyframes slide-up-lyric { 0% { transform: translateY(12px) scale(0.98); opacity: 0; filter: blur(3px); } 100% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0); } }
         .animate-spotify-marquee { animation: spotify-marquee 12s linear infinite; display: inline-block; }
-        .animate-lyric-change { animation: slide-up-lyric 0.35s ease-out forwards; }
+        .animate-lyric-change { animation: slide-up-lyric 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
         .mask-edges { mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
@@ -446,26 +457,33 @@ export default function Player() {
 
       {/* DESKTOP BOTTOM BAR (Hidden on Mobile) */}
       <div className="hidden md:flex fixed bottom-0 left-0 w-full h-[90px] bg-[#000000] z-[100] items-center px-4 justify-between border-t border-[#282828]">
-        {/* Desktop Controls Snipped for brevity (Matches exact previous functioning state) */}
+        {/* Desktop Controls (unchanged) */}
       </div>
 
       {/* MOBILE FULL SCREEN OVERLAY */}
       <div className={`md:hidden fixed inset-0 z-[99999] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0" : "translate-y-full"}`}>
         
+        {/* Tap area to hide UI during Canvas */}
+        {isCanvasLoaded && !isScrolledPastMain && !showQueue && (
+          <div className="absolute inset-0 z-10 cursor-pointer" onClick={() => setIsUiHidden(!isUiHidden)} />
+        )}
+
         {/* BACKGROUNDS */}
         <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.85) 100%)' }} />
         {canvasData?.canvasUrl && (
           <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 ${isCanvasLoaded && !isScrolledPastMain && !showQueue ? 'opacity-100' : 'opacity-0'}`}>
             <video ref={canvasVideoRef} src={canvasData.canvasUrl} autoPlay loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover scale-105" />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/90" />
+            <div className={`absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/90 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
           </div>
         )}
 
         {/* SCROLLABLE MAIN CONTENT */}
-        <div className="absolute inset-0 z-10 overflow-y-auto overflow-x-hidden scrollbar-hide flex flex-col" onScroll={handleScroll}>
+        <div className="absolute inset-0 z-20 overflow-y-auto overflow-x-hidden scrollbar-hide flex flex-col pointer-events-none" onScroll={handleScroll}>
           
-          <div className="w-full flex flex-col flex-shrink-0" style={{ minHeight: 'calc(100dvh - 90px)' }}>
-            <div className="flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4">
+          <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto" style={{ minHeight: 'calc(100dvh - 90px)' }}>
+            
+            {/* Header */}
+            <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4 transition-opacity duration-500 ${isUiHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
               <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md">
                 <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {contextType}</span>
@@ -474,28 +492,39 @@ export default function Player() {
               <button className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md"><MoreHorizontal size={24} /></button>
             </div>
 
-            <div className={`flex-1 w-full min-h-0 flex items-center justify-center py-2 px-6 transition-opacity duration-500 ${isCanvasLoaded && !isScrolledPastMain ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-              <div className="relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden" style={{ height: '100%', aspectRatio: '1 / 1', maxHeight: '450px', maxWidth: 'min(calc(100vw - 48px), 450px)' }}>
+            {/* Main Big Banner (Smaller safely, Hidden if Canvas plays) */}
+            <div className={`flex-1 w-full min-h-0 flex items-center justify-center py-2 px-8 transition-all duration-500 ${isCanvasLoaded ? 'opacity-0 h-0 hidden' : 'opacity-100'}`}>
+              <div className="relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden" style={{ width: '100%', aspectRatio: '1 / 1', maxWidth: '340px', maxHeight: '340px' }}>
                 {loading && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
                 <img src={coverImage} alt="cover" className="w-full h-full object-cover" />
               </div>
             </div>
 
-            <div className="w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0">
-              {syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && (
+            {/* Bottom Controls */}
+            <div className={`w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 ${isUiHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+              
+              {/* Dynamic Active Lyric Line (Spotify Style) */}
+              {syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && !isCanvasLoaded && (
                 <div key={activeLyricIndex} className="text-white/95 text-[15px] font-bold text-left mb-2 min-h-[22px] animate-lyric-change drop-shadow-lg pr-4 line-clamp-2">
                   {lyrics[activeLyricIndex].words || "♪"}
                 </div>
               )}
 
+              {/* Title & Tiny Canvas Banner */}
               <div className="flex items-center justify-between mb-5 drop-shadow-md">
-                <div className="flex flex-col overflow-hidden pr-4 flex-1 min-w-0 w-full">
-                  <MarqueeText text={title} className="text-[22px] font-bold text-white tracking-tight leading-tight drop-shadow-md" />
-                  <MarqueeText text={artists} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md" />
+                <div className="flex items-center gap-3 overflow-hidden pr-4 flex-1 min-w-0">
+                  {isCanvasLoaded && (
+                    <img src={coverImage} className="w-[48px] h-[48px] rounded-md shadow-md flex-shrink-0" alt="tiny cover" />
+                  )}
+                  <div className="flex flex-col overflow-hidden w-full">
+                    <MarqueeText text={title} className="text-[22px] font-bold text-white tracking-tight leading-tight drop-shadow-md" />
+                    <MarqueeText text={artists} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md" />
+                  </div>
                 </div>
                 <button className="text-white flex-shrink-0 ml-2 active:scale-75 transition-transform"><Heart size={26} /></button>
               </div>
 
+              {/* Slider */}
               <div className="w-full flex flex-col gap-1 mb-5 relative drop-shadow-md">
                 <input type="range" min="0" max="100" value={duration > 0 ? progress : 0} onChange={handleSeek} className="w-full mobile-slider relative z-10" style={{ background: `linear-gradient(to right, #fff ${progress}%, rgba(255,255,255,0.2) ${progress}%)` }} />
                 <div className="flex items-center justify-between text-[11px] font-medium text-[#a7a7a7] mt-1 w-full pointer-events-none">
@@ -504,6 +533,7 @@ export default function Player() {
                 </div>
               </div>
 
+              {/* Main Buttons */}
               <div className="flex items-center justify-between w-full mb-5 px-1 drop-shadow-md">
                 <button onClick={() => setIsShuffle(!isShuffle)} className={`active:opacity-50 ${isShuffle ? 'text-[#1db954]' : 'text-white'}`}><Shuffle size={24} /></button>
                 <button onClick={playPrev} className="text-white active:opacity-50"><SkipBack size={36} fill="white" stroke="white" /></button>
@@ -517,6 +547,7 @@ export default function Player() {
                 </button>
               </div>
 
+              {/* Device Buttons */}
               <div className="flex items-center justify-between text-[#b3b3b3] w-full px-1 drop-shadow-md">
                 <button className="active:opacity-50"><MonitorSpeaker size={20} /></button>
                 <div className="flex items-center gap-6">
@@ -526,18 +557,18 @@ export default function Player() {
             </div>
           </div>
 
-          <div className="w-full px-5 pb-24 flex flex-col gap-6">
+          <div className={`w-full px-5 pb-24 flex flex-col gap-6 pointer-events-auto transition-opacity duration-500 ${isUiHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             
-            {/* Lighter, Vibrant Lyrics Card */}
+            {/* Lighter, Vibrant Lyrics Card (Reduced height & Rounded edges) */}
             {lyrics.length > 0 && (
               <div className="rounded-2xl p-6 w-full mx-auto shadow-2xl relative overflow-hidden transition-colors duration-500 border border-white/10" style={{ backgroundColor: dominantColor }}>
-                <div className="absolute inset-0 bg-black/10 z-0 pointer-events-none" /> {/* Subtle gradient, completely readable but vibrant */}
+                <div className="absolute inset-0 bg-black/5 z-0 pointer-events-none" />
                 <div className="relative z-10 flex items-center justify-between mb-6 sticky top-0 bg-transparent">
                   <h3 className="text-white font-bold text-[18px]">Lyrics</h3>
                   <button className="p-2 text-white/80 hover:text-white rounded-full bg-black/30"><Maximize2 size={16} /></button>
                 </div>
-                {/* Decreased height from 450px to 320px to show fewer lines */}
-                <div className="relative z-10 flex flex-col gap-5 max-h-[320px] overflow-y-auto scrollbar-hide pb-10" ref={lyricsContainerRef}>
+                
+                <div className="relative z-10 flex flex-col gap-5 max-h-[300px] overflow-y-auto scrollbar-hide pb-10" ref={lyricsContainerRef}>
                   {lyrics.map((line, idx) => {
                     const isActive = idx === activeLyricIndex;
                     const isPast = idx < activeLyricIndex;
@@ -552,8 +583,8 @@ export default function Player() {
               </div>
             )}
 
-            {/* Smart Artist Card (Only renders if found via Canvas) */}
-            {canvasData?.artist?.artistName && (
+            {/* Smart Artist Card (Only renders if Canvas API explicitly returned an artist image) */}
+            {canvasData?.artist?.artistImgUrl && (
               <div className="bg-[#1e1e1e] rounded-2xl w-full mx-auto mb-10 overflow-hidden relative shadow-lg h-[240px] group cursor-pointer border border-white/5">
                 <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, filter: 'brightness(0.4)' }} />
                 <img src={canvasData.artist.artistImgUrl} className="relative z-0 w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500" alt={canvasData.artist.artistName} />
@@ -568,21 +599,18 @@ export default function Player() {
         </div>
 
         {/* =========================================
-            QUEUE OVERLAY SHEET (Spotify Style)
+            QUEUE OVERLAY SHEET (Spotify Style Drag & Drop)
         ========================================= */}
-        <div className={`absolute inset-0 z-50 bg-[#121212] transition-transform duration-300 flex flex-col ${showQueue ? 'translate-y-0' : 'translate-y-full'}`}>
-          {/* Queue Header */}
+        <div className={`absolute inset-0 z-[60] bg-[#121212] transition-transform duration-300 flex flex-col pointer-events-auto ${showQueue ? 'translate-y-0' : 'translate-y-full'}`}>
           <div className="flex items-center justify-between px-5 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 sticky top-0 bg-[#121212] z-20 shadow-md">
             <button onClick={() => setShowQueue(false)} className="p-2 -ml-2 text-white/80 active:opacity-50"><ChevronDown size={28} /></button>
             <span className="text-[15px] font-bold text-white">Queue</span>
             <button className="text-[14px] font-medium text-white/80 active:opacity-50">Edit</button>
           </div>
 
-          {/* Queue Content */}
           <div className="flex-1 overflow-y-auto px-5 pb-32">
             <span className="text-[14px] font-medium text-white/60 block mb-6 uppercase tracking-wider">Playing {contextName}</span>
             
-            {/* Now Playing Row */}
             <div className="flex items-center justify-between w-full mb-8">
               <div className="flex items-center gap-3 overflow-hidden">
                 <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">
@@ -600,25 +628,27 @@ export default function Player() {
               </div>
             </div>
 
-            {/* Next In Queue List */}
             {upcomingQueue.length > 0 && (
               <>
                 <span className="text-[16px] font-bold text-white block mb-4">Next in queue</span>
-                <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1">
                   {upcomingQueue.map((track, index) => (
                     <div 
                       key={index} 
                       draggable
-                      onDragStart={() => (dragItem.current = index)}
-                      onDragEnter={() => (dragOverItem.current = index)}
+                      onDragStart={(e) => { dragItem.current = index; setDraggedIndex(index); }}
+                      onDragEnter={(e) => { e.preventDefault(); dragOverItem.current = index; setDropTargetIndex(index); }}
+                      onDragOver={(e) => e.preventDefault()}
                       onDragEnd={handleSort}
-                      className="flex items-center justify-between w-full group active:bg-white/5 p-1 rounded-md"
+                      className={`flex items-center justify-between w-full group p-1 rounded-md transition-all duration-200 
+                        ${draggedIndex === index ? 'opacity-30 scale-95 bg-white/10' : ''} 
+                        ${dropTargetIndex === index && draggedIndex !== index ? 'mt-[3.5rem] border-t-2 border-[#1db954] rounded-t-none' : ''}`}
                     >
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden pointer-events-none">
+                      <div className="flex items-center gap-3 overflow-hidden pointer-events-none">
+                        <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">
                           <img src={getImageUrl(track.image)} alt="cover" className="w-full h-full object-cover" />
                         </div>
-                        <div className="flex flex-col min-w-0 pr-2 overflow-hidden pointer-events-none">
+                        <div className="flex flex-col min-w-0 pr-2 overflow-hidden">
                           <span className="text-[16px] font-bold text-white truncate">{decodeEntities(track.title || track.name)}</span>
                           <span className="text-[14px] font-medium text-white/60 truncate">{decodeEntities(getArtists(track))}</span>
                         </div>
@@ -633,7 +663,6 @@ export default function Player() {
             )}
           </div>
 
-          {/* Queue Bottom Controls */}
           <div className="absolute bottom-0 left-0 w-full bg-[#181818] border-t border-[#282828] pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 px-6 flex justify-between items-center z-20">
             <div className="flex flex-col items-center gap-1 active:opacity-50 cursor-pointer" onClick={() => setIsShuffle(!isShuffle)}>
               <Shuffle size={24} className={isShuffle ? 'text-[#1db954]' : 'text-white/70'} />

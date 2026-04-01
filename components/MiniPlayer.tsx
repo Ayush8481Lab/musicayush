@@ -1,13 +1,15 @@
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
+import Link from "next/link";
 import { useAppContext } from "../context/AppContext";
 import { 
   Play, Pause, SkipForward, SkipBack, Loader2, ChevronDown, 
-  MoreHorizontal, Shuffle, Repeat, Heart, ListMusic, Volume2, 
-  MonitorSpeaker, Mic2, Maximize2, SquarePlay, VolumeX, Menu, Timer
+  MoreHorizontal, Shuffle, Repeat, Heart, ListMusic, 
+  MonitorSpeaker, Maximize2, Menu, Timer
 } from "lucide-react";
 
 // --- UTILITIES ---
@@ -135,46 +137,46 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
 };
 
 // --- MAIN PLAYER COMPONENT ---
-export default function Player() {
+export default function MiniPlayer() {
   const { currentSong, isPlaying, setIsPlaying, setCurrentSong, queue } = useAppContext();
   
-  const[audioUrl, setAudioUrl] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
   const[loading, setLoading] = useState(false);
-  const[progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState(0);
   const[currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const[volume, setVolume] = useState(100);
+  const [volume, setVolume] = useState(100);
   const[isExpanded, setIsExpanded] = useState(false);
-  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const[isUiHidden, setIsUiHidden] = useState(false); 
+  const [isUiHidden, setIsUiHidden] = useState(false); 
 
-  const[isShuffle, setIsShuffle] = useState(false);
+  const [isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
 
-  const[showQueue, setShowQueue] = useState(false);
-  const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  const [showQueue, setShowQueue] = useState(false);
+  const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
-  const[draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
 
   const rapidKeyIdxRef = useRef(0);
-  const[spotifyId, setSpotifyId] = useState<string | null>(null);
-  const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
-  const[lyrics, setLyrics] = useState<any[]>([]);
-  const [syncType, setSyncType] = useState<string | null>(null);
-  const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const[canvasData, setCanvasData] = useState<any>(null);
-  const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
+  const [spotifyId, setSpotifyId] = useState<string | null>(null);
+  const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
+  const [lyrics, setLyrics] = useState<any[]>([]);
+  const[syncType, setSyncType] = useState<string | null>(null);
+  const[activeLyricIndex, setActiveLyricIndex] = useState(-1);
+  const [canvasData, setCanvasData] = useState<any>(null);
+  const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
   const canvasVideoRef = useRef<HTMLVideoElement>(null);
   const loadingRecs = useRef(false);
   
-  const[swipeX, setSwipeX] = useState(0);
+  const [swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -187,7 +189,7 @@ export default function Player() {
   
   const rawPlaylistName = currentSong?.playlistName || currentSong?.playlist?.name || currentSong?.playlist?.title;
   const contextType = rawPlaylistName ? "PLAYLIST" : (currentSong?.album?.name ? "ALBUM" : (currentSong?.type ? currentSong.type.toUpperCase() : "TRACK"));
-  const contextName = rawPlaylistName || currentSong?.album?.name || "Single";
+  const contextName = decodeEntities(rawPlaylistName || currentSong?.album?.name || "Single");
 
   // Manage upcoming queue & sync without losing dynamically added recommendations
   useEffect(() => {
@@ -217,7 +219,7 @@ export default function Player() {
         .then(data => {
           if (data.status === 'success' && data.recommendations?.length > 0) {
             const mapped = data.recommendations.map((rec: any) => {
-              const saavnIdMatch = rec.jiosaavn_link.match(/\/([^\/]+)$/);
+              const saavnIdMatch = rec?.jiosaavn_link?.match(/\/([^\/]+)$/);
               const saavnId = saavnIdMatch ? saavnIdMatch[1] : Math.random().toString();
               return {
                 id: saavnId,
@@ -230,10 +232,10 @@ export default function Player() {
               };
             });
             
-            setUpcomingQueue(prev => {
+            setUpcomingQueue((prev: any[]) => {
               const existingIds = new Set(prev.map(s => s.id));
               existingIds.add(currentSong.id);
-              const newSongs = mapped.filter(m => !existingIds.has(m.id));
+              const newSongs = mapped.filter((m: any) => !existingIds.has(m.id));
               return [...prev, ...newSongs];
             });
           }
@@ -261,7 +263,7 @@ export default function Player() {
       navigator.mediaSession.setActionHandler('previoustrack', playPrev);
       navigator.mediaSession.setActionHandler('nexttrack', playNext);
     }
-  },[currentSong, title, artists, coverImage, contextName]);
+  }, [currentSong, title, artists, coverImage, contextName]);
 
   useEffect(() => {
     if (!currentSong) return;
@@ -272,7 +274,8 @@ export default function Player() {
     const fetchUrl = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(currentSong.url || currentSong.perma_url)}`);
+        const fetchLink = encodeURIComponent(currentSong.url || currentSong.perma_url || "");
+        const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${fetchLink}`);
         const json = await res.json();
         
         if (json.data?.[0]) {
@@ -333,7 +336,7 @@ export default function Player() {
     };
 
     fetchUrl(); fetchSpotifyMatch();
-  },[currentSong, title, artists]);
+  }, [currentSong, title, artists]);
 
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
@@ -353,7 +356,7 @@ export default function Player() {
         const targetCanvasUrl = `https://ayush-gamma-coral.vercel.app/api/canvas?trackId=${spotifyId}`;
         try {
           const res = await fetch(targetCanvasUrl);
-          if (!res.ok) throw new Error("CORS or Server Error");
+          if (!res.ok) throw new Error("CORS Error");
           canvasJson = await res.json();
         } catch (e) {
           try {
@@ -437,7 +440,7 @@ export default function Player() {
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
-  },[isScrolledPastMain]);
+  }, [isScrolledPastMain]);
 
   useEffect(() => {
     if (activeLyricRef.current && lyricsContainerRef.current) {
@@ -461,14 +464,9 @@ export default function Player() {
     }
   };
 
-  const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value); setVolume(val);
-    if (audioRef.current) audioRef.current.volume = val / 100;
-  };
-
   const handleSort = () => {
     if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
-      const _upcomingQueue = [...upcomingQueue];
+      const _upcomingQueue =[...upcomingQueue];
       const draggedItemContent = _upcomingQueue.splice(dragItem.current, 1)[0];
       _upcomingQueue.splice(dragOverItem.current, 0, draggedItemContent);
       setUpcomingQueue(_upcomingQueue);
@@ -531,11 +529,6 @@ export default function Player() {
 
       <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying} onEnded={playNext} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)} />
 
-      {/* DESKTOP BOTTOM BAR (Hidden on Mobile) */}
-      <div className="hidden md:flex fixed bottom-0 left-0 w-full h-[90px] bg-[#000000] z-[100] items-center px-4 justify-between border-t border-[#282828]">
-        {/* Desktop Controls */}
-      </div>
-
       {/* MOBILE FULL SCREEN OVERLAY */}
       <div className={`md:hidden fixed inset-0 z-[99999] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0" : "translate-y-full"}`}>
         
@@ -579,7 +572,7 @@ export default function Player() {
             {/* Bottom Controls */}
             <div className={`w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 ${isUiHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
               
-              {/* Dynamic Active Lyric Line (Spotify Style) - NO LONGER HIDDEN ON CANVAS */}
+              {/* Dynamic Active Lyric Line (Spotify Style) - FIXED: Now shows during Canvas */}
               {syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && (
                 <div key={activeLyricIndex} className="text-white/95 text-[15px] font-bold text-left mb-2 min-h-[22px] animate-lyric-change drop-shadow-lg pr-4 line-clamp-2">
                   {lyrics[activeLyricIndex].words || "♪"}
@@ -659,24 +652,24 @@ export default function Player() {
               </div>
             )}
 
-            {/* ARTISTS CIRCULAR LIST */}
-            {songDetails?.artists?.primary?.length > 0 && (
+            {/* ARTISTS CIRCULAR LIST - Fixed to correctly use Next.js <Link> */}
+            {(songDetails?.artists?.primary?.length || 0) > 0 && (
               <div className="w-full mt-2">
                 <h3 className="text-white font-bold text-[18px] mb-4 drop-shadow-md">Artists</h3>
                 <div className="flex overflow-x-auto gap-4 scrollbar-hide pb-2">
                   {songDetails.artists.primary.map((artist: any) => (
-                    <a key={artist.id} href={`/artist/${artist.id}`} className="flex flex-col items-center gap-2 flex-shrink-0 w-[84px] group">
+                    <Link key={artist.id} href={`/artist/${artist.id}`} className="flex flex-col items-center gap-2 flex-shrink-0 w-[84px] group">
                       <img src={getImageUrl(artist.image)} className="w-[84px] h-[84px] rounded-full object-cover shadow-lg border border-white/10 group-hover:scale-105 transition-transform bg-[#282828]" alt={artist.name} />
                       <span className="text-white/90 text-[12px] text-center font-medium line-clamp-2 leading-tight drop-shadow-md">{artist.name}</span>
-                    </a>
+                    </Link>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* ALBUM COMPONENT */}
+            {/* ALBUM COMPONENT - Fixed to correctly use Next.js <Link> */}
             {songDetails?.album && (
-              <a href={`/album/${songDetails.album.id}`} className="w-full mb-10 bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group">
+              <Link href={`/album/${songDetails.album.id}`} className="w-full mb-10 bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group">
                 <div className="absolute inset-0 z-0 pointer-events-none opacity-30" style={{ backgroundColor: dominantColor }} />
                 <img src={getImageUrl(songDetails.album.image) || coverImage} className="w-[64px] h-[64px] rounded-md object-cover relative z-10 shadow-md border border-white/5 group-hover:scale-105 transition-transform" alt="Album Cover" />
                 <div className="flex flex-col relative z-10 flex-1 pr-2">
@@ -686,7 +679,7 @@ export default function Player() {
                 <div className="relative z-10 text-white/50 group-hover:text-white transition-colors pl-2">
                   <ChevronDown size={20} className="-rotate-90" />
                 </div>
-              </a>
+              </Link>
             )}
 
           </div>

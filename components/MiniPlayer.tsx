@@ -93,7 +93,7 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const [isOverflowing, setIsOverflowing] = useState(false);
+  const[isOverflowing, setIsOverflowing] = useState(false);
 
   useEffect(() => {
     const checkOverflow = () => { if (containerRef.current && textRef.current) setIsOverflowing(textRef.current.scrollWidth > containerRef.current.clientWidth + 2); };
@@ -121,10 +121,10 @@ export default function MiniPlayer() {
   const[audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const[progress, setProgress] = useState(0);
-  const[currentTime, setCurrentTime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const[duration, setDuration] = useState(0);
-  const[volume, setVolume] = useState(100);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [volume, setVolume] = useState(100);
+  const[isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   const[isUiHidden, setIsUiHidden] = useState(false); 
@@ -135,7 +135,7 @@ export default function MiniPlayer() {
   const[showQueue, setShowQueue] = useState(false);
   const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const[draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
@@ -168,11 +168,10 @@ export default function MiniPlayer() {
   const[isVideoMode, setIsVideoMode] = useState(false);
   const[ytVideoId, setYtVideoId] = useState<string | null>(null);
   
-  // --- PERFECT ZERO-LATENCY REF FOR VIDEO ID ---
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const videoStartTimeRef = useRef<number>(0);
   
-  const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const[isVideoLoading, setIsVideoLoading] = useState(false);
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
 
   const rawTitle = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
@@ -206,7 +205,7 @@ export default function MiniPlayer() {
   useEffect(() => {
     if (!displayTitle || !displayArtists) return;
     let isMounted = true;
-    prefetchedYtIdRef.current = null; // Reset on new song
+    prefetchedYtIdRef.current = null;
 
     const prefetchYT = async () => {
       try {
@@ -214,7 +213,6 @@ export default function MiniPlayer() {
         const targetUrl = `https://ayushvid.vercel.app/api?q=${encodeURIComponent(query)}`;
         let data = null;
         
-        // 1. Try Jina Proxy First
         try {
           const jinaRes = await fetch(`https://r.jina.ai/${targetUrl}`, { headers: { Accept: "application/json" }});
           const jinaPayload = await jinaRes.json();
@@ -230,13 +228,11 @@ export default function MiniPlayer() {
           }
         } catch (err) {}
 
-        // 2. Direct Fallback if Jina entirely failed
         if (!data?.top_result?.videoId) {
           const fallbackRes = await fetch(targetUrl);
           data = await fallbackRes.json();
         }
 
-        // 3. Store securely in Ref so button click has absolute instant access
         if (isMounted && data?.top_result?.videoId) {
           prefetchedYtIdRef.current = data.top_result.videoId;
         }
@@ -246,24 +242,30 @@ export default function MiniPlayer() {
     return () => { isMounted = false; };
   }, [displayTitle, displayArtists]);
 
-  // --- TWO-WAY SYNC BRIDGE: Receive updates from Iframe ---
+  // --- TWO-WAY SYNC BRIDGE + DYNAMIC DURATION: Receive updates from Iframe ---
   useEffect(() => {
     const handleMsg = (e: MessageEvent) => {
       if (e.data?.type === 'YTP_TIME') {
         if (isVideoMode) {
           setCurrentTime(e.data.time);
-          if (duration > 0) setProgress((e.data.time / duration) * 100);
+          
+          // ✨ DYNAMIC DURATION FIX: Set player's total duration to video's length
+          if (e.data.duration) {
+            if (duration !== e.data.duration) setDuration(e.data.duration);
+            setProgress((e.data.time / e.data.duration) * 100);
+          } else if (duration > 0) {
+            setProgress((e.data.time / duration) * 100);
+          }
         }
       } else if (e.data?.type === 'YTP_STATE') {
-        if (e.data.state === 1) { audioRef.current?.pause(); setIsPlaying(true); } // Playing
-        else if (e.data.state === 2) { setIsPlaying(false); } // Paused
+        if (e.data.state === 1) { audioRef.current?.pause(); setIsPlaying(true); } 
+        else if (e.data.state === 2) { setIsPlaying(false); } 
       }
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
   }, [isVideoMode, duration]);
 
-  // Handle Play/Pause Clicks (Sends to both Audio and Video Iframe)
   const handlePlayPauseToggle = (e?: any) => {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     const newState = !isPlaying;
@@ -277,16 +279,24 @@ export default function MiniPlayer() {
     }
   };
 
-  // Video Toggle Action (Uses Ref for Instant Load, Bypasses Stale State)
+  // Video Toggle Action (With Audio Bounds-Checking Fix)
   const toggleVideoMode = async (e?: React.MouseEvent) => {
     if (e && e.stopPropagation) e.stopPropagation();
     
-    // Switch to Audio (Resumes audio from exact video timestamp)
+    // SWITCH TO AUDIO
     if (isVideoMode) {
       setIsVideoMode(false);
       if (audioRef.current) { 
-        audioRef.current.currentTime = currentTime; // Sync back
-        audioRef.current.play(); 
+        // Sync Audio Duration back
+        const audioDur = audioRef.current.duration || 0;
+        setDuration(audioDur);
+        
+        // Prevent audio crash if video was longer (e.g. video was at 3:30, but audio is 3:00)
+        const safeTime = (audioDur > 0 && currentTime > audioDur) ? audioDur - 2 : currentTime;
+        audioRef.current.currentTime = safeTime; 
+        setCurrentTime(safeTime);
+
+        audioRef.current.play().catch(()=>{}); 
         setIsPlaying(true); 
       }
       return;
@@ -301,7 +311,7 @@ export default function MiniPlayer() {
       setIsVideoMode(true);
       if (audioRef.current) audioRef.current.pause();
       setIsPlaying(false); 
-      return; // 🛑 EXIT IMMEDIATELY - NO NETWORK CALL!
+      return;
     }
 
     // Fallback if user taps before prefetch finishes
@@ -571,7 +581,7 @@ export default function MiniPlayer() {
     }
   },[duration]);
 
-  // Lockscreen Media Controls Hook (Fixed strict typings)
+  // Lockscreen Media Controls Hook
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({

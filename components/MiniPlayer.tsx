@@ -121,9 +121,9 @@ export default function MiniPlayer() {
   const[audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const[progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
+  const[currentTime, setCurrentTime] = useState(0);
   const[duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(100);
+  const[volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
@@ -145,7 +145,7 @@ export default function MiniPlayer() {
   const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState<any[]>([]);
   const[syncType, setSyncType] = useState<string | null>(null);
-  const[activeLyricIndex, setActiveLyricIndex] = useState(-1);
+  const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const[canvasData, setCanvasData] = useState<any>(null);
   const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
@@ -162,7 +162,7 @@ export default function MiniPlayer() {
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const [songDetails, setSongDetails] = useState<any>(null);
+  const[songDetails, setSongDetails] = useState<any>(null);
 
   // VIDEO PLAYER STATES & REFS
   const[isVideoMode, setIsVideoMode] = useState(false);
@@ -170,6 +170,7 @@ export default function MiniPlayer() {
   
   // --- PERFECT ZERO-LATENCY REF FOR VIDEO ID ---
   const prefetchedYtIdRef = useRef<string | null>(null); 
+  const videoStartTimeRef = useRef<number>(0);
   
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
@@ -280,12 +281,19 @@ export default function MiniPlayer() {
   const toggleVideoMode = async (e?: React.MouseEvent) => {
     if (e && e.stopPropagation) e.stopPropagation();
     
-    // Switch to Audio
+    // Switch to Audio (Resumes audio from exact video timestamp)
     if (isVideoMode) {
       setIsVideoMode(false);
-      if (audioRef.current) { audioRef.current.play(); setIsPlaying(true); }
+      if (audioRef.current) { 
+        audioRef.current.currentTime = currentTime; // Sync back
+        audioRef.current.play(); 
+        setIsPlaying(true); 
+      }
       return;
     }
+
+    // CAPTURE EXACT CURRENT TIME SO IFRAME URL IS STATIC
+    videoStartTimeRef.current = Math.floor(currentTime);
 
     // Switch to Video (Instant if pre-fetched)
     if (prefetchedYtIdRef.current) {
@@ -563,7 +571,7 @@ export default function MiniPlayer() {
     }
   },[duration]);
 
-  // Lockscreen Media Controls Hook
+  // Lockscreen Media Controls Hook (Fixed strict typings)
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -726,8 +734,13 @@ export default function MiniPlayer() {
             <div className="flex-1 w-full min-h-0 flex items-center justify-center py-2 px-8">
               {isVideoMode && ytVideoId ? (
                 <div className="w-full relative shadow-[0_15px_40px_rgba(0,0,0,0.5)] bg-black rounded-[8px] overflow-hidden" style={{ aspectRatio: '16/9', maxWidth: '100%' }}>
-                  {/* TWO WAY SYNC IFRAME */}
-                  <iframe ref={videoIframeRef} src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${Math.floor(currentTime)}`} style={{ width: "100%", height: "100%", border: "none" }} allow="autoplay; fullscreen" />
+                  {/* TWO WAY SYNC IFRAME USING STATIC videoStartTimeRef */}
+                  <iframe 
+                    ref={videoIframeRef} 
+                    src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${videoStartTimeRef.current}`} 
+                    style={{ width: "100%", height: "100%", border: "none" }} 
+                    allow="autoplay; fullscreen" 
+                  />
                   <button onClick={toggleVideoMode} className="absolute top-2 right-2 bg-black/60 text-white p-2 rounded-full z-50">
                      <ChevronDown size={18} />
                   </button>

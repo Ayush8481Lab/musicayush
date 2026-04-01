@@ -145,7 +145,7 @@ export default function MiniPlayer() {
   const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState<any[]>([]);
   const[syncType, setSyncType] = useState<string | null>(null);
-  const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
+  const[activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const[canvasData, setCanvasData] = useState<any>(null);
   const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
@@ -166,8 +166,11 @@ export default function MiniPlayer() {
 
   // VIDEO PLAYER STATES & REFS
   const[isVideoMode, setIsVideoMode] = useState(false);
-  const [ytVideoId, setYtVideoId] = useState<string | null>(null);
-  const[prefetchedYtId, setPrefetchedYtId] = useState<string | null>(null);
+  const[ytVideoId, setYtVideoId] = useState<string | null>(null);
+  
+  // --- PERFECT ZERO-LATENCY REF FOR VIDEO ID ---
+  const prefetchedYtIdRef = useRef<string | null>(null); 
+  
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -202,31 +205,41 @@ export default function MiniPlayer() {
   useEffect(() => {
     if (!displayTitle || !displayArtists) return;
     let isMounted = true;
-    setPrefetchedYtId(null); 
+    prefetchedYtIdRef.current = null; // Reset on new song
 
     const prefetchYT = async () => {
       try {
         const query = `${displayTitle} ${displayArtists.split(',').slice(0, 2).join(' ')} official music video`;
         const targetUrl = `https://ayushvid.vercel.app/api?q=${encodeURIComponent(query)}`;
         let data = null;
+        
+        // 1. Try Jina Proxy First
         try {
           const jinaRes = await fetch(`https://r.jina.ai/${targetUrl}`, { headers: { Accept: "application/json" }});
-          const jinaText = await jinaRes.text();
-          try { data = JSON.parse(jinaText); } 
-          catch(e) { const match = jinaText.match(/\{[\s\S]*\}/); if(match) data = JSON.parse(match[0]); }
+          const jinaPayload = await jinaRes.json();
+          
+          const contentString = jinaPayload?.data?.content || jinaPayload?.content || jinaPayload?.text || "";
+          const jsonStart = contentString.indexOf('{');
+          const jsonEnd = contentString.lastIndexOf('}');
+          
+          if (jsonStart !== -1 && jsonEnd !== -1) {
+            data = JSON.parse(contentString.substring(jsonStart, jsonEnd + 1));
+          } else if (jinaPayload?.top_result) {
+            data = jinaPayload;
+          }
         } catch (err) {}
 
+        // 2. Direct Fallback if Jina entirely failed
         if (!data?.top_result?.videoId) {
           const fallbackRes = await fetch(targetUrl);
           data = await fallbackRes.json();
         }
 
+        // 3. Store securely in Ref so button click has absolute instant access
         if (isMounted && data?.top_result?.videoId) {
-          setPrefetchedYtId(data.top_result.videoId);
+          prefetchedYtIdRef.current = data.top_result.videoId;
         }
-      } catch (err) {
-        console.error("Background YT prefetch failed or delayed.");
-      }
+      } catch (err) {}
     };
     prefetchYT();
     return () => { isMounted = false; };
@@ -249,7 +262,7 @@ export default function MiniPlayer() {
     return () => window.removeEventListener('message', handleMsg);
   }, [isVideoMode, duration]);
 
-  // Handle Play/Pause Clicks (Sends to both Audio and Video Iframe) - FIXED TYPE DEFINITION
+  // Handle Play/Pause Clicks (Sends to both Audio and Video Iframe)
   const handlePlayPauseToggle = (e?: any) => {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     const newState = !isPlaying;
@@ -263,7 +276,7 @@ export default function MiniPlayer() {
     }
   };
 
-  // Video Toggle Action (Uses Prefetched ID for Instant Load)
+  // Video Toggle Action (Uses Ref for Instant Load, Bypasses Stale State)
   const toggleVideoMode = async (e?: React.MouseEvent) => {
     if (e && e.stopPropagation) e.stopPropagation();
     
@@ -275,12 +288,12 @@ export default function MiniPlayer() {
     }
 
     // Switch to Video (Instant if pre-fetched)
-    if (prefetchedYtId) {
-      setYtVideoId(prefetchedYtId);
+    if (prefetchedYtIdRef.current) {
+      setYtVideoId(prefetchedYtIdRef.current);
       setIsVideoMode(true);
       if (audioRef.current) audioRef.current.pause();
-      setIsPlaying(false); // UI state toggles via iframe messages
-      return;
+      setIsPlaying(false); 
+      return; // 🛑 EXIT IMMEDIATELY - NO NETWORK CALL!
     }
 
     // Fallback if user taps before prefetch finishes
@@ -295,8 +308,17 @@ export default function MiniPlayer() {
       let data = null;
       try {
         const jinaRes = await fetch(`https://r.jina.ai/${targetUrl}`, { headers: { Accept: "application/json" }});
-        const jinaText = await jinaRes.text();
-        try { data = JSON.parse(jinaText); } catch (e) { const match = jinaText.match(/\{[\s\S]*\}/); if (match) data = JSON.parse(match[0]); }
+        const jinaPayload = await jinaRes.json();
+        
+        const contentString = jinaPayload?.data?.content || jinaPayload?.content || jinaPayload?.text || "";
+        const jsonStart = contentString.indexOf('{');
+        const jsonEnd = contentString.lastIndexOf('}');
+        
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          data = JSON.parse(contentString.substring(jsonStart, jsonEnd + 1));
+        } else if (jinaPayload?.top_result) {
+          data = jinaPayload;
+        }
       } catch (err) {}
 
       if (!data?.top_result?.videoId) {
@@ -306,7 +328,7 @@ export default function MiniPlayer() {
 
       if (data?.top_result?.videoId) {
         setYtVideoId(data.top_result.videoId);
-        setPrefetchedYtId(data.top_result.videoId); 
+        prefetchedYtIdRef.current = data.top_result.videoId; 
         setIsVideoMode(true);
       } else {
         if (audioRef.current) { audioRef.current.play(); setIsPlaying(true); }
@@ -325,7 +347,7 @@ export default function MiniPlayer() {
       if (idx !== -1) { setUpcomingQueue(queue.slice(idx + 1)); } 
       else { setUpcomingQueue(prev => { if (prev.length > 0 && prev[0].id === currentSong.id) return prev.slice(1); return[]; }); }
     }
-  }, [queue, currentSong]);
+  },[queue, currentSong]);
 
   // Auto Build 25 Song Recommendations Engine
   useEffect(() => {
@@ -345,9 +367,17 @@ export default function MiniPlayer() {
 
         try {
           const jinaRes = await fetch(`https://r.jina.ai/${targetUrl}`, { headers: { Accept: "application/json" } });
-          const jinaText = await jinaRes.text();
-          try { parsedData = JSON.parse(jinaText); } 
-          catch(e) { const jsonMatch = jinaText.match(/\{[\s\S]*\}/); if (jsonMatch) parsedData = JSON.parse(jsonMatch[0]); }
+          const jinaPayload = await jinaRes.json();
+          
+          const contentString = jinaPayload?.data?.content || jinaPayload?.content || jinaPayload?.text || "";
+          const jsonStart = contentString.indexOf('{');
+          const jsonEnd = contentString.lastIndexOf('}');
+          
+          if (jsonStart !== -1 && jsonEnd !== -1) {
+            parsedData = JSON.parse(contentString.substring(jsonStart, jsonEnd + 1));
+          } else if (jinaPayload?.recommendations) {
+            parsedData = jinaPayload;
+          }
         } catch (error) {}
 
         if (!parsedData || !parsedData.recommendations) {
@@ -472,12 +502,15 @@ export default function MiniPlayer() {
         } catch (e) {
           try {
             const jinaRes = await fetch(`https://r.jina.ai/${targetCanvasUrl}`, { headers: { Accept: "application/json" } });
-            const jinaData = await jinaRes.json();
-            if (jinaData && jinaData.canvasesList) canvasJson = jinaData;
-            else {
-              const proxyContent = typeof jinaData === 'string' ? jinaData : (jinaData?.data?.content || jinaData?.content || jinaData?.text || "");
-              const jsonStrMatch = proxyContent.match(/\{[\s\S]*\}/);
-              if (jsonStrMatch) canvasJson = JSON.parse(jsonStrMatch[0]);
+            const jinaPayload = await jinaRes.json();
+            const contentString = jinaPayload?.data?.content || jinaPayload?.content || jinaPayload?.text || "";
+            const jsonStart = contentString.indexOf('{');
+            const jsonEnd = contentString.lastIndexOf('}');
+            
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+              canvasJson = JSON.parse(contentString.substring(jsonStart, jsonEnd + 1));
+            } else if (jinaPayload?.canvasesList) {
+              canvasJson = jinaPayload;
             }
           } catch (fallbackError) {}
         }
@@ -530,7 +563,7 @@ export default function MiniPlayer() {
     }
   },[duration]);
 
-  // Lockscreen Media Controls Hook (FIXED EVENT BINDING ERROR)
+  // Lockscreen Media Controls Hook
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({

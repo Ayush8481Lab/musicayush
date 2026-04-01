@@ -93,7 +93,7 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const[isOverflowing, setIsOverflowing] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
 
   useEffect(() => {
     const checkOverflow = () => { if (containerRef.current && textRef.current) setIsOverflowing(textRef.current.scrollWidth > containerRef.current.clientWidth + 2); };
@@ -123,8 +123,8 @@ export default function MiniPlayer() {
   const[progress, setProgress] = useState(0);
   const[currentTime, setCurrentTime] = useState(0);
   const[duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(100);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const[volume, setVolume] = useState(100);
+  const[isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   const[isUiHidden, setIsUiHidden] = useState(false); 
@@ -141,25 +141,24 @@ export default function MiniPlayer() {
   const dragOverItem = useRef<number | null>(null);
 
   const rapidKeyIdxRef = useRef(0);
-  const [spotifyId, setSpotifyId] = useState<string | null>(null);
+  const[spotifyId, setSpotifyId] = useState<string | null>(null);
   const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
-  const [lyrics, setLyrics] = useState<any[]>([]);
+  const[lyrics, setLyrics] = useState<any[]>([]);
   const[syncType, setSyncType] = useState<string | null>(null);
-  const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
+  const[activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const[canvasData, setCanvasData] = useState<any>(null);
   const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
   const canvasVideoRef = useRef<HTMLVideoElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const videoOverlayRef = useRef<HTMLDivElement>(null);
 
+  // Queue Buffering
   const fetchedRecsFor = useRef<string | null>(null);
   const fetchingRecsRef = useRef(false);
   const[isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
   
-  const [swipeX, setSwipeX] = useState(0);
+  const[swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -175,7 +174,6 @@ export default function MiniPlayer() {
   const[isVideoLoading, setIsVideoLoading] = useState(false);
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Derive Base Variables
   const rawTitle = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
   const rawArtists = currentSong ? decodeEntities(getArtistsText(currentSong)) : "";
   const rawImage = currentSong ? getImageUrl(currentSong.image) : "";
@@ -203,7 +201,7 @@ export default function MiniPlayer() {
   });
   const uniqueArtists = Array.from(uniqueArtistsMap.values());
 
-  // --- BACKGROUND PRE-FETCH YT VIDEO ID (Zero Latency Fix) ---
+  // --- BACKGROUND PRE-FETCH YT VIDEO ID ---
   const prefetchVideoId = async (songTitle: string, songArtists: string) => {
     try {
       const query = `${songTitle} ${songArtists.split(',').slice(0, 2).join(' ')} official music video`;
@@ -223,54 +221,32 @@ export default function MiniPlayer() {
         const fallbackRes = await fetch(targetUrl);
         data = await fallbackRes.json();
       }
-
-      if (data?.top_result?.videoId) {
-        prefetchedYtIdRef.current = data.top_result.videoId;
-      }
+      if (data?.top_result?.videoId) prefetchedYtIdRef.current = data.top_result.videoId;
     } catch (err) {}
   };
 
-  // --- Handle Fast-Skipping State Cleans & Full Metadata Fetch ---
+  // Handle Initial Priorities: AUDIO First, Background Prefetch Second.
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true; 
     
-    // Instant Reset
     setSpotifyId(null); setSpotifyUrl(null); setLyrics([]); setSyncType(null); setCanvasData(null);
     setIsCanvasLoaded(false); setActiveLyricIndex(-1); setIsScrolledPastMain(false); setIsUiHidden(false);
     setSongDetails(null); prefetchedYtIdRef.current = null;
 
-    // Store instant variables to prevent stale closures
     const instantTitle = decodeEntities(currentSong.title || currentSong.name || "Unknown");
     const instantArtists = decodeEntities(getArtistsText(currentSong));
 
-    // Fire Prefetch
-    prefetchVideoId(instantTitle, instantArtists);
-
-    // Auto-Toggle Video Next Track
-    if (isVideoMode) {
-      setIsVideoLoading(true);
-      videoStartTimeRef.current = 0;
-      setTimeout(() => {
-        if (isCurrent && prefetchedYtIdRef.current) {
-          setYtVideoId(prefetchedYtIdRef.current);
-          setIsVideoLoading(false);
-        } else if (isCurrent) {
-          setIsVideoMode(false);
-          audioRef.current?.play();
-          setIsPlaying(true);
-          setIsVideoLoading(false);
-        }
-      }, 2000); // Allow prefetch to hit
-    }
-
-    const fetchUrl = async () => {
+    // 1. FASTEST PRIORITY: FETCH AUDIO URL & PLAY
+    const fetchAudio = async () => {
       setLoading(true);
       try {
         const fetchLink = encodeURIComponent(currentSong.url || currentSong.perma_url || "");
         const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${fetchLink}`);
         const json = await res.json();
+        
         if (!isCurrent) return; 
+
         if (json.data?.[0]) {
           if (currentSong.isRecommendation && currentSong.downloadUrl?.length > 0) {
             setAudioUrl(currentSong.downloadUrl[currentSong.downloadUrl.length - 1].url);
@@ -286,7 +262,29 @@ export default function MiniPlayer() {
       }
       if (isCurrent) setLoading(false);
     };
+    fetchAudio();
 
+    // 2. BACKGROUND: PREFETCH VIDEO ID
+    prefetchVideoId(instantTitle, instantArtists);
+
+    // 3. BACKGROUND: AUTO-TOGGLE VIDEO IF ALREADY IN VIDEO MODE
+    if (isVideoMode) {
+      setIsVideoLoading(true);
+      videoStartTimeRef.current = 0;
+      setTimeout(() => {
+        if (isCurrent && prefetchedYtIdRef.current) {
+          setYtVideoId(prefetchedYtIdRef.current);
+          setIsVideoLoading(false);
+        } else if (isCurrent) {
+          setIsVideoMode(false);
+          audioRef.current?.play().catch(()=>{});
+          setIsPlaying(true);
+          setIsVideoLoading(false);
+        }
+      }, 2000); 
+    }
+
+    // 4. BACKGROUND: FETCH SPOTIFY MATCH FOR LYRICS/CANVAS
     const fetchSpotifyMatch = async () => {
       const cacheKey = `spotify_match_${currentSong.id}`;
       const cachedUrl = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
@@ -301,7 +299,6 @@ export default function MiniPlayer() {
           return;
         }
       }
-      
       if (cachedUrl && cachedId) { 
          if (!isCurrent) return;
          setSpotifyId(cachedId); setSpotifyUrl(cachedUrl); return; 
@@ -332,8 +329,8 @@ export default function MiniPlayer() {
         }
       }
     };
+    fetchSpotifyMatch();
 
-    fetchUrl(); fetchSpotifyMatch();
     return () => { isCurrent = false; };
   }, [currentSong]);
 
@@ -351,13 +348,13 @@ export default function MiniPlayer() {
           }
         }
       } else if (e.data?.type === 'YTP_STATE') {
-        if (e.data.state === 1) { audioRef.current?.pause(); setIsPlaying(true); } // Playing
-        else if (e.data.state === 2) { setIsPlaying(false); } // Paused
+        if (e.data.state === 1) { audioRef.current?.pause(); setIsPlaying(true); } 
+        else if (e.data.state === 2) { setIsPlaying(false); } 
       }
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
-  },[isVideoMode, duration]);
+  }, [isVideoMode, duration]);
 
   const handlePlayPauseToggle = (e?: any) => {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -409,12 +406,11 @@ export default function MiniPlayer() {
       setYtVideoId(prefetchedYtIdRef.current);
       setIsVideoMode(true);
     } else {
-      if (audioRef.current) { audioRef.current.play(); setIsPlaying(true); }
+      if (audioRef.current) { audioRef.current.play().catch(()=>{}); setIsPlaying(true); }
     }
     setIsVideoLoading(false);
   };
 
-  // Ghost Queue Cleanup
   useEffect(() => {
     if (queue && currentSong) {
       const idx = queue.findIndex((s: any) => s.id === currentSong.id);
@@ -522,7 +518,6 @@ export default function MiniPlayer() {
       } catch (e) {}
     };
     fetchExtras();
-
     return () => { isCurrent = false; };
   }, [spotifyId, spotifyUrl]);
 
@@ -604,23 +599,10 @@ export default function MiniPlayer() {
     }
   };
 
-  // --- VIDEO SCROLL FIX ---
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const st = e.currentTarget.scrollTop;
-    if (st > 100 !== isScrolledPastMain) setIsScrolledPastMain(st > 100);
-    
-    if (videoOverlayRef.current && isExpanded) {
-      videoOverlayRef.current.style.transform = `translateX(-50%) translateY(-${st}px)`;
-    }
-  }, [isExpanded, isScrolledPastMain]);
-
-  // Reset video transform on collapse/expand
-  useEffect(() => {
-    if (videoOverlayRef.current) {
-      if (!isExpanded) videoOverlayRef.current.style.transform = 'none';
-      else videoOverlayRef.current.style.transform = `translateX(-50%) translateY(-${scrollContainerRef.current?.scrollTop || 0}px)`;
-    }
-  },[isExpanded]);
+    const scrolled = e.currentTarget.scrollTop > 100;
+    if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
+  },[isScrolledPastMain]);
 
   useEffect(() => {
     if (activeLyricRef.current && lyricsContainerRef.current) {
@@ -639,6 +621,9 @@ export default function MiniPlayer() {
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isVideoMode && videoIframeRef.current?.contentWindow) {
+      videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
+    }
     const val = parseFloat(e.target.value); setProgress(val);
     const newTime = (val / 100) * duration;
     
@@ -663,7 +648,8 @@ export default function MiniPlayer() {
   };
 
   const playNext = () => {
-    if (repeatMode === 2 && audioRef.current) { audioRef.current.currentTime = 0; audioRef.current.play(); return; }
+    if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
+    if (repeatMode === 2 && audioRef.current) { audioRef.current.currentTime = 0; audioRef.current.play().catch(()=>{}); return; }
     if (isShuffle && queue && queue.length > 0) {
       const randomIdx = Math.floor(Math.random() * queue.length);
       setCurrentSong(queue[randomIdx]); setIsPlaying(true); return;
@@ -674,6 +660,7 @@ export default function MiniPlayer() {
   };
 
   const playPrev = () => {
+    if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
     if (audioRef.current && audioRef.current.currentTime > 3) { audioRef.current.currentTime = 0; return; }
     if (!queue || queue.length === 0) return;
     const idx = queue.findIndex((s: any) => s.id === currentSong.id);
@@ -710,48 +697,6 @@ export default function MiniPlayer() {
 
       <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)} />
 
-      {/* GLOBAL FIXED VIDEO OVERLAY (Scroll Syncs Perfectly & Expands Edge-to-Edge) */}
-      <div 
-        ref={videoOverlayRef}
-        className={`fixed z-[999991] bg-black overflow-hidden shadow-2xl`}
-        style={{
-          display: isVideoMode ? "block" : "none",
-          transitionProperty: 'width, height, top, left, bottom, right, border-radius, max-width',
-          transitionDuration: '500ms',
-          transitionTimingFunction: 'cubic-bezier(0.32,0.72,0,1)',
-          ...(isExpanded ? {
-            top: 'calc(env(safe-area-inset-top) + 80px)', 
-            left: '50%',
-            transform: `translateX(-50%) translateY(-${scrollContainerRef.current?.scrollTop || 0}px)`,
-            width: '100vw', // Edge-to-Edge Expansion!
-            maxWidth: '100%',
-            aspectRatio: '16/9',
-            borderRadius: '0px',
-            pointerEvents: 'auto'
-          } : {
-            bottom: '73px', 
-            left: '16px',
-            width: '71px',  // Miniplayer 16:9 ratio
-            height: '40px',
-            transform: 'none',
-            borderRadius: '4px',
-            pointerEvents: 'none'
-          })
-        }}
-      >
-        {isVideoMode && ytVideoId && (
-          <>
-            <iframe 
-              ref={videoIframeRef} 
-              src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${videoStartTimeRef.current}`} 
-              style={{ width: "100%", height: "100%", border: "none", pointerEvents: isExpanded ? 'auto' : 'none' }} 
-              allow="autoplay; fullscreen; picture-in-picture" 
-            />
-            {!isExpanded && <div className="absolute inset-0 z-50"></div>}
-          </>
-        )}
-      </div>
-
       {/* MOBILE FULL SCREEN OVERLAY */}
       <div className={`md:hidden fixed inset-0 z-[99999] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0" : "translate-y-full"}`}>
         
@@ -769,7 +714,7 @@ export default function MiniPlayer() {
         )}
 
         {/* SCROLLABLE MAIN CONTENT */}
-        <div ref={scrollContainerRef} className="absolute inset-0 z-20 overflow-y-auto overflow-x-hidden scrollbar-hide flex flex-col pointer-events-none" onScroll={handleScroll}>
+        <div className="absolute inset-0 z-20 overflow-y-auto overflow-x-hidden scrollbar-hide flex flex-col pointer-events-none" onScroll={handleScroll}>
           
           <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto" style={{ minHeight: 'calc(100dvh - 90px)' }}>
             
@@ -783,12 +728,25 @@ export default function MiniPlayer() {
               <button className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md"><MoreHorizontal size={24} /></button>
             </div>
 
-            {/* Artwork / Video Hole Wrapper */}
+            {/* Artwork / Video Wrapper */}
             <div className={`flex-1 w-full min-h-0 flex items-center justify-center py-2 ${isVideoMode ? 'px-0' : 'px-8'}`}>
-              <div className={`relative bg-[#282828] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isCanvasLoaded && !isVideoMode ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'}`} style={{ width: '100%', aspectRatio: isVideoMode ? '16/9' : '1/1', maxWidth: isVideoMode ? '100%' : '340px', borderRadius: isVideoMode ? '0px' : '8px' }}>
-                {(loading || isVideoLoading) && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
-                <img src={displayImage} alt="cover" className={`w-full h-full object-cover transition-opacity ${isVideoMode ? 'opacity-0' : 'opacity-100'}`} />
-              </div>
+              
+              {/* ✨ PERFECTLY FIXED IFRAME (Only inside Main Player, No global floating mess) ✨ */}
+              {isVideoMode && ytVideoId ? (
+                <div className="w-full h-full max-h-[340px] relative bg-black shadow-[0_15px_40px_rgba(0,0,0,0.5)] transition-all duration-500 overflow-hidden" style={{ aspectRatio: '16/9', borderRadius: '0px' }}>
+                  <iframe 
+                    ref={videoIframeRef} 
+                    src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${videoStartTimeRef.current}`} 
+                    style={{ width: "100%", height: "100%", border: "none", pointerEvents: 'auto' }} 
+                    allow="autoplay; fullscreen; picture-in-picture" 
+                  />
+                </div>
+              ) : (
+                <div className={`relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isCanvasLoaded ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'}`} style={{ width: '100%', aspectRatio: '1/1', maxWidth: '340px' }}>
+                  {(loading || isVideoLoading) && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
+                  <img src={displayImage} alt="cover" className="w-full h-full object-cover" />
+                </div>
+              )}
             </div>
 
             {/* Bottom Controls */}
@@ -826,7 +784,7 @@ export default function MiniPlayer() {
 
               {/* Main Buttons */}
               <div className="flex items-center justify-between w-full mb-5 px-1 drop-shadow-md">
-                <button onClick={() => setIsShuffle(!isShuffle)} className={`active:opacity-50 ${isShuffle ? 'text-[#1db954]' : 'text-white'}`}><Shuffle size={24} /></button>
+                <button onClick={() => { setIsShuffle(!isShuffle); if(isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*'); }} className={`active:opacity-50 ${isShuffle ? 'text-[#1db954]' : 'text-white'}`}><Shuffle size={24} /></button>
                 <button onClick={playPrev} className="text-white active:opacity-50"><SkipBack size={36} fill="white" stroke="white" /></button>
                 
                 <button onClick={handlePlayPauseToggle} className="w-[64px] h-[64px] rounded-full bg-white flex items-center justify-center text-black active:scale-95 transition-transform shadow-lg">
@@ -834,7 +792,7 @@ export default function MiniPlayer() {
                 </button>
                 
                 <button onClick={playNext} className="text-white active:opacity-50"><SkipForward size={36} fill="white" stroke="white" /></button>
-                <button onClick={() => setRepeatMode((prev) => (prev + 1) % 3)} className={`active:opacity-50 relative ${repeatMode > 0 ? 'text-[#1db954]' : 'text-white/70'}`}>
+                <button onClick={() => { setRepeatMode((prev) => (prev + 1) % 3); if(isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*'); }} className={`active:opacity-50 relative ${repeatMode > 0 ? 'text-[#1db954]' : 'text-white/70'}`}>
                   <Repeat size={24} />
                   {repeatMode === 2 && <span className="absolute -top-1 -right-1 bg-[#1db954] text-black text-[9px] font-bold rounded-full w-3 h-3 flex items-center justify-center">1</span>}
                 </button>
@@ -1094,9 +1052,11 @@ export default function MiniPlayer() {
         <div className="absolute inset-0 bg-black/25 z-0 pointer-events-none" />
         <div className="relative z-10 w-full h-full flex items-center px-2">
           
-          <div className={`${isVideoMode ? 'w-[71px]' : 'w-[40px]'} h-[40px] flex-shrink-0 rounded-[4px] shadow-sm overflow-hidden bg-[#282828] relative mr-3 transition-all duration-300`}>
+          <div className="w-[40px] h-[40px] flex-shrink-0 rounded-[4px] shadow-sm overflow-hidden bg-[#282828] relative mr-3">
             {(loading || isVideoLoading) && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 size={16} className="animate-spin text-white" /></div>}
-            <img src={displayImage} alt="cover" className={`w-full h-full object-cover transition-opacity ${isVideoMode ? 'opacity-0' : 'opacity-100'}`} />
+            
+            {/* NEVER hides or unmounts the image in MiniPlayer. ONLY shows the banner! */}
+            <img src={displayImage} alt="cover" className="w-full h-full object-cover" />
           </div>
 
           <div className="flex flex-col flex-1 min-w-0 pr-3 justify-center">

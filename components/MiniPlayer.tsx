@@ -9,7 +9,7 @@ import { useAppContext } from "../context/AppContext";
 import { 
   Play, Pause, SkipForward, SkipBack, Loader2, ChevronDown, 
   MoreHorizontal, Shuffle, Repeat, Heart, ListMusic, 
-  MonitorSpeaker, Maximize2, Menu, Timer, Disc3, Calendar, Clock, Hash
+  MonitorSpeaker, Maximize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe
 } from "lucide-react";
 
 // --- UTILITIES ---
@@ -145,7 +145,7 @@ export default function MiniPlayer() {
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(100);
+  const[volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
   const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const [isScrolledPastMain, setIsScrolledPastMain] = useState(false);
@@ -157,14 +157,14 @@ export default function MiniPlayer() {
   const [showQueue, setShowQueue] = useState(false);
   const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const[draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
 
   const rapidKeyIdxRef = useRef(0);
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
-  const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
+  const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const[lyrics, setLyrics] = useState<any[]>([]);
   const [syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
@@ -216,8 +216,6 @@ export default function MiniPlayer() {
       if (idx !== -1) {
         setUpcomingQueue(queue.slice(idx + 1));
       } else {
-        // If current song isn't in main context queue (e.g., played from search),
-        // we slice from our local dynamic queue or clear it entirely to fetch new ones.
         setUpcomingQueue(prev => {
           if (prev.length > 0 && prev[0].id === currentSong.id) {
             return prev.slice(1);
@@ -230,9 +228,12 @@ export default function MiniPlayer() {
 
   // Load recommendations when queue is nearly empty to maintain endless play loop
   useEffect(() => {
+    // We only trigger this if we have the current spotifyUrl and it hasn't been fetched yet
     if (upcomingQueue.length <= 1 && spotifyUrl && currentSong && fetchedRecsFor.current !== currentSong.id) {
       fetchedRecsFor.current = currentSong.id;
-      setIsFetchingRecs(true);
+      setIsFetchingRecs(true); // Show buffering UI in queue sheet
+      
+      // Call API (Handles the 10-25s latency naturally asynchronously)
       fetch(`https://ayushdetaser.vercel.app/api?link=${encodeURIComponent(spotifyUrl)}`)
         .then(res => res.json())
         .then(data => {
@@ -247,8 +248,9 @@ export default function MiniPlayer() {
                 artists: rec.artist,
                 image: rec.banner_link,
                 url: rec.jiosaavn_link,
-                downloadUrl:[{ url: rec.stream_url }],
-                isRecommendation: true
+                downloadUrl: [{ url: rec.stream_url }],
+                isRecommendation: true,
+                spotifyUrl: rec.spotify_link // Passing this directly so it skips RapidAPI later!
               };
             });
             
@@ -263,7 +265,7 @@ export default function MiniPlayer() {
         .catch(console.error)
         .finally(() => { setIsFetchingRecs(false); });
     }
-  }, [upcomingQueue.length, spotifyUrl, currentSong]);
+  },[upcomingQueue.length, spotifyUrl, currentSong]);
 
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
@@ -283,7 +285,7 @@ export default function MiniPlayer() {
       navigator.mediaSession.setActionHandler('previoustrack', playPrev);
       navigator.mediaSession.setActionHandler('nexttrack', playNext);
     }
-  },[currentSong, title, artists, coverImage, contextName]);
+  }, [currentSong, title, artists, coverImage, contextName]);
 
   useEffect(() => {
     if (!currentSong) return;
@@ -318,13 +320,29 @@ export default function MiniPlayer() {
       const cacheKey = `spotify_match_${currentSong.id}`;
       const cachedUrl = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
       const cachedId = typeof window !== "undefined" ? localStorage.getItem(cacheKey + '_id') : null;
+
+      // 1. FASTEST: Is it already provided by the recommendation API mapper?
+      if (currentSong.spotifyUrl) {
+        const extractedId = currentSong.spotifyUrl.split('/track/')[1]?.split('?')[0];
+        if (extractedId) {
+          setSpotifyId(extractedId);
+          setSpotifyUrl(currentSong.spotifyUrl);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(cacheKey, currentSong.spotifyUrl);
+            localStorage.setItem(cacheKey + '_id', extractedId);
+          }
+          return;
+        }
+      }
       
+      // 2. FAST: Check local storage Cache
       if (cachedUrl && cachedId) {
         setSpotifyId(cachedId);
         setSpotifyUrl(cachedUrl);
         return;
       }
 
+      // 3. FALLBACK: Fetch via Rapid API EXACT Matcher
       const searchArtist = artists ? artists.split(',').slice(0, 3).join(' ') : "";
       const query = `${title} ${searchArtist}`.trim();
       const searchUrl = `https://${RAPID_API_HOST}/search?q=${encodeURIComponent(query)}&type=tracks&offset=0&limit=25&numberOfTopResults=5`;
@@ -355,7 +373,7 @@ export default function MiniPlayer() {
     };
 
     fetchUrl(); fetchSpotifyMatch();
-  },[currentSong, title, artists]);
+  }, [currentSong, title, artists]);
 
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
@@ -422,7 +440,7 @@ export default function MiniPlayer() {
       if (isPlaying) { const playPromise = audioRef.current.play(); if (playPromise !== undefined) playPromise.catch(() => {}); }
       else audioRef.current.pause();
     }
-  },[isPlaying, audioUrl, volume, repeatMode]);
+  }, [isPlaying, audioUrl, volume, repeatMode]);
 
   useEffect(() => {
     if (canvasVideoRef.current) {
@@ -439,7 +457,7 @@ export default function MiniPlayer() {
     if ('mediaSession' in navigator && audioRef.current && duration > 0) {
       try { navigator.mediaSession.setPositionState({ duration, playbackRate: 1, position: audioRef.current.currentTime }); } catch(e) {}
     }
-  },[duration]);
+  }, [duration]);
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
@@ -459,7 +477,7 @@ export default function MiniPlayer() {
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
-  }, [isScrolledPastMain]);
+  },[isScrolledPastMain]);
 
   useEffect(() => {
     if (activeLyricRef.current && lyricsContainerRef.current) {
@@ -485,7 +503,7 @@ export default function MiniPlayer() {
 
   const handleSort = () => {
     if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
-      const _upcomingQueue =[...upcomingQueue];
+      const _upcomingQueue = [...upcomingQueue];
       const draggedItemContent = _upcomingQueue.splice(dragItem.current, 1)[0];
       _upcomingQueue.splice(dragOverItem.current, 0, draggedItemContent);
       setUpcomingQueue(_upcomingQueue);
@@ -586,7 +604,7 @@ export default function MiniPlayer() {
             {/* Bottom Controls */}
             <div className={`w-full px-6 pb-[max(1rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 ${isUiHidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
               
-              {/* Dynamic Active Lyric Line (Spotify Style) */}
+              {/* Dynamic Active Lyric Line */}
               {syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && (
                 <div key={activeLyricIndex} className="text-white/95 text-[15px] font-bold text-left mb-2 min-h-[22px] animate-lyric-change drop-shadow-lg pr-4 line-clamp-2">
                   {lyrics[activeLyricIndex].words || "♪"}
@@ -681,11 +699,11 @@ export default function MiniPlayer() {
               </div>
             )}
 
-            {/* ALBUM COMPONENT */}
+            {/* ALBUM COMPONENT - Banner uses the song's exact cover image as requested */}
             {songDetails?.album && (
               <Link href={`/album/${songDetails.album.id}`} className="w-full mb-6 bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group">
                 <div className="absolute inset-0 z-0 pointer-events-none opacity-30" style={{ backgroundColor: dominantColor }} />
-                <img src={getImageUrl(songDetails.album.image) || coverImage} className="w-[64px] h-[64px] rounded-md object-cover relative z-10 shadow-md border border-white/5 group-hover:scale-105 transition-transform" alt="Album Cover" />
+                <img src={coverImage} className="w-[64px] h-[64px] rounded-md object-cover relative z-10 shadow-md border border-white/5 group-hover:scale-105 transition-transform" alt="Album Cover" />
                 <div className="flex flex-col relative z-10 flex-1 pr-2">
                   <span className="text-white/60 text-[11px] uppercase tracking-widest font-bold mb-1 drop-shadow-sm">Album</span>
                   <span className="text-white font-bold text-[16px] line-clamp-1 drop-shadow-md">{decodeEntities(songDetails.album.name)}</span>
@@ -696,10 +714,9 @@ export default function MiniPlayer() {
               </Link>
             )}
 
-            {/* DETAILS CARD (Release, Label, Copyright, Playcount, Duration) */}
+            {/* DETAILS CARD (Language, Release, Label, Playcount, Duration) */}
             {songDetails && (
               <div className="w-full mb-10 rounded-2xl p-5 flex flex-col gap-4 border border-white/10 shadow-2xl relative overflow-hidden">
-                {/* Background frosted artwork */}
                 <div className="absolute inset-0 z-0 bg-cover bg-center opacity-30 blur-lg scale-110" style={{ backgroundImage: `url(${coverImage})` }} />
                 <div className="absolute inset-0 z-0 bg-gradient-to-t from-black/90 via-black/60 to-black/30 pointer-events-none" />
 
@@ -733,8 +750,17 @@ export default function MiniPlayer() {
                       <span className="text-white font-bold text-[15px]">{songDetails.releaseDate || songDetails.year}</span>
                     </div>
                   )}
-                  {songDetails.label && (
+                  {songDetails.language && (
                     <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-white/50">
+                        <Globe size={12} />
+                        <span className="font-semibold text-[10px] uppercase tracking-wider">Language</span>
+                      </div>
+                      <span className="text-white font-bold text-[15px] capitalize">{songDetails.language}</span>
+                    </div>
+                  )}
+                  {songDetails.label && (
+                    <div className="flex flex-col gap-1 col-span-2">
                       <div className="flex items-center gap-1.5 text-white/50">
                         <Disc3 size={12} />
                         <span className="font-semibold text-[10px] uppercase tracking-wider">Label</span>

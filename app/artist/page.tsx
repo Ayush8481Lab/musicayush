@@ -1,17 +1,10 @@
 "use client";
-import { useEffect, useState, Suspense, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Play, ArrowLeft, Loader2, MoreVertical } from "lucide-react";
+import { Play, ArrowLeft, Loader2, MoreVertical, BadgeCheck, TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 
-// High-quality Custom Blue Tick (Premium Look)
-const VerifiedBadge = () => (
-  <svg viewBox="0 0 24 24" className="w-5 h-5 text-[#1db954] ml-1" fill="currentColor">
-    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-1.9 14.7L6 12.6l1.5-1.5 2.6 2.6 6.4-6.4 1.5 1.5-7.9 7.9z" />
-  </svg>
-);
-
-// Helper: Get highest quality image
+// --- UTILITIES ---
 const getImageUrl = (img: any, size = "500") => {
   if (!img) return `https://via.placeholder.com/${size}`;
   if (typeof img === "string") return img.replace("150x150", `${size}x${size}`).replace("50x50", `${size}x${size}`);
@@ -19,7 +12,6 @@ const getImageUrl = (img: any, size = "500") => {
   return `https://via.placeholder.com/${size}`;
 };
 
-// Helper: Decode HTML Entities cleanly
 const decodeHtml = (html: string) => {
   if (!html) return "";
   const txt = document.createElement("textarea");
@@ -27,11 +19,10 @@ const decodeHtml = (html: string) => {
   return txt.value;
 };
 
-// Helper: Format large numbers (e.g., 1.2M, 500K)
 const formatNumber = (num: number | string | null | undefined) => {
-  if (num == null || num === "") return "0";
+  if (num == null || num === "" || num === 0) return "0";
   const n = typeof num === 'string' ? parseInt(num.replace(/,/g, '')) : num;
-  if (isNaN(n)) return "0";
+  if (isNaN(n) || n === 0) return "0";
   if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
   if (n >= 1000) return (n / 1000).toFixed(1) + "K";
   return n.toString();
@@ -41,45 +32,42 @@ function ArtistContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const id = searchParams.get("id");
-  
   const { currentSong, setCurrentSong, isPlaying, setIsPlaying } = useAppContext();
   
-  // Base States
+  // --- CORE STATES ---
   const [artist, setArtist] = useState<any>(null);
-  const[albums, setAlbums] = useState<any[]>([]);
   const [singles, setSingles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Pagination & View States
-  const [currentView, setCurrentView] = useState<"main" | "all-songs" | "all-albums">("main");
-  const [songs, setSongs] = useState<any[]>([]);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const[totalSongsCount, setTotalSongsCount] = useState(0);
-  const[totalAlbumsCount, setTotalAlbumsCount] = useState(0);
+  const[view, setView] = useState<"main" | "songs" | "albums">("main");
+  const [isBioExpanded, setIsBioExpanded] = useState(false);
 
-  // Bio Expand State
-  const[isBioExpanded, setIsBioExpanded] = useState(false);
+  // --- PAGINATION STATES (SONGS) ---
+  const[songs, setSongs] = useState<any[]>([]);
+  const [songsPage, setSongsPage] = useState(0);
+  const [hasMoreSongs, setHasMoreSongs] = useState(true);
+  const [loadingMoreSongs, setLoadingMoreSongs] = useState(false);
 
-  // Initial Fetch Effect
+  // --- PAGINATION STATES (ALBUMS) ---
+  const[albums, setAlbums] = useState<any[]>([]);
+  const [albumsPage, setAlbumsPage] = useState(0);
+  const [hasMoreAlbums, setHasMoreAlbums] = useState(true);
+  const [loadingMoreAlbums, setLoadingMoreAlbums] = useState(false);
+
+  // --- 1. INITIAL DATA FETCH & FALLBACK LOGIC ---
   useEffect(() => {
     if (!id) return;
-    
     const fetchInitialData = async () => {
       setLoading(true);
       try {
-        const [mainRes, songsRes, albumsRes] = await Promise.allSettled([
+        const[mainRes, songsRes, albumsRes] = await Promise.allSettled([
           fetch(`https://ayushm-psi.vercel.app/api/artists/${id}`),
           fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/songs?page=0`),
           fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/albums?page=0`)
         ]);
 
         let mainData = null;
-        let fetchedSongs =[];
+        let fetchedSongs = [];
         let fetchedAlbums =[];
-        let sCount = 0;
-        let aCount = 0;
 
         if (mainRes.status === "fulfilled" && mainRes.value.ok) {
           const json = await mainRes.value.json();
@@ -89,393 +77,456 @@ function ArtistContent() {
         if (songsRes.status === "fulfilled" && songsRes.value.ok) {
           const json = await songsRes.value.json();
           fetchedSongs = json.data?.songs ||[];
-          sCount = json.data?.total || fetchedSongs.length;
         }
 
         if (albumsRes.status === "fulfilled" && albumsRes.value.ok) {
           const json = await albumsRes.value.json();
           fetchedAlbums = json.data?.albums ||[];
-          aCount = json.data?.total || fetchedAlbums.length;
         }
 
-        // --- FALLBACK LOGIC ---
+        // 🚨 STRICT FALLBACK LOGIC 🚨
         let finalArtist = mainData;
         if (!finalArtist && fetchedSongs.length > 0) {
-          let fallbackArtist = fetchedSongs[0].artists?.all?.find((a: any) => a.id === id) 
-                            || fetchedSongs[0].artists?.primary?.find((a: any) => a.id === id);
+          let fallbackData = fetchedSongs[0].artists?.primary?.find((a: any) => String(a.id) === String(id)) 
+                          || fetchedSongs[0].artists?.all?.find((a: any) => String(a.id) === String(id));
           
           finalArtist = {
             id: id,
-            name: fallbackArtist?.name || "Unknown Artist",
-            image: fallbackArtist?.image || fetchedSongs[0].image,
-            role: fallbackArtist?.role || "Artist",
+            name: fallbackData?.name || fetchedSongs[0].artist || "Unknown Artist",
+            image: fallbackData?.image || fetchedSongs[0].image,
+            role: fallbackData?.role || "Artist",
             isVerified: false,
-            followerCount: 0, // Fallback sets followers to 0 as requested
+            followerCount: 0, // Fallback -> 0 Followers
             bio:[]
           };
         }
 
         setArtist(finalArtist);
         setSongs(fetchedSongs);
-        setTotalSongsCount(sCount);
-        setTotalAlbumsCount(aCount);
         setAlbums(fetchedAlbums);
         setSingles(mainData?.singles ||[]);
-
-        // Initial setup for pagination
-        setHasMore(fetchedSongs.length < sCount);
+        
+        // Disable more if API returned empty/small array
+        if (fetchedSongs.length < 10) setHasMoreSongs(false);
+        if (fetchedAlbums.length < 10) setHasMoreAlbums(false);
 
       } catch (error) {
-        console.error("Error fetching artist data:", error);
+        console.error("Critical Error loading artist:", error);
       }
       setLoading(false);
     };
-
     fetchInitialData();
   }, [id]);
 
-  // Infinite Scroll Fetching Logic (Songs & Albums)
+  // --- 2. INFINITE SCROLL FETCHING (SONGS) ---
   useEffect(() => {
-    if (page === 0 || !id || currentView === "main") return;
-
-    const fetchMoreData = async () => {
-      setLoadingMore(true);
+    if (songsPage === 0 || !id) return;
+    const loadMoreSongs = async () => {
+      setLoadingMoreSongs(true);
       try {
-        const endpoint = currentView === "all-songs" ? "songs" : "albums";
-        const res = await fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/${endpoint}?page=${page}`);
+        const res = await fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/songs?page=${songsPage}`);
         const json = await res.json();
+        const newSongs = json.data?.songs ||[];
         
-        if (currentView === "all-songs") {
-          const newSongs = json.data?.songs ||[];
+        if (newSongs.length === 0) {
+          setHasMoreSongs(false);
+        } else {
           setSongs(prev => {
             const existingIds = new Set(prev.map(s => s.id));
             return[...prev, ...newSongs.filter((s: any) => !existingIds.has(s.id))];
           });
-          if (newSongs.length === 0 || songs.length + newSongs.length >= totalSongsCount) setHasMore(false);
+        }
+      } catch (err) { setHasMoreSongs(false); }
+      setLoadingMoreSongs(false);
+    };
+    loadMoreSongs();
+  },[songsPage, id]);
+
+  // --- 3. INFINITE SCROLL FETCHING (ALBUMS) ---
+  useEffect(() => {
+    if (albumsPage === 0 || !id) return;
+    const loadMoreAlbums = async () => {
+      setLoadingMoreAlbums(true);
+      try {
+        const res = await fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/albums?page=${albumsPage}`);
+        const json = await res.json();
+        const newAlbums = json.data?.albums ||[];
+        
+        if (newAlbums.length === 0) {
+          setHasMoreAlbums(false);
         } else {
-          const newAlbums = json.data?.albums ||[];
           setAlbums(prev => {
             const existingIds = new Set(prev.map(a => a.id));
             return[...prev, ...newAlbums.filter((a: any) => !existingIds.has(a.id))];
           });
-          if (newAlbums.length === 0 || albums.length + newAlbums.length >= totalAlbumsCount) setHasMore(false);
         }
-      } catch (error) {
-        console.error("Error fetching more data:", error);
-        setHasMore(false);
-      }
-      setLoadingMore(false);
+      } catch (err) { setHasMoreAlbums(false); }
+      setLoadingMoreAlbums(false);
     };
+    loadMoreAlbums();
+  }, [albumsPage, id]);
 
-    fetchMoreData();
-  },[page, currentView, id, totalSongsCount, totalAlbumsCount, songs.length, albums.length]);
-
-  // Intersection Observer for Infinite Scroll
-  const observer = useRef<IntersectionObserver | null>(null);
-  const lastElementRef = useCallback((node: any) => {
-    if (loadingMore) return;
-    if (observer.current) observer.current.disconnect();
-    observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore) {
-        setPage(prevPage => prevPage + 1);
+  // --- 4. INTERSECTION OBSERVERS ---
+  const songObserver = useRef<IntersectionObserver | null>(null);
+  const lastSongRef = useCallback((node: any) => {
+    if (loadingMoreSongs) return;
+    if (songObserver.current) songObserver.current.disconnect();
+    songObserver.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMoreSongs && view === "songs") {
+        setSongsPage(prev => prev + 1);
       }
     });
-    if (node) observer.current.observe(node);
-  },[loadingMore, hasMore]);
+    if (node) songObserver.current.observe(node);
+  },[loadingMoreSongs, hasMoreSongs, view]);
 
-  const handlePlaySong = (song: any, index: number, sourceList: any[]) => {
+  const albumObserver = useRef<IntersectionObserver | null>(null);
+  const lastAlbumRef = useCallback((node: any) => {
+    if (loadingMoreAlbums) return;
+    if (albumObserver.current) albumObserver.current.disconnect();
+    albumObserver.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMoreAlbums && view === "albums") {
+        setAlbumsPage(prev => prev + 1);
+      }
+    });
+    if (node) albumObserver.current.observe(node);
+  }, [loadingMoreAlbums, hasMoreAlbums, view]);
+
+
+  // --- PLAY HANDLER ---
+  const handlePlay = (song: any) => {
     if (currentSong?.id === song.id) {
       setIsPlaying(!isPlaying);
     } else {
-      // Logic to set queue could be added here
       setCurrentSong(song);
       setIsPlaying(true);
     }
   };
 
-  const openAllView = (type: "all-songs" | "all-albums") => {
-    setPage(0);
-    setHasMore(true);
-    setCurrentView(type);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const handleViralClick = (e: React.MouseEvent, songName: string) => {
+    e.stopPropagation(); // Prevents song from playing
+    alert(`Going viral: ${songName} 🔥`);
+    // Add real sharing or trending logic here
   };
 
-  const closeAllView = () => {
-    setCurrentView("main");
-    setPage(0);
-  };
-
+  // --- RENDER LOADERS ---
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#0f1014] text-white">
-        <div className="w-8 h-8 border-4 border-[#1e222b] border-t-[#1db954] rounded-full animate-spin"></div>
+      <div className="flex h-screen items-center justify-center bg-[#121212]">
+        <Loader2 className="animate-spin text-[#1db954]" size={48} />
       </div>
     );
   }
 
   if (!artist) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-[#0f1014] text-white">
-        <h2 className="text-xl font-bold">Artist not found</h2>
-        <button onClick={() => router.back()} className="mt-4 px-6 py-2 bg-[#1db954] text-black rounded-full font-bold">Go Back</button>
+      <div className="flex h-screen flex-col items-center justify-center bg-[#121212] text-white">
+        <h2 className="text-2xl font-bold mb-4">Artist Not Found</h2>
+        <button onClick={() => router.back()} className="px-6 py-2 bg-[#1db954] text-black rounded-full font-bold hover:scale-105">
+          Go Back
+        </button>
       </div>
     );
   }
 
-  const bioText = artist.bio && artist.bio.length > 0 ? decodeHtml(artist.bio[0].text) : "";
-  const roleDisplay = artist.dominantType || artist.role || "Artist";
+  // Common UI Variables
+  const followerCount = formatNumber(artist.followerCount);
+  const bioHtml = artist.bio && artist.bio.length > 0 ? decodeHtml(artist.bio[0].text) : "";
 
-  // ==============================
-  // VIEW: ALL SONGS OR ALL ALBUMS
-  // ==============================
-  if (currentView === "all-songs" || currentView === "all-albums") {
-    const isSongs = currentView === "all-songs";
-    const dataList = isSongs ? songs : albums;
-    const title = isSongs ? "All Songs" : "All Albums";
-
+  // ==========================================
+  // VIEW: ALL SONGS (Infinite Scroll)
+  // ==========================================
+  if (view === "songs") {
     return (
-      <div className="pb-32 min-h-screen bg-[#0f1014] text-white">
-        <div className="sticky top-0 z-30 bg-[#0f1014]/95 backdrop-blur-md px-5 py-4 flex items-center border-b border-white/5">
-          <button onClick={closeAllView} className="p-2 mr-3 bg-black/40 rounded-full active:scale-90 transition-transform">
-            <ArrowLeft size={20} />
+      <div className="min-h-screen bg-[#121212] text-white pb-32">
+        <div className="sticky top-0 z-50 bg-[#121212]/90 backdrop-blur-md p-4 flex items-center shadow-md">
+          <button onClick={() => setView("main")} className="p-2 mr-2 bg-white/10 rounded-full hover:bg-white/20 transition">
+            <ArrowLeft size={24} />
           </button>
-          <div>
-            <h1 className="text-xl font-extrabold truncate text-white leading-tight">{title}</h1>
-            <p className="text-xs text-[#aeb6c4] font-medium">{artist.name}</p>
-          </div>
+          <h1 className="text-xl font-bold truncate">All Songs</h1>
         </div>
-        
-        <div className={isSongs ? "px-5 flex flex-col pt-4" : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-5"}>
-          {dataList.map((item: any, index: number) => {
-            const isLastElement = index === dataList.length - 1;
-            
-            if (isSongs) {
-              const isCurrent = currentSong?.id === item.id;
-              return (
-                <div 
-                  ref={isLastElement ? lastElementRef : null}
-                  key={item.id + index} 
-                  onClick={() => handlePlaySong(item, index, dataList)} 
-                  className={`flex items-center py-2.5 border-b border-white/5 cursor-pointer active:bg-white/5 transition-colors`}
-                >
-                  <img src={getImageUrl(item.image, "50")} className="w-[50px] h-[50px] rounded object-cover flex-shrink-0 bg-[#222] mr-3.5" alt={item.name} />
-                  <div className="flex-1 min-w-0">
-                    <h4 className={`text-[14px] font-medium truncate mb-0.5 ${isCurrent ? "text-[#1db954]" : "text-white"}`}>
-                      {decodeHtml(item.name || item.title)}
+        <div className="px-4 mt-2">
+          {songs.map((song, idx) => {
+            const isCurrent = currentSong?.id === song.id;
+            return (
+              <div 
+                ref={idx === songs.length - 1 ? lastSongRef : null}
+                key={`${song.id}-${idx}`} 
+                onClick={() => handlePlay(song)}
+                className="group flex items-center justify-between p-3 rounded-md hover:bg-white/10 cursor-pointer transition"
+              >
+                <div className="flex items-center gap-4 flex-1 overflow-hidden">
+                  <span className="w-6 text-center text-[#a7a7a7] text-sm font-medium">{idx + 1}</span>
+                  <img src={getImageUrl(song.image, "150")} className="w-12 h-12 rounded object-cover shadow-lg bg-[#282828]" />
+                  <div className="flex-1 truncate">
+                    <h4 className={`text-[15px] font-semibold truncate ${isCurrent ? "text-[#1db954]" : "text-white"}`}>
+                      {decodeHtml(song.name || song.title)}
                     </h4>
-                    <p className="text-[12px] text-[#aeb6c4] truncate">{decodeHtml(item.subtitle || artist.name)}</p>
+                    <p className="text-[13px] text-[#a7a7a7] truncate">{decodeHtml(song.subtitle || artist.name)}</p>
                   </div>
-                  <MoreVertical size={18} className="text-[#aeb6c4]" />
                 </div>
-              );
-            } else {
-              // Albums Grid
-              return (
-                <div 
-                  ref={isLastElement ? lastElementRef : null}
-                  key={item.id + index} 
-                  onClick={() => router.push(`/album?link=${encodeURIComponent(item.url || item.perma_url)}`)} 
-                  className="cursor-pointer active:scale-95 transition-transform"
-                >
-                  <img src={getImageUrl(item.image, "250")} alt={item.name} className="w-full aspect-square rounded-lg object-cover bg-[#222] mb-2" />
-                  <h3 className="text-[13px] font-semibold text-white truncate">{decodeHtml(item.name || item.title)}</h3>
-                  <p className="text-[11px] text-[#aeb6c4] capitalize truncate">{item.year || 'Album'}</p>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={(e) => handleViralClick(e, song.name)} 
+                    className="p-2 rounded-full text-orange-400 hover:bg-orange-400/20 transition-all shadow-[0_0_10px_rgba(251,146,60,0.2)]"
+                    title="Viral Action"
+                  >
+                    <TrendingUp size={20} />
+                  </button>
+                  <button className="p-2 text-[#a7a7a7] hover:text-white transition"><MoreVertical size={20} /></button>
                 </div>
-              );
-            }
+              </div>
+            );
           })}
-          
-          {loadingMore && (
-            <div className="py-6 flex justify-center col-span-full">
-              <div className="w-6 h-6 border-2 border-[#1e222b] border-t-[#1db954] rounded-full animate-spin"></div>
-            </div>
-          )}
+          {loadingMoreSongs && <div className="py-6 flex justify-center"><Loader2 className="animate-spin text-[#1db954]" size={30} /></div>}
         </div>
       </div>
     );
   }
 
-  // ==============================
-  // VIEW: MAIN ARTIST PROFILE
-  // ==============================
+  // ==========================================
+  // VIEW: ALL ALBUMS (Infinite Scroll)
+  // ==========================================
+  if (view === "albums") {
+    return (
+      <div className="min-h-screen bg-[#121212] text-white pb-32">
+        <div className="sticky top-0 z-50 bg-[#121212]/90 backdrop-blur-md p-4 flex items-center shadow-md">
+          <button onClick={() => setView("main")} className="p-2 mr-2 bg-white/10 rounded-full hover:bg-white/20 transition">
+            <ArrowLeft size={24} />
+          </button>
+          <h1 className="text-xl font-bold truncate">All Albums</h1>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 p-4">
+          {albums.map((album, idx) => (
+            <div 
+              ref={idx === albums.length - 1 ? lastAlbumRef : null}
+              key={`${album.id}-${idx}`} 
+              onClick={() => router.push(`/album?link=${encodeURIComponent(album.url || album.perma_url)}`)}
+              className="bg-[#181818] p-3 rounded-lg hover:bg-[#282828] transition cursor-pointer"
+            >
+              <img src={getImageUrl(album.image, "250")} className="w-full aspect-square rounded-md shadow-lg mb-3 object-cover" />
+              <h3 className="text-[14px] font-bold text-white truncate">{decodeHtml(album.name || album.title)}</h3>
+              <p className="text-[13px] text-[#a7a7a7] mt-1 capitalize">{album.year || "Album"}</p>
+            </div>
+          ))}
+        </div>
+        {loadingMoreAlbums && <div className="py-6 flex justify-center w-full"><Loader2 className="animate-spin text-[#1db954]" size={30} /></div>}
+      </div>
+    );
+  }
+
+  // ==========================================
+  // VIEW: MAIN ARTIST PROFILE (SPOTIFY STYLE)
+  // ==========================================
   return (
-    <div className="pb-32 min-h-screen bg-[#0f1014] text-white">
-      {/* Dynamic Scoped Styles for UI identical to HTML template */}
+    <div className="min-h-screen bg-[#121212] text-white pb-32 overflow-x-hidden">
+      
+      {/* SCOPED CSS FOR 2-ROW HORIZONTAL SCROLL & HIDING SCROLLBARS */}
       <style dangerouslySetInnerHTML={{__html: `
-        .grid-scroll-multi {
+        .grid-2-rows {
           display: grid;
           grid-template-rows: repeat(2, auto);
           grid-auto-flow: column;
+          gap: 16px;
           overflow-x: auto;
-          gap: 15px;
-          padding: 0 20px 10px;
           scroll-snap-type: x mandatory;
-          scrollbar-width: none;
+          scrollbar-width: none; /* Firefox */
         }
-        .grid-scroll-multi::-webkit-scrollbar { display: none; }
-        .lib-card {
+        .grid-2-rows::-webkit-scrollbar { display: none; /* Chrome/Safari */ }
+        .grid-card {
           width: 140px;
           scroll-snap-align: start;
-          cursor: pointer;
         }
-        .lib-card:active img { transform: scale(0.95); opacity: 0.8; }
-        .lib-card img {
-          width: 100%;
-          aspect-ratio: 1/1;
-          object-fit: cover;
-          border-radius: 8px;
-          margin-bottom: 8px;
-          transition: transform 0.2s;
-          background: #222;
+        @media (min-width: 768px) {
+          .grid-card { width: 170px; }
         }
       `}} />
 
-      {/* ---------------- HERO HEADER ---------------- */}
-      {/* Gradient matches the original HTML: Lighter gray/black mix dropping into #0f1014 */}
-      <div className="relative pt-20 pb-6 bg-gradient-to-b from-[#333333] to-[#0f1014] flex flex-col items-center text-center overflow-hidden">
-        
-        <button onClick={() => router.back()} className="absolute top-5 left-5 w-10 h-10 bg-black/40 rounded-full flex items-center justify-center z-10 active:scale-90 transition-transform">
-          <ArrowLeft size={18} className="text-white" />
+      {/* --- HERO BANNER --- */}
+      <div className="relative h-[45vh] md:h-[50vh] w-full flex items-end">
+        {/* Dynamic Image Background with Blur */}
+        <div 
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: `url(${getImageUrl(artist.image, "500")})` }}
+        />
+        {/* Gradient Overlay (Spotify exact logic) */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#121212] via-[#121212]/80 to-transparent" />
+        <div className="absolute inset-0 bg-black/20" />
+
+        <button onClick={() => router.back()} className="absolute top-6 left-4 p-2 bg-black/40 hover:bg-black/60 rounded-full backdrop-blur-sm transition z-20">
+          <ArrowLeft size={24} className="text-white" />
         </button>
 
-        <div className="w-[160px] h-[160px] rounded-full shadow-[0_10px_30px_rgba(0,0,0,0.5)] mb-4 relative z-10 bg-[#222]">
-          <img 
-            src={getImageUrl(artist.image)} 
-            alt={artist.name}
-            className="w-full h-full rounded-full object-cover" 
-          />
-        </div>
-
-        <h2 className="text-[22px] font-extrabold text-white flex items-center justify-center gap-1 z-10 px-4 leading-tight">
-          {decodeHtml(artist.name)}
-          {artist.isVerified && <VerifiedBadge />}
-        </h2>
-        
-        <p className="text-[14px] text-[#aeb6c4] mt-1 z-10 capitalize max-w-[90%] truncate">
-          {roleDisplay}
-        </p>
-
-        <div className="text-[12px] text-[#aaa] font-medium mt-2 z-10 flex items-center gap-2">
-          <span>{formatNumber(artist.followerCount)} Followers</span>
-          {totalSongsCount > 0 && <span>• {totalSongsCount} Songs</span>}
-          {totalAlbumsCount > 0 && <span>• {totalAlbumsCount} Albums</span>}
+        <div className="relative z-10 px-5 md:px-8 pb-6 w-full">
+          <div className="flex items-center gap-2 text-[#a7a7a7] text-sm font-semibold mb-2 uppercase tracking-widest">
+            {artist.isVerified && <BadgeCheck className="text-blue-400" size={20} fill="currentColor" stroke="white" />}
+            {artist.isVerified ? "Verified Artist" : (artist.role || artist.dominantType || "Artist")}
+          </div>
+          <h1 className="text-5xl md:text-7xl font-black text-white tracking-tighter mb-4 shadow-sm">
+            {decodeHtml(artist.name)}
+          </h1>
+          <p className="text-[15px] font-medium text-[#a7a7a7]">
+            {followerCount} monthly listeners
+          </p>
         </div>
       </div>
 
-      {/* ---------------- ACTION BUTTONS & BIO ---------------- */}
-      <div className="px-5 mt-2 flex flex-col items-center gap-4">
+      {/* --- ACTION BUTTONS --- */}
+      <div className="px-5 md:px-8 py-4 flex items-center gap-6 relative z-20 bg-gradient-to-b from-[#121212]/50 to-[#121212]">
         {songs.length > 0 && (
           <button 
-            onClick={() => handlePlaySong(songs[0], 0, songs)} 
-            className="bg-[#1db954] text-white px-8 py-2.5 rounded-full font-bold text-[14px] uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-transform"
+            onClick={() => handlePlay(songs[0])} 
+            className="w-14 h-14 bg-[#1db954] hover:bg-[#1ed760] hover:scale-105 active:scale-95 flex items-center justify-center rounded-full transition-all shadow-[0_8px_8px_rgba(0,0,0,0.3)]"
           >
-            <Play fill="currentColor" size={16} /> Play
+            <Play fill="black" size={24} className="text-black ml-1" />
           </button>
         )}
-
-        {bioText && (
-          <div className="w-full text-center text-[13px] text-[#aeb6c4] leading-relaxed mt-2">
-            {isBioExpanded ? bioText : `${bioText.substring(0, 140)}${bioText.length > 140 ? '...' : ''}`}
-            {bioText.length > 140 && (
-              <span 
-                onClick={() => setIsBioExpanded(!isBioExpanded)}
-                className="text-[#1db954] font-bold ml-2 cursor-pointer uppercase text-[11px]"
-              >
-                {isBioExpanded ? "Read Less" : "Read More"}
-              </span>
-            )}
-          </div>
-        )}
+        <button className="border border-[#878787] hover:border-white px-6 py-1.5 rounded-full text-sm font-bold tracking-widest uppercase transition-colors">
+          Follow
+        </button>
       </div>
 
-      {/* ---------------- TOP SONGS (10 Items) ---------------- */}
+      {/* --- TOP 10 SONGS --- */}
       {songs.length > 0 && (
-        <div className="mt-8">
-          <div className="flex justify-between items-center px-5 mb-4">
-            <span className="text-[18px] font-bold text-white">Top Songs</span>
-            {songs.length > 10 && (
-              <span onClick={() => openAllView("all-songs")} className="text-[12px] font-bold text-[#1db954] uppercase cursor-pointer tracking-wide">
-                View All
-              </span>
-            )}
-          </div>
-          
-          <div className="px-5 flex flex-col">
-            {songs.slice(0, 10).map((song: any, index: number) => {
+        <div className="px-5 md:px-8 mt-6">
+          <h2 className="text-2xl font-bold mb-4">Popular</h2>
+          <div className="flex flex-col">
+            {songs.slice(0, 10).map((song: any, idx: number) => {
               const isCurrent = currentSong?.id === song.id;
               return (
                 <div 
-                  key={song.id + index} 
-                  onClick={() => handlePlaySong(song, index, songs)} 
-                  className="flex items-center py-2.5 border-b border-white/5 cursor-pointer active:bg-white/5 transition-colors"
+                  key={song.id + idx} 
+                  onClick={() => handlePlay(song)}
+                  className="group flex items-center justify-between py-2 px-2 md:px-4 rounded-md hover:bg-white/10 transition cursor-pointer"
                 >
-                  <span className="w-5 text-center text-[#666] text-[12px] mr-2.5 font-medium">{index + 1}</span>
-                  <img src={getImageUrl(song.image, "50")} className="w-[50px] h-[50px] rounded object-cover flex-shrink-0 bg-[#222] mr-3.5" alt={song.name} />
-                  
-                  <div className="flex-1 min-w-0">
-                    <h4 className={`text-[14px] font-medium truncate mb-0.5 ${isCurrent ? "text-[#1db954]" : "text-white"}`}>
-                      {decodeHtml(song.name || song.title)}
-                    </h4>
-                    <p className="text-[12px] text-[#aeb6c4] truncate">{decodeHtml(song.subtitle || artist.name)}</p>
+                  <div className="flex items-center gap-4 flex-1 overflow-hidden">
+                    <span className="w-5 text-right text-[#a7a7a7] text-sm font-medium group-hover:hidden">{idx + 1}</span>
+                    <Play size={16} fill="white" className="w-5 hidden group-hover:block text-white" />
+                    
+                    <img src={getImageUrl(song.image, "150")} className="w-10 h-10 object-cover shadow-md" />
+                    
+                    <div className="flex-1 truncate">
+                      <h4 className={`text-[15px] font-medium truncate ${isCurrent ? "text-[#1db954]" : "text-white"}`}>
+                        {decodeHtml(song.name || song.title)}
+                      </h4>
+                    </div>
                   </div>
-                  <MoreVertical size={18} className="text-[#aeb6c4]" />
+
+                  <div className="flex items-center gap-3">
+                    {/* VIRAL BUTTON */}
+                    <button 
+                      onClick={(e) => handleViralClick(e, song.name)}
+                      className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-2 rounded-full text-orange-400 hover:text-white hover:bg-orange-500 transition-all shadow-[0_0_8px_rgba(251,146,60,0.2)]"
+                      title="Make it Viral"
+                    >
+                      <TrendingUp size={18} />
+                    </button>
+                    <button className="text-[#a7a7a7] hover:text-white p-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+                      <MoreVertical size={18} />
+                    </button>
+                  </div>
                 </div>
-              )
+              );
             })}
           </div>
+          {songs.length > 10 && (
+            <button 
+              onClick={() => setView("songs")}
+              className="mt-4 text-[13px] font-bold text-[#a7a7a7] hover:text-white uppercase tracking-widest px-2 transition-colors"
+            >
+              See More
+            </button>
+          )}
         </div>
       )}
 
-      {/* ---------------- ALBUMS (2 Row Horizontal Scroll) ---------------- */}
+      {/* --- ALBUMS (2 Lines Side Scrollable) --- */}
       {albums.length > 0 && (
-        <div className="mt-10">
-          <div className="flex justify-between items-center px-5 mb-4">
-            <span className="text-[18px] font-bold text-white">Albums</span>
-            {totalAlbumsCount > 10 && (
-              <span onClick={() => openAllView("all-albums")} className="text-[12px] font-bold text-[#1db954] uppercase cursor-pointer tracking-wide">
-                All Albums
+        <div className="px-5 md:px-8 mt-12">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold hover:underline cursor-pointer" onClick={() => setView("albums")}>Discography</h2>
+            {albums.length > 10 && (
+              <span onClick={() => setView("albums")} className="text-sm font-bold text-[#a7a7a7] hover:text-white cursor-pointer transition">
+                Show all
               </span>
             )}
           </div>
           
-          <div className="grid-scroll-multi">
-            {albums.map((album: any, index: number) => (
+          <div className="grid-2-rows pb-4">
+            {albums.map((album: any, idx: number) => (
               <div 
-                key={album.id + index} 
-                onClick={() => router.push(`/album?link=${encodeURIComponent(album.url || album.perma_url)}`)} 
-                className="lib-card"
+                key={album.id + idx}
+                onClick={() => router.push(`/album?link=${encodeURIComponent(album.url || album.perma_url)}`)}
+                className="grid-card bg-[#181818] p-3 rounded-lg hover:bg-[#282828] transition group"
               >
-                <img src={getImageUrl(album.image, "250")} alt={album.name} loading="lazy" />
-                <h3 className="text-[13px] font-semibold text-white truncate">{decodeHtml(album.name || album.title)}</h3>
-                <p className="text-[11px] text-[#aeb6c4] capitalize truncate">{album.year || "Album"}</p>
+                <div className="relative w-full aspect-square mb-3 shadow-lg rounded-md overflow-hidden bg-[#222]">
+                  <img src={getImageUrl(album.image, "250")} alt={album.name} className="w-full h-full object-cover" loading="lazy" />
+                  {/* Hover Play Button */}
+                  <div className="absolute bottom-2 right-2 w-10 h-10 bg-[#1db954] rounded-full flex items-center justify-center opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all shadow-xl">
+                    <Play fill="black" size={20} className="text-black ml-1" />
+                  </div>
+                </div>
+                <h3 className="text-[14px] font-bold text-white truncate">{decodeHtml(album.name || album.title)}</h3>
+                <p className="text-[13px] text-[#a7a7a7] mt-1 capitalize truncate">{album.year || "Album"}</p>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* ---------------- SINGLES (2 Row Horizontal Scroll) ---------------- */}
+      {/* --- SINGLES (2 Lines Side Scrollable) --- */}
       {singles.length > 0 && (
-        <div className="mt-6 mb-8">
-          <div className="px-5 mb-4">
-            <span className="text-[18px] font-bold text-white">Singles & EPs</span>
-          </div>
-          <div className="grid-scroll-multi">
-            {singles.map((single: any, index: number) => (
+        <div className="px-5 md:px-8 mt-8">
+          <h2 className="text-2xl font-bold mb-4">Singles & EPs</h2>
+          <div className="grid-2-rows pb-4">
+            {singles.map((single: any, idx: number) => (
               <div 
-                key={single.id + index} 
-                onClick={() => router.push(`/album?link=${encodeURIComponent(single.url || single.perma_url)}`)} 
-                className="lib-card"
+                key={single.id + idx}
+                onClick={() => router.push(`/album?link=${encodeURIComponent(single.url || single.perma_url)}`)}
+                className="grid-card bg-[#181818] p-3 rounded-lg hover:bg-[#282828] transition group"
               >
-                <img src={getImageUrl(single.image, "250")} alt={single.name} loading="lazy" />
-                <h3 className="text-[13px] font-semibold text-white truncate">{decodeHtml(single.name || single.title)}</h3>
-                <p className="text-[11px] text-[#aeb6c4] capitalize truncate">{single.year || "Single"}</p>
+                <div className="relative w-full aspect-square mb-3 shadow-lg rounded-md overflow-hidden bg-[#222]">
+                  <img src={getImageUrl(single.image, "250")} alt={single.name} className="w-full h-full object-cover" loading="lazy" />
+                </div>
+                <h3 className="text-[14px] font-bold text-white truncate">{decodeHtml(single.name || single.title)}</h3>
+                <p className="text-[13px] text-[#a7a7a7] mt-1 capitalize truncate">{single.year || "Single"}</p>
               </div>
             ))}
           </div>
         </div>
       )}
 
+      {/* --- ARTIST BIO --- */}
+      {bioText && (
+        <div className="px-5 md:px-8 mt-12 mb-8">
+          <h2 className="text-2xl font-bold mb-4">About</h2>
+          <div 
+            onClick={() => setIsBioExpanded(!isBioExpanded)}
+            className="group relative bg-[#181818] hover:bg-[#282828] transition p-6 rounded-xl cursor-pointer"
+          >
+            {/* Bio Header with Follower Count again for aesthetic */}
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-16 h-16 rounded-full overflow-hidden bg-[#222]">
+                <img src={getImageUrl(artist.image, "150")} className="w-full h-full object-cover" />
+              </div>
+              <div>
+                <p className="text-white font-bold text-lg">{formatNumber(artist.followerCount)}</p>
+                <p className="text-[#a7a7a7] text-sm uppercase font-semibold tracking-widest">Followers</p>
+              </div>
+            </div>
+
+            <p className="text-[#a7a7a7] text-[15px] leading-relaxed">
+              {isBioExpanded ? bioText : `${bioText.substring(0, 200)}${bioText.length > 200 ? '...' : ''}`}
+            </p>
+
+            {bioText.length > 200 && (
+              <div className="flex items-center gap-1 text-white font-bold mt-4 group-hover:underline">
+                {isBioExpanded ? "Show Less" : "Read More"}
+                {isBioExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -483,8 +534,8 @@ function ArtistContent() {
 export default function ArtistPage() {
   return (
     <Suspense fallback={
-      <div className="flex h-screen items-center justify-center bg-[#0f1014] text-white">
-        <div className="w-8 h-8 border-4 border-[#1e222b] border-t-[#1db954] rounded-full animate-spin"></div>
+      <div className="flex h-screen items-center justify-center bg-[#121212]">
+        <Loader2 className="animate-spin text-[#1db954]" size={48} />
       </div>
     }>
       <ArtistContent />

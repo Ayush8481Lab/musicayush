@@ -37,21 +37,21 @@ function ArtistContent() {
   const { setCurrentSong, setIsPlaying } = useAppContext();
   
   // --- States ---
-  const[artist, setArtist] = useState<any>(null);
+  const [artist, setArtist] = useState<any>(null);
   
-  const [topSongs, setTopSongs] = useState<any[]>([]);
+  const[topSongs, setTopSongs] = useState<any[]>([]);
   const [allSongs, setAllSongs] = useState<any[]>([]);
   const [totalSongsCount, setTotalSongsCount] = useState<number>(0);
   
-  const[topAlbums, setTopAlbums] = useState<any[]>([]);
-  const [allAlbums, setAllAlbums] = useState<any[]>([]);
+  const [topAlbums, setTopAlbums] = useState<any[]>([]);
+  const[allAlbums, setAllAlbums] = useState<any[]>([]);
   const [totalAlbumsCount, setTotalAlbumsCount] = useState<number>(0);
   
   const [singles, setSingles] = useState<any[]>([]);
-  const[totalSinglesCount, setTotalSinglesCount] = useState<number>(0);
+  const [totalSinglesCount, setTotalSinglesCount] = useState<number>(0);
   
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'main' | 'songs' | 'albums' | 'singles'>('main');
+  const [viewMode, setViewMode] = useState<'main' | 'songs' | 'albums'>('main');
   
   // --- Infinite Scroll States ---
   const [songPage, setSongPage] = useState(0);
@@ -64,7 +64,7 @@ function ArtistContent() {
 
   // UI Refs
   const observerRef = useRef<HTMLDivElement | null>(null);
-  const[restoredScrollPos, setRestoredScrollPos] = useState<number | null>(null);
+  const [restoredScrollPos, setRestoredScrollPos] = useState<number | null>(null);
 
   // --- 1. Core Data Fetching & Caching ---
   useEffect(() => {
@@ -101,7 +101,7 @@ function ArtistContent() {
     const fetchInitialData = async () => {
       setLoading(true);
       try {
-        const[artistRes, songsRes, albumsRes] = await Promise.allSettled([
+        const [artistRes, songsRes, albumsRes] = await Promise.allSettled([
           fetch(`https://ayushm-psi.vercel.app/api/artists/${id}`).then(r => r.json()),
           fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/songs?page=0`).then(r => r.json()),
           fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/albums?page=0`).then(r => r.json())
@@ -127,7 +127,6 @@ function ArtistContent() {
             setTotalSinglesCount(apiSingles.length);
           }
         } else if (fetchedSongs.length > 0) {
-          // Robust Fallback Extracting from Songs
           const firstSong = fetchedSongs[0];
           const primaryArtist = firstSong.artists?.primary?.find((a: any) => String(a.id) === String(id)) || firstSong.artists?.all?.[0];
           if (primaryArtist) {
@@ -143,7 +142,6 @@ function ArtistContent() {
         if (albumsRes.status === "fulfilled" && albumsRes.value.data) {
           const rawAlbums = albumsRes.value.data.albums ||[];
           
-          // Filter to strictly albums (songCount > 1) and strictly singles (songCount === 1)
           const pureAlbums = rawAlbums.filter((a: any) => a.songCount > 1 || !a.songCount);
           const pureSingles = rawAlbums.filter((a: any) => a.songCount === 1);
 
@@ -166,16 +164,16 @@ function ArtistContent() {
     fetchInitialData();
   }, [id]);
 
-  // Handle precise scroll restoration after DOM is painted
+  // Handle precise scroll restoration securely
   useEffect(() => {
     if (restoredScrollPos !== null && !loading) {
       const timer = setTimeout(() => {
         window.scrollTo({ top: restoredScrollPos, behavior: "instant" });
         setRestoredScrollPos(null);
-      }, 150); // Ensures Grid items are rendered
+      }, 150); 
       return () => clearTimeout(timer);
     }
-  },[restoredScrollPos, loading, viewMode, allSongs, allAlbums]);
+  }, [restoredScrollPos, loading]); // Dependency explicitly optimized to prevent accidental jump re-triggers
 
   // --- 2. Navigation Wrapper (Saves state & exact scroll) ---
   const handleNavigate = (url: string) => {
@@ -214,7 +212,7 @@ function ArtistContent() {
         const unique = newBatch.filter(s => !existingIds.has(s.id));
         
         if (unique.length === 0) {
-          setHasMoreSongs(false); // SAFELY STOP JUMPING BUG
+          setHasMoreSongs(false); 
           return prev;
         }
         
@@ -231,7 +229,7 @@ function ArtistContent() {
   const loadMoreAlbumsBatch = useCallback(async () => {
     if (isFetchingAlbumsRef.current || !hasMoreAlbums || !id) return;
     isFetchingAlbumsRef.current = true;
-    setAlbumPage(prev => prev); 
+    setAlbumPage(prev => prev); // Trigger loader UI
 
     try {
       const promises = Array.from({ length: 5 }, (_, i) => 
@@ -242,7 +240,7 @@ function ArtistContent() {
       let newBatch: any[] =[];
       results.forEach(res => {
         if (res.status === 'fulfilled' && res.value.data?.albums) {
-          newBatch =[...newBatch, ...res.value.data.albums];
+          newBatch = [...newBatch, ...res.value.data.albums];
         }
       });
 
@@ -251,7 +249,7 @@ function ArtistContent() {
         const unique = newBatch.filter(a => !existingIds.has(a.id) && (a.songCount > 1 || !a.songCount));
         
         if (unique.length === 0) {
-          setHasMoreAlbums(false); // SAFELY STOP JUMPING BUG
+          setHasMoreAlbums(false); 
           return prev;
         }
         
@@ -265,7 +263,7 @@ function ArtistContent() {
     }
   },[id, albumPage, hasMoreAlbums]);
 
-  // Trigger Observer
+  // Observer Trigger
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting) {
@@ -276,7 +274,7 @@ function ArtistContent() {
 
     if (observerRef.current) observer.observe(observerRef.current);
     return () => observer.disconnect();
-  },[loadMoreSongsBatch, loadMoreAlbumsBatch, viewMode]);
+  }, [loadMoreSongsBatch, loadMoreAlbumsBatch, viewMode]);
 
 
   if (loading) return <div className="flex h-screen items-center justify-center bg-neutral-950"><Loader2 className="animate-spin text-white" size={40} /></div>;
@@ -284,10 +282,10 @@ function ArtistContent() {
 
   const playSong = (song: any) => { setCurrentSong(song); setIsPlaying(true); };
 
-  // --- UI COMPONENTS ---
+  // --- UI REUSABLE COMPONENTS ---
 
   const ViewAllHeader = ({ title, countLabel }: { title: string, countLabel: string }) => (
-    <div className="sticky top-0 bg-neutral-900/90 backdrop-blur-2xl z-40 -mx-4 px-4 py-3 md:py-4 mb-6 flex items-center gap-4 shadow-lg border-b border-white/5">
+    <div className="sticky top-0 bg-neutral-950/80 backdrop-blur-xl z-40 -mx-4 px-4 py-3 md:py-4 mb-6 flex items-center gap-4 shadow-lg border-b border-white/5">
       <button onClick={() => { setViewMode('main'); window.scrollTo(0, 0); }} className="p-2.5 bg-white/10 rounded-full hover:bg-white/20 text-white transition-all">
         <ArrowLeft size={22} />
       </button>
@@ -300,7 +298,7 @@ function ArtistContent() {
   );
 
   const SongItem = ({ song, index }: { song: any, index: number }) => (
-    <div key={`${song.id}-${index}`} onClick={() => playSong(song)} className="flex items-center gap-3 md:gap-4 p-2.5 md:p-3 rounded-xl hover:bg-white/5 cursor-pointer group transition-colors">
+    <div key={`song-${song.id}-${index}`} onClick={() => playSong(song)} className="flex items-center gap-3 md:gap-4 p-2.5 md:p-3 rounded-xl hover:bg-white/5 cursor-pointer group transition-colors">
       <span className="text-neutral-500 text-sm font-medium w-6 text-center group-hover:text-white">{index + 1}</span>
       <img src={getImageUrl(song.image)} className="w-12 h-12 rounded-md object-cover shadow-sm bg-neutral-800" />
       <div className="flex-1 overflow-hidden">
@@ -315,7 +313,7 @@ function ArtistContent() {
   const TwoLineCards = ({ items, type }: { items: any[], type: string }) => (
     <div className="grid grid-rows-2 grid-flow-col gap-4 md:gap-6 overflow-x-auto snap-x hide-scrollbar pb-6 pt-2 auto-cols-[115px] sm:auto-cols-[140px] md:auto-cols-[170px] scroll-smooth">
       {items.map((item: any, index: number) => (
-        <div key={`${item.id}-${index}`} onClick={() => handleNavigate(`/album?link=${encodeURIComponent(item.url)}`)} className="snap-start flex flex-col cursor-pointer group">
+        <div key={`scroll-${item.id}-${index}`} onClick={() => handleNavigate(`/album?link=${encodeURIComponent(item.url)}`)} className="snap-start flex flex-col cursor-pointer group">
           <div className="relative overflow-hidden rounded-lg md:rounded-xl aspect-square shadow-md mb-2">
             <img src={getImageUrl(item.image)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 bg-neutral-800" />
           </div>
@@ -329,11 +327,11 @@ function ArtistContent() {
     </div>
   );
 
-  // Grid uses 3 cards per row on Mobile, with scaled text.
+  // overflowAnchor: 'none' securely prevents jumping when new batches of 50 albums load
   const GridView = ({ items, type }: { items: any[], type: string }) => (
-    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-5">
+    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-5" style={{ overflowAnchor: 'none' }}>
       {items.map((item: any, index: number) => (
-        <div key={`${item.id}-${index}`} onClick={() => handleNavigate(`/album?link=${encodeURIComponent(item.url)}`)} className="flex flex-col cursor-pointer group">
+        <div key={`grid-${item.id}-${index}`} onClick={() => handleNavigate(`/album?link=${encodeURIComponent(item.url)}`)} className="flex flex-col cursor-pointer group">
           <div className="relative overflow-hidden rounded-lg md:rounded-xl shadow-md mb-2 aspect-square">
             <img src={getImageUrl(item.image)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 bg-neutral-800" />
           </div>
@@ -352,8 +350,8 @@ function ArtistContent() {
   if (viewMode === 'songs') return (
     <div className="min-h-screen bg-neutral-950 pb-28 pt-2 px-4 md:px-8 max-w-7xl mx-auto animate-in fade-in">
       <ViewAllHeader title="All Songs" countLabel={`${totalSongsCount.toLocaleString()} Total Songs`} />
-      <div className="flex flex-col gap-1">
-        {allSongs.map((song, idx) => <SongItem key={`${song.id}-${idx}`} song={song} index={idx} />)}
+      <div className="flex flex-col gap-1" style={{ overflowAnchor: 'none' }}>
+        {allSongs.map((song, idx) => <SongItem key={`song-${song.id}-${idx}`} song={song} index={idx} />)}
       </div>
       <div ref={observerRef} className="py-8 flex justify-center">
         {isFetchingSongsRef.current ? <Loader2 className="animate-spin text-white" size={32} /> : 
@@ -370,13 +368,6 @@ function ArtistContent() {
         {isFetchingAlbumsRef.current ? <Loader2 className="animate-spin text-white" size={32} /> : 
         !hasMoreAlbums && <span className="text-neutral-500 font-medium text-sm">End of albums</span>}
       </div>
-    </div>
-  );
-
-  if (viewMode === 'singles') return (
-    <div className="min-h-screen bg-neutral-950 pb-28 pt-2 px-4 md:px-8 max-w-7xl mx-auto animate-in fade-in">
-      <ViewAllHeader title="Singles & EPs" countLabel={`${totalSinglesCount || singles.length} Total Singles`} />
-      <GridView items={singles} type="Single" />
     </div>
   );
 
@@ -452,7 +443,7 @@ function ArtistContent() {
             </div>
             <div className="flex flex-col gap-1 bg-white/[0.02] p-2 md:p-3 rounded-2xl border border-white/5">
               {topSongs.map((song: any, index: number) => (
-                <SongItem key={`${song.id}-${index}`} song={song} index={index} />
+                <SongItem key={`top-song-${song.id}-${index}`} song={song} index={index} />
               ))}
             </div>
           </section>
@@ -471,14 +462,11 @@ function ArtistContent() {
           </section>
         )}
 
-        {/* 4. Singles (2-Line Grid) */}
+        {/* 4. Singles (2-Line Grid - NO VIEW ALL BUTTON) */}
         {singles.length > 0 && (
           <section className="mb-12">
             <div className="flex justify-between items-end mb-4">
               <h2 className="text-2xl md:text-3xl font-black text-white">Singles & EPs</h2>
-              <button onClick={() => { setViewMode('singles'); window.scrollTo(0,0); }} className="text-sm font-bold text-neutral-400 hover:text-white transition-colors flex items-center gap-0.5">
-                View All <ChevronRight size={18} />
-              </button>
             </div>
             <TwoLineCards items={singles} type="Single" />
           </section>

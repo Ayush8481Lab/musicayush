@@ -1,15 +1,22 @@
 "use client";
 import { useEffect, useState, Suspense, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Play, ArrowLeft, Loader2, MoreVertical, BadgeCheck, Pause } from "lucide-react";
+import { Play, ArrowLeft, Loader2, MoreVertical } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 
+// High-quality Custom Blue Tick (Premium Look)
+const VerifiedBadge = () => (
+  <svg viewBox="0 0 24 24" className="w-5 h-5 text-[#1db954] ml-1" fill="currentColor">
+    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-1.9 14.7L6 12.6l1.5-1.5 2.6 2.6 6.4-6.4 1.5 1.5-7.9 7.9z" />
+  </svg>
+);
+
 // Helper: Get highest quality image
-const getImageUrl = (img: any) => {
-  if (!img) return "https://via.placeholder.com/500";
-  if (typeof img === "string") return img.replace("150x150", "500x500").replace("50x50", "500x500");
+const getImageUrl = (img: any, size = "500") => {
+  if (!img) return `https://via.placeholder.com/${size}`;
+  if (typeof img === "string") return img.replace("150x150", `${size}x${size}`).replace("50x50", `${size}x${size}`);
   if (Array.isArray(img)) return img[img.length - 1]?.url || img[0]?.url;
-  return "https://via.placeholder.com/500";
+  return `https://via.placeholder.com/${size}`;
 };
 
 // Helper: Decode HTML Entities cleanly
@@ -22,7 +29,7 @@ const decodeHtml = (html: string) => {
 
 // Helper: Format large numbers (e.g., 1.2M, 500K)
 const formatNumber = (num: number | string | null | undefined) => {
-  if (!num) return "0";
+  if (num == null || num === "") return "0";
   const n = typeof num === 'string' ? parseInt(num.replace(/,/g, '')) : num;
   if (isNaN(n)) return "0";
   if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
@@ -37,23 +44,23 @@ function ArtistContent() {
   
   const { currentSong, setCurrentSong, isPlaying, setIsPlaying } = useAppContext();
   
-  // States
+  // Base States
   const [artist, setArtist] = useState<any>(null);
   const[albums, setAlbums] = useState<any[]>([]);
   const [singles, setSingles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Pagination & View States
-  const[currentView, setCurrentView] = useState<"main" | "all-songs">("main");
-  const[songs, setSongs] = useState<any[]>([]);
+  const [currentView, setCurrentView] = useState<"main" | "all-songs" | "all-albums">("main");
+  const [songs, setSongs] = useState<any[]>([]);
   const [page, setPage] = useState(0);
-  const [hasMoreSongs, setHasMoreSongs] = useState(true);
-  const[loadingMore, setLoadingMore] = useState(false);
-  const [totalSongsCount, setTotalSongsCount] = useState(0);
-  const [totalAlbumsCount, setTotalAlbumsCount] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const[totalSongsCount, setTotalSongsCount] = useState(0);
+  const[totalAlbumsCount, setTotalAlbumsCount] = useState(0);
 
   // Bio Expand State
-  const [isBioExpanded, setIsBioExpanded] = useState(false);
+  const[isBioExpanded, setIsBioExpanded] = useState(false);
 
   // Initial Fetch Effect
   useEffect(() => {
@@ -69,7 +76,7 @@ function ArtistContent() {
         ]);
 
         let mainData = null;
-        let fetchedSongs = [];
+        let fetchedSongs =[];
         let fetchedAlbums =[];
         let sCount = 0;
         let aCount = 0;
@@ -94,7 +101,6 @@ function ArtistContent() {
         // --- FALLBACK LOGIC ---
         let finalArtist = mainData;
         if (!finalArtist && fetchedSongs.length > 0) {
-          // Find exact artist from the first song's artist array
           let fallbackArtist = fetchedSongs[0].artists?.all?.find((a: any) => a.id === id) 
                             || fetchedSongs[0].artists?.primary?.find((a: any) => a.id === id);
           
@@ -104,7 +110,7 @@ function ArtistContent() {
             image: fallbackArtist?.image || fetchedSongs[0].image,
             role: fallbackArtist?.role || "Artist",
             isVerified: false,
-            followerCount: 0, // Forced to 0 as requested in fallback
+            followerCount: 0, // Fallback sets followers to 0 as requested
             bio:[]
           };
         }
@@ -115,7 +121,9 @@ function ArtistContent() {
         setTotalAlbumsCount(aCount);
         setAlbums(fetchedAlbums);
         setSingles(mainData?.singles ||[]);
-        setHasMoreSongs(fetchedSongs.length < sCount);
+
+        // Initial setup for pagination
+        setHasMore(fetchedSongs.length < sCount);
 
       } catch (error) {
         console.error("Error fetching artist data:", error);
@@ -126,136 +134,160 @@ function ArtistContent() {
     fetchInitialData();
   }, [id]);
 
-  // Infinite Scroll Fetching Logic
+  // Infinite Scroll Fetching Logic (Songs & Albums)
   useEffect(() => {
-    if (page === 0 || !id) return;
+    if (page === 0 || !id || currentView === "main") return;
 
-    const fetchMoreSongs = async () => {
+    const fetchMoreData = async () => {
       setLoadingMore(true);
       try {
-        const res = await fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/songs?page=${page}`);
+        const endpoint = currentView === "all-songs" ? "songs" : "albums";
+        const res = await fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/${endpoint}?page=${page}`);
         const json = await res.json();
-        const newSongs = json.data?.songs ||[];
         
-        setSongs(prev => {
-          // Prevent duplicates
-          const existingIds = new Set(prev.map(s => s.id));
-          const filteredNew = newSongs.filter((s: any) => !existingIds.has(s.id));
-          return[...prev, ...filteredNew];
-        });
-        
-        if (newSongs.length === 0 || songs.length + newSongs.length >= totalSongsCount) {
-          setHasMoreSongs(false);
+        if (currentView === "all-songs") {
+          const newSongs = json.data?.songs ||[];
+          setSongs(prev => {
+            const existingIds = new Set(prev.map(s => s.id));
+            return[...prev, ...newSongs.filter((s: any) => !existingIds.has(s.id))];
+          });
+          if (newSongs.length === 0 || songs.length + newSongs.length >= totalSongsCount) setHasMore(false);
+        } else {
+          const newAlbums = json.data?.albums ||[];
+          setAlbums(prev => {
+            const existingIds = new Set(prev.map(a => a.id));
+            return[...prev, ...newAlbums.filter((a: any) => !existingIds.has(a.id))];
+          });
+          if (newAlbums.length === 0 || albums.length + newAlbums.length >= totalAlbumsCount) setHasMore(false);
         }
       } catch (error) {
-        console.error("Error fetching more songs:", error);
+        console.error("Error fetching more data:", error);
+        setHasMore(false);
       }
       setLoadingMore(false);
     };
 
-    fetchMoreSongs();
-  }, [page, id, totalSongsCount]);
+    fetchMoreData();
+  },[page, currentView, id, totalSongsCount, totalAlbumsCount, songs.length, albums.length]);
 
   // Intersection Observer for Infinite Scroll
   const observer = useRef<IntersectionObserver | null>(null);
-  const lastSongElementRef = useCallback((node: any) => {
+  const lastElementRef = useCallback((node: any) => {
     if (loadingMore) return;
     if (observer.current) observer.current.disconnect();
     observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMoreSongs && currentView === "all-songs") {
+      if (entries[0].isIntersecting && hasMore) {
         setPage(prevPage => prevPage + 1);
       }
     });
     if (node) observer.current.observe(node);
-  }, [loadingMore, hasMoreSongs, currentView]);
+  },[loadingMore, hasMore]);
 
-  const handlePlaySong = (song: any) => {
+  const handlePlaySong = (song: any, index: number, sourceList: any[]) => {
     if (currentSong?.id === song.id) {
       setIsPlaying(!isPlaying);
     } else {
+      // Logic to set queue could be added here
       setCurrentSong(song);
       setIsPlaying(true);
     }
   };
 
-  const handlePlayAll = () => {
-    if (songs.length > 0) {
-      setCurrentSong(songs[0]);
-      setIsPlaying(true);
-    }
+  const openAllView = (type: "all-songs" | "all-albums") => {
+    setPage(0);
+    setHasMore(true);
+    setCurrentView(type);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const closeAllView = () => {
+    setCurrentView("main");
+    setPage(0);
   };
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-black text-white">
-        <Loader2 className="animate-spin text-white" size={40} />
+      <div className="flex h-screen items-center justify-center bg-[#0f1014] text-white">
+        <div className="w-8 h-8 border-4 border-[#1e222b] border-t-[#1db954] rounded-full animate-spin"></div>
       </div>
     );
   }
 
   if (!artist) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-black text-white">
+      <div className="flex h-screen flex-col items-center justify-center bg-[#0f1014] text-white">
         <h2 className="text-xl font-bold">Artist not found</h2>
-        <button onClick={() => router.back()} className="mt-4 px-6 py-2 bg-white text-black rounded-full font-bold">Go Back</button>
+        <button onClick={() => router.back()} className="mt-4 px-6 py-2 bg-[#1db954] text-black rounded-full font-bold">Go Back</button>
       </div>
     );
   }
 
-  // ALL SONGS VIEW
-  if (currentView === "all-songs") {
+  const bioText = artist.bio && artist.bio.length > 0 ? decodeHtml(artist.bio[0].text) : "";
+  const roleDisplay = artist.dominantType || artist.role || "Artist";
+
+  // ==============================
+  // VIEW: ALL SONGS OR ALL ALBUMS
+  // ==============================
+  if (currentView === "all-songs" || currentView === "all-albums") {
+    const isSongs = currentView === "all-songs";
+    const dataList = isSongs ? songs : albums;
+    const title = isSongs ? "All Songs" : "All Albums";
+
     return (
-      <div className="pb-32 min-h-screen bg-black text-white">
-        <div className="sticky top-0 z-30 bg-black/80 backdrop-blur-md p-4 flex items-center border-b border-white/10">
-          <button onClick={() => setCurrentView("main")} className="p-2 mr-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
-            <ArrowLeft size={24} />
+      <div className="pb-32 min-h-screen bg-[#0f1014] text-white">
+        <div className="sticky top-0 z-30 bg-[#0f1014]/95 backdrop-blur-md px-5 py-4 flex items-center border-b border-white/5">
+          <button onClick={closeAllView} className="p-2 mr-3 bg-black/40 rounded-full active:scale-90 transition-transform">
+            <ArrowLeft size={20} />
           </button>
-          <h1 className="text-xl font-bold truncate">{artist.name} - All Songs</h1>
+          <div>
+            <h1 className="text-xl font-extrabold truncate text-white leading-tight">{title}</h1>
+            <p className="text-xs text-[#aeb6c4] font-medium">{artist.name}</p>
+          </div>
         </div>
         
-        <div className="max-w-5xl mx-auto p-4 flex flex-col gap-2">
-          {songs.map((song: any, index: number) => {
-            const isCurrent = currentSong?.id === song.id;
-            const isLastElement = index === songs.length - 1;
+        <div className={isSongs ? "px-5 flex flex-col pt-4" : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-5"}>
+          {dataList.map((item: any, index: number) => {
+            const isLastElement = index === dataList.length - 1;
             
-            return (
-              <div 
-                ref={isLastElement ? lastSongElementRef : null}
-                key={song.id + index} 
-                onClick={() => handlePlaySong(song)} 
-                className={`group flex items-center gap-4 p-3 rounded-xl cursor-pointer transition-colors ${isCurrent ? 'bg-white/10' : 'hover:bg-white/5'}`}
-              >
-                <div className="w-8 text-center flex-shrink-0">
-                  {isCurrent && isPlaying ? (
-                    <div className="flex items-end justify-center gap-0.5 h-4">
-                      <span className="w-1 bg-green-500 h-2 animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                      <span className="w-1 bg-green-500 h-4 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                      <span className="w-1 bg-green-500 h-3 animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                    </div>
-                  ) : (
-                    <span className="text-neutral-500 font-medium group-hover:hidden">{index + 1}</span>
-                  )}
-                  <Play size={16} fill="white" className="hidden group-hover:block mx-auto text-white" />
+            if (isSongs) {
+              const isCurrent = currentSong?.id === item.id;
+              return (
+                <div 
+                  ref={isLastElement ? lastElementRef : null}
+                  key={item.id + index} 
+                  onClick={() => handlePlaySong(item, index, dataList)} 
+                  className={`flex items-center py-2.5 border-b border-white/5 cursor-pointer active:bg-white/5 transition-colors`}
+                >
+                  <img src={getImageUrl(item.image, "50")} className="w-[50px] h-[50px] rounded object-cover flex-shrink-0 bg-[#222] mr-3.5" alt={item.name} />
+                  <div className="flex-1 min-w-0">
+                    <h4 className={`text-[14px] font-medium truncate mb-0.5 ${isCurrent ? "text-[#1db954]" : "text-white"}`}>
+                      {decodeHtml(item.name || item.title)}
+                    </h4>
+                    <p className="text-[12px] text-[#aeb6c4] truncate">{decodeHtml(item.subtitle || artist.name)}</p>
+                  </div>
+                  <MoreVertical size={18} className="text-[#aeb6c4]" />
                 </div>
-                
-                <img src={getImageUrl(song.image)} className="w-12 h-12 rounded-md object-cover shadow-md flex-shrink-0" alt={song.name} />
-                
-                <div className="flex-1 min-w-0">
-                  <h3 className={`text-base font-semibold truncate ${isCurrent ? "text-green-400" : "text-white"}`}>
-                    {decodeHtml(song.name || song.title)}
-                  </h3>
-                  <p className="text-sm text-neutral-400 truncate mt-0.5">{decodeHtml(song.album?.name || artist.name)}</p>
+              );
+            } else {
+              // Albums Grid
+              return (
+                <div 
+                  ref={isLastElement ? lastElementRef : null}
+                  key={item.id + index} 
+                  onClick={() => router.push(`/album?link=${encodeURIComponent(item.url || item.perma_url)}`)} 
+                  className="cursor-pointer active:scale-95 transition-transform"
+                >
+                  <img src={getImageUrl(item.image, "250")} alt={item.name} className="w-full aspect-square rounded-lg object-cover bg-[#222] mb-2" />
+                  <h3 className="text-[13px] font-semibold text-white truncate">{decodeHtml(item.name || item.title)}</h3>
+                  <p className="text-[11px] text-[#aeb6c4] capitalize truncate">{item.year || 'Album'}</p>
                 </div>
-                <button className="p-2 text-neutral-400 hover:text-white transition-opacity">
-                  <MoreVertical size={20} />
-                </button>
-              </div>
-            );
+              );
+            }
           })}
           
           {loadingMore && (
-            <div className="py-8 flex justify-center">
-              <Loader2 className="animate-spin text-green-500" size={32} />
+            <div className="py-6 flex justify-center col-span-full">
+              <div className="w-6 h-6 border-2 border-[#1e222b] border-t-[#1db954] rounded-full animate-spin"></div>
             </div>
           )}
         </div>
@@ -263,205 +295,187 @@ function ArtistContent() {
     );
   }
 
-  // MAIN VIEW
-  const bioText = artist.bio && artist.bio.length > 0 ? decodeHtml(artist.bio[0].text) : "";
-  const roleDisplay = artist.role || artist.dominantType || "Artist";
-
+  // ==============================
+  // VIEW: MAIN ARTIST PROFILE
+  // ==============================
   return (
-    <div className="pb-32 min-h-screen bg-[#0a0a0a] text-white selection:bg-white/30">
-      
-      {/* ---------------- HERO BANNER ---------------- */}
-      <div className="relative w-full h-[45vh] md:h-[50vh] bg-gradient-to-b from-neutral-500 to-black overflow-hidden flex flex-col justify-end">
-        {/* Lighter Blurred Background */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center opacity-40 blur-3xl scale-125 mix-blend-screen"
-          style={{ backgroundImage: `url(${getImageUrl(artist.image)})` }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/60 to-transparent" />
+    <div className="pb-32 min-h-screen bg-[#0f1014] text-white">
+      {/* Dynamic Scoped Styles for UI identical to HTML template */}
+      <style dangerouslySetInnerHTML={{__html: `
+        .grid-scroll-multi {
+          display: grid;
+          grid-template-rows: repeat(2, auto);
+          grid-auto-flow: column;
+          overflow-x: auto;
+          gap: 15px;
+          padding: 0 20px 10px;
+          scroll-snap-type: x mandatory;
+          scrollbar-width: none;
+        }
+        .grid-scroll-multi::-webkit-scrollbar { display: none; }
+        .lib-card {
+          width: 140px;
+          scroll-snap-align: start;
+          cursor: pointer;
+        }
+        .lib-card:active img { transform: scale(0.95); opacity: 0.8; }
+        .lib-card img {
+          width: 100%;
+          aspect-ratio: 1/1;
+          object-fit: cover;
+          border-radius: 8px;
+          margin-bottom: 8px;
+          transition: transform 0.2s;
+          background: #222;
+        }
+      `}} />
+
+      {/* ---------------- HERO HEADER ---------------- */}
+      {/* Gradient matches the original HTML: Lighter gray/black mix dropping into #0f1014 */}
+      <div className="relative pt-20 pb-6 bg-gradient-to-b from-[#333333] to-[#0f1014] flex flex-col items-center text-center overflow-hidden">
         
-        <button onClick={() => router.back()} className="absolute top-6 left-4 md:left-8 bg-black/40 hover:bg-black/60 p-2.5 rounded-full backdrop-blur-md z-20 transition-all">
-          <ArrowLeft size={24} className="text-white" />
+        <button onClick={() => router.back()} className="absolute top-5 left-5 w-10 h-10 bg-black/40 rounded-full flex items-center justify-center z-10 active:scale-90 transition-transform">
+          <ArrowLeft size={18} className="text-white" />
         </button>
 
-        <div className="relative z-10 px-4 md:px-8 pb-8 flex flex-col md:flex-row items-center md:items-end gap-6">
+        <div className="w-[160px] h-[160px] rounded-full shadow-[0_10px_30px_rgba(0,0,0,0.5)] mb-4 relative z-10 bg-[#222]">
           <img 
             src={getImageUrl(artist.image)} 
             alt={artist.name}
-            className="w-36 h-36 md:w-56 md:h-56 rounded-full shadow-[0_10px_40px_rgba(0,0,0,0.6)] object-cover border-4 border-[#1a1a1a]" 
+            className="w-full h-full rounded-full object-cover" 
           />
-          <div className="flex flex-col items-center md:items-start text-center md:text-left">
-            <h1 className="text-4xl md:text-6xl font-black text-white flex items-center gap-3 mb-3 tracking-tight">
-              {decodeHtml(artist.name)}
-              {artist.isVerified && (
-                <div className="relative flex items-center justify-center rounded-full bg-white w-6 h-6 md:w-8 md:h-8">
-                  <BadgeCheck className="text-blue-500 absolute w-7 h-7 md:w-9 md:h-9" fill="currentColor" stroke="white" strokeWidth={1} />
-                </div>
-              )}
-            </h1>
-            
-            {/* Stats Row */}
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-sm md:text-base text-neutral-300 font-medium">
-              <span className="capitalize px-3 py-1 bg-white/10 rounded-full backdrop-blur-sm border border-white/5">{roleDisplay}</span>
-              <span className="px-3 py-1 bg-white/10 rounded-full backdrop-blur-sm border border-white/5">
-                {formatNumber(artist.followerCount)} Followers
-              </span>
-              {(totalSongsCount > 0 || totalAlbumsCount > 0) && (
-                <span className="px-3 py-1 bg-white/10 rounded-full backdrop-blur-sm border border-white/5">
-                  {totalSongsCount} Songs • {totalAlbumsCount} Albums
-                </span>
-              )}
-            </div>
-          </div>
         </div>
-      </div>
 
-      <div className="max-w-7xl mx-auto px-4 md:px-8 mt-6">
+        <h2 className="text-[22px] font-extrabold text-white flex items-center justify-center gap-1 z-10 px-4 leading-tight">
+          {decodeHtml(artist.name)}
+          {artist.isVerified && <VerifiedBadge />}
+        </h2>
         
-        {/* Play Button & Bio Section */}
-        <div className="flex flex-col md:flex-row gap-6 items-start mb-10">
-          <button 
-            onClick={handlePlayAll} 
-            className="bg-green-500 hover:bg-green-400 text-black px-8 py-3.5 rounded-full font-bold flex items-center gap-2 transition-all hover:scale-105 active:scale-95 flex-shrink-0 mx-auto md:mx-0 shadow-[0_0_20px_rgba(34,197,94,0.3)]"
-          >
-            <Play fill="black" size={22} /> Play
-          </button>
+        <p className="text-[14px] text-[#aeb6c4] mt-1 z-10 capitalize max-w-[90%] truncate">
+          {roleDisplay}
+        </p>
 
-          {/* Expandable Bio */}
-          {bioText && (
-            <div className="text-neutral-400 text-sm md:text-base leading-relaxed bg-white/5 p-4 rounded-2xl border border-white/5 flex-1 w-full">
-              <p>
-                {isBioExpanded ? bioText : `${bioText.substring(0, 150)}... `}
-                {bioText.length > 150 && (
-                  <button 
-                    onClick={() => setIsBioExpanded(!isBioExpanded)}
-                    className="text-white font-semibold hover:underline ml-1"
-                  >
-                    {isBioExpanded ? "Show Less" : "Read More"}
-                  </button>
-                )}
-              </p>
-            </div>
-          )}
+        <div className="text-[12px] text-[#aaa] font-medium mt-2 z-10 flex items-center gap-2">
+          <span>{formatNumber(artist.followerCount)} Followers</span>
+          {totalSongsCount > 0 && <span>• {totalSongsCount} Songs</span>}
+          {totalAlbumsCount > 0 && <span>• {totalAlbumsCount} Albums</span>}
         </div>
-
-        {/* ---------------- TOP 10 SONGS ---------------- */}
-        {songs.length > 0 && (
-          <div className="mb-12">
-            <div className="flex items-end justify-between mb-6">
-              <h2 className="text-2xl font-bold text-white">Top Songs</h2>
-              {songs.length > 10 && (
-                <button onClick={() => setCurrentView("all-songs")} className="text-sm font-bold text-neutral-400 hover:text-white transition-colors">
-                  View All
-                </button>
-              )}
-            </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-1">
-              {songs.slice(0, 10).map((song: any, index: number) => {
-                const isCurrent = currentSong?.id === song.id;
-                return (
-                  <div 
-                    key={song.id + index} 
-                    onClick={() => handlePlaySong(song)} 
-                    className={`group flex items-center gap-4 p-2.5 rounded-xl cursor-pointer transition-colors ${isCurrent ? 'bg-white/10' : 'hover:bg-white/5'}`}
-                  >
-                    <div className="w-8 text-center flex-shrink-0">
-                      {isCurrent && isPlaying ? (
-                        <div className="flex items-end justify-center gap-0.5 h-4">
-                          <span className="w-1 bg-green-500 h-2 animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                          <span className="w-1 bg-green-500 h-4 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                          <span className="w-1 bg-green-500 h-3 animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                        </div>
-                      ) : (
-                        <span className="text-neutral-500 text-sm font-medium group-hover:hidden">{index + 1}</span>
-                      )}
-                      <Play size={16} fill="white" className="hidden group-hover:block mx-auto text-white" />
-                    </div>
-                    
-                    <img src={getImageUrl(song.image)} className="w-12 h-12 rounded-md object-cover shadow-md flex-shrink-0 bg-neutral-800" alt={song.name} />
-                    
-                    <div className="flex-1 min-w-0">
-                      <h3 className={`text-base font-semibold truncate ${isCurrent ? "text-green-400" : "text-white"}`}>
-                        {decodeHtml(song.name || song.title)}
-                      </h3>
-                      <p className="text-sm text-neutral-400 truncate mt-0.5">{decodeHtml(song.album?.name || artist.name)}</p>
-                    </div>
-                    
-                    <button className="opacity-0 group-hover:opacity-100 p-2 text-neutral-400 hover:text-white transition-opacity hidden sm:block">
-                      <MoreVertical size={20} />
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ---------------- ALBUMS (2 Lines Horizontal Scroll) ---------------- */}
-        {albums.length > 0 && (
-          <div className="mb-12">
-            <h2 className="text-2xl font-bold text-white mb-6">Albums</h2>
-            <div className="grid grid-rows-2 grid-flow-col gap-x-5 gap-y-6 overflow-x-auto pb-6 custom-scrollbar auto-cols-[140px] md:auto-cols-[160px] snap-x snap-mandatory">
-              {albums.map((album: any) => (
-                <div 
-                  key={album.id} 
-                  onClick={() => router.push(`/album?link=${encodeURIComponent(album.url)}`)} 
-                  className="group snap-start cursor-pointer w-[140px] md:w-[160px]"
-                >
-                  <div className="relative w-full aspect-square mb-3 overflow-hidden rounded-xl shadow-lg bg-neutral-800">
-                    <img src={getImageUrl(album.image)} alt={album.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
-                    <div className="absolute bottom-2 right-2 bg-green-500 p-2.5 rounded-full shadow-xl opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
-                      <Play fill="black" className="text-black" size={18} />
-                    </div>
-                  </div>
-                  <h3 className="text-sm md:text-base font-bold text-white truncate">{decodeHtml(album.name)}</h3>
-                  <p className="text-xs md:text-sm text-neutral-400 mt-0.5 truncate">{album.year || "Album"}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ---------------- SINGLES (2 Lines Horizontal Scroll) ---------------- */}
-        {singles.length > 0 && (
-          <div className="mb-12">
-            <h2 className="text-2xl font-bold text-white mb-6">Singles & EPs</h2>
-            <div className="grid grid-rows-2 grid-flow-col gap-x-5 gap-y-6 overflow-x-auto pb-6 custom-scrollbar auto-cols-[140px] md:auto-cols-[160px] snap-x snap-mandatory">
-              {singles.map((single: any) => (
-                <div 
-                  key={single.id} 
-                  onClick={() => router.push(`/album?link=${encodeURIComponent(single.url)}`)} 
-                  className="group snap-start cursor-pointer w-[140px] md:w-[160px]"
-                >
-                  <div className="relative w-full aspect-square mb-3 overflow-hidden rounded-xl shadow-lg bg-neutral-800">
-                    <img src={getImageUrl(single.image)} alt={single.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
-                  </div>
-                  <h3 className="text-sm md:text-base font-bold text-white truncate">{decodeHtml(single.name)}</h3>
-                  <p className="text-xs md:text-sm text-neutral-400 mt-0.5 truncate">{single.year || "Single"}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
       </div>
-      
-      <style dangerouslySetInnerHTML={{__html: `
-        .custom-scrollbar::-webkit-scrollbar {
-          height: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: rgba(255, 255, 255, 0.05);
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.2);
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.3);
-        }
-      `}} />
+
+      {/* ---------------- ACTION BUTTONS & BIO ---------------- */}
+      <div className="px-5 mt-2 flex flex-col items-center gap-4">
+        {songs.length > 0 && (
+          <button 
+            onClick={() => handlePlaySong(songs[0], 0, songs)} 
+            className="bg-[#1db954] text-white px-8 py-2.5 rounded-full font-bold text-[14px] uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-transform"
+          >
+            <Play fill="currentColor" size={16} /> Play
+          </button>
+        )}
+
+        {bioText && (
+          <div className="w-full text-center text-[13px] text-[#aeb6c4] leading-relaxed mt-2">
+            {isBioExpanded ? bioText : `${bioText.substring(0, 140)}${bioText.length > 140 ? '...' : ''}`}
+            {bioText.length > 140 && (
+              <span 
+                onClick={() => setIsBioExpanded(!isBioExpanded)}
+                className="text-[#1db954] font-bold ml-2 cursor-pointer uppercase text-[11px]"
+              >
+                {isBioExpanded ? "Read Less" : "Read More"}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ---------------- TOP SONGS (10 Items) ---------------- */}
+      {songs.length > 0 && (
+        <div className="mt-8">
+          <div className="flex justify-between items-center px-5 mb-4">
+            <span className="text-[18px] font-bold text-white">Top Songs</span>
+            {songs.length > 10 && (
+              <span onClick={() => openAllView("all-songs")} className="text-[12px] font-bold text-[#1db954] uppercase cursor-pointer tracking-wide">
+                View All
+              </span>
+            )}
+          </div>
+          
+          <div className="px-5 flex flex-col">
+            {songs.slice(0, 10).map((song: any, index: number) => {
+              const isCurrent = currentSong?.id === song.id;
+              return (
+                <div 
+                  key={song.id + index} 
+                  onClick={() => handlePlaySong(song, index, songs)} 
+                  className="flex items-center py-2.5 border-b border-white/5 cursor-pointer active:bg-white/5 transition-colors"
+                >
+                  <span className="w-5 text-center text-[#666] text-[12px] mr-2.5 font-medium">{index + 1}</span>
+                  <img src={getImageUrl(song.image, "50")} className="w-[50px] h-[50px] rounded object-cover flex-shrink-0 bg-[#222] mr-3.5" alt={song.name} />
+                  
+                  <div className="flex-1 min-w-0">
+                    <h4 className={`text-[14px] font-medium truncate mb-0.5 ${isCurrent ? "text-[#1db954]" : "text-white"}`}>
+                      {decodeHtml(song.name || song.title)}
+                    </h4>
+                    <p className="text-[12px] text-[#aeb6c4] truncate">{decodeHtml(song.subtitle || artist.name)}</p>
+                  </div>
+                  <MoreVertical size={18} className="text-[#aeb6c4]" />
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- ALBUMS (2 Row Horizontal Scroll) ---------------- */}
+      {albums.length > 0 && (
+        <div className="mt-10">
+          <div className="flex justify-between items-center px-5 mb-4">
+            <span className="text-[18px] font-bold text-white">Albums</span>
+            {totalAlbumsCount > 10 && (
+              <span onClick={() => openAllView("all-albums")} className="text-[12px] font-bold text-[#1db954] uppercase cursor-pointer tracking-wide">
+                All Albums
+              </span>
+            )}
+          </div>
+          
+          <div className="grid-scroll-multi">
+            {albums.map((album: any, index: number) => (
+              <div 
+                key={album.id + index} 
+                onClick={() => router.push(`/album?link=${encodeURIComponent(album.url || album.perma_url)}`)} 
+                className="lib-card"
+              >
+                <img src={getImageUrl(album.image, "250")} alt={album.name} loading="lazy" />
+                <h3 className="text-[13px] font-semibold text-white truncate">{decodeHtml(album.name || album.title)}</h3>
+                <p className="text-[11px] text-[#aeb6c4] capitalize truncate">{album.year || "Album"}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- SINGLES (2 Row Horizontal Scroll) ---------------- */}
+      {singles.length > 0 && (
+        <div className="mt-6 mb-8">
+          <div className="px-5 mb-4">
+            <span className="text-[18px] font-bold text-white">Singles & EPs</span>
+          </div>
+          <div className="grid-scroll-multi">
+            {singles.map((single: any, index: number) => (
+              <div 
+                key={single.id + index} 
+                onClick={() => router.push(`/album?link=${encodeURIComponent(single.url || single.perma_url)}`)} 
+                className="lib-card"
+              >
+                <img src={getImageUrl(single.image, "250")} alt={single.name} loading="lazy" />
+                <h3 className="text-[13px] font-semibold text-white truncate">{decodeHtml(single.name || single.title)}</h3>
+                <p className="text-[11px] text-[#aeb6c4] capitalize truncate">{single.year || "Single"}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -469,8 +483,8 @@ function ArtistContent() {
 export default function ArtistPage() {
   return (
     <Suspense fallback={
-      <div className="flex h-screen items-center justify-center bg-black text-white">
-        <Loader2 className="animate-spin text-white" size={40} />
+      <div className="flex h-screen items-center justify-center bg-[#0f1014] text-white">
+        <div className="w-8 h-8 border-4 border-[#1e222b] border-t-[#1db954] rounded-full animate-spin"></div>
       </div>
     }>
       <ArtistContent />

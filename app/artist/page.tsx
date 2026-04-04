@@ -7,13 +7,13 @@ import {
 } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 
-// --- Global In-Memory Cache (Survives soft navigations & avoids sessionStorage bugs) ---
+// --- Global In-Memory Cache (Survives soft navigations securely) ---
 const memoryCache: Record<string, any> = {};
 
 // --- Helpers ---
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/500";
-  if (typeof img === "string") return img.replace("150x150", "500x500");
+  if (typeof img === "string") return img.replace(/50x50|150x150/g, "500x500");
   if (Array.isArray(img)) return img[img.length - 1]?.url || img[0]?.url;
   return "https://via.placeholder.com/500";
 };
@@ -44,9 +44,9 @@ function ArtistContent() {
   const [artist, setArtist] = useState<any>(null);
 
   const [songs, setSongs] = useState<any[]>([]);
-  const [totalSongsCount, setTotalSongsCount] = useState<number>(0);
+  const[totalSongsCount, setTotalSongsCount] = useState<number>(0);
 
-  const[albums, setAlbums] = useState<any[]>([]);
+  const [albums, setAlbums] = useState<any[]>([]);
   const [totalAlbumsCount, setTotalAlbumsCount] = useState<number>(0);
 
   const [singles, setSingles] = useState<any[]>([]);
@@ -55,11 +55,11 @@ function ArtistContent() {
   const [viewMode, setViewMode] = useState<'main' | 'songs' | 'albums'>('main');
 
   // --- Infinite Scroll States ---
-  const [songPage, setSongPage] = useState(0);
+  const[songPage, setSongPage] = useState(1);
   const [loadingMoreSongs, setLoadingMoreSongs] = useState(false);
 
-  const [albumPage, setAlbumPage] = useState(0);
-  const [loadingMoreAlbums, setLoadingMoreAlbums] = useState(false);
+  const [albumPage, setAlbumPage] = useState(1);
+  const[loadingMoreAlbums, setLoadingMoreAlbums] = useState(false);
 
   // UI Refs
   const observerRef = useRef<HTMLDivElement | null>(null);
@@ -86,13 +86,14 @@ function ArtistContent() {
     const fetchInitialData = async () => {
       setLoading(true);
       try {
+        // Start pagination at page=1 to avoid overlap/duplication
         const [artistRes, songsRes, albumsRes] = await Promise.allSettled([
           fetch(`https://ayushm-psi.vercel.app/api/artists/${id}`).then(r => r.json()),
-          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/songs?page=0`).then(r => r.json()),
-          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/albums?page=0`).then(r => r.json())
+          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/songs?page=1`).then(r => r.json()),
+          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/albums?page=1`).then(r => r.json())
         ]);
 
-        let fetchedSongs = [];
+        let fetchedSongs =[];
         let fetchedAlbums = [];
         let fetchedSingles =[];
         let fetchedArtist = null;
@@ -112,30 +113,37 @@ function ArtistContent() {
           setTotalAlbumsCount(albumsRes.value.data.total || fetchedAlbums.length);
         }
 
-        // 3. Process Main API (Fallback structure applied here)
+        // 3. Process Main API & Fallback
         if (artistRes.status === "fulfilled" && artistRes.value.success && artistRes.value.data?.name) {
           fetchedArtist = artistRes.value.data;
-          fetchedSingles = fetchedArtist.singles ||[]; // Direct from main API
+          fetchedSingles = fetchedArtist.singles ||[]; 
           setSingles(fetchedSingles);
         } else {
           // --- FALLBACK METHOD ---
-          // Fetch from the first song if the main API fails
+          // Deep search the first song to extract the exact artist ID requested
           if (fetchedSongs.length > 0) {
             const firstSong = fetchedSongs[0];
-            const primaryArtist = firstSong.artists?.primary?.find((a: any) => String(a.id) === String(id)) || firstSong.artists?.all?.[0];
+            const targetId = String(id);
+            
+            // Search inside `all` array first, fallback to `primary`
+            let primaryArtist = firstSong.artists?.all?.find((a: any) => String(a.id) === targetId);
+            if (!primaryArtist) {
+              primaryArtist = firstSong.artists?.primary?.find((a: any) => String(a.id) === targetId);
+            }
+
             if (primaryArtist) {
               fetchedArtist = {
                 id: primaryArtist.id,
                 name: primaryArtist.name,
-                image: primaryArtist.image,
-                dominantType: primaryArtist.role || "Artist",
+                image: primaryArtist.image, // Properly formatted array passed directly
+                dominantType: primaryArtist.role || primaryArtist.type || "Artist",
                 dominantLanguage: firstSong.language || "Unknown",
                 followerCount: 0,
                 bio:[]
               };
             }
           }
-          // Singles array stays empty (blank) as per requirement
+          // Singles remain blank as per instruction
           setSingles([]);
         }
 
@@ -149,8 +157,8 @@ function ArtistContent() {
           albums: fetchedAlbums,
           totalAlbumsCount: albumsRes.status === 'fulfilled' ? albumsRes.value.data?.total : 0,
           singles: fetchedSingles,
-          songPage: 0,
-          albumPage: 0
+          songPage: 1,
+          albumPage: 1
         };
 
       } catch (error) {
@@ -161,10 +169,10 @@ function ArtistContent() {
     };
 
     fetchInitialData();
-  },[id]);
+  }, [id]);
 
 
-  // --- 2. Batch Infinite Loaders (Process 3 Pages at Once) ---
+  // --- 2. Batch Infinite Loaders (Process 3 Pages Concurrently) ---
   const loadMoreSongsBatch = useCallback(async () => {
     if (loadingMoreSongs || songs.length >= totalSongsCount || !id) return;
     setLoadingMoreSongs(true);
@@ -192,9 +200,8 @@ function ArtistContent() {
       setSongs(prev => {
         const existingIds = new Set(prev.map(s => s.id));
         const unique = newBatch.filter(s => !existingIds.has(s.id));
-        const finalData = [...prev, ...unique];
+        const finalData = [...prev, ...unique]; // Clean append to bottom
         
-        // Update Cache
         if (memoryCache[id]) {
           memoryCache[id].songs = finalData;
           memoryCache[id].songPage = nextPage3;
@@ -208,7 +215,7 @@ function ArtistContent() {
     } finally {
       setLoadingMoreSongs(false);
     }
-  }, [id, songPage, songs.length, totalSongsCount, loadingMoreSongs]);
+  },[id, songPage, songs.length, totalSongsCount, loadingMoreSongs]);
 
 
   const loadMoreAlbumsBatch = useCallback(async () => {
@@ -231,7 +238,7 @@ function ArtistContent() {
       let newBatch: any[] =[];
       results.forEach(res => {
         if (res.status === 'fulfilled' && res.value.success && res.value.data?.albums) {
-          newBatch = [...newBatch, ...res.value.data.albums];
+          newBatch =[...newBatch, ...res.value.data.albums];
         }
       });
 
@@ -239,12 +246,10 @@ function ArtistContent() {
         const existingIds = new Set(prev.map(a => a.id));
         const unique = newBatch.filter(a => !existingIds.has(a.id));
         
-        // Sort freshly added items by year
-        unique.sort((a, b) => (b.year || 0) - (a.year || 0));
-        
         const finalData = [...prev, ...unique];
+        // Ensure the entire newly structured array strictly obeys the High-to-Low Year format
+        finalData.sort((a, b) => (b.year || 0) - (a.year || 0));
 
-        // Update Cache
         if (memoryCache[id]) {
           memoryCache[id].albums = finalData;
           memoryCache[id].albumPage = nextPage3;
@@ -258,7 +263,7 @@ function ArtistContent() {
     } finally {
       setLoadingMoreAlbums(false);
     }
-  },[id, albumPage, albums.length, totalAlbumsCount, loadingMoreAlbums]);
+  }, [id, albumPage, albums.length, totalAlbumsCount, loadingMoreAlbums]);
 
   // Observer Trigger
   useEffect(() => {
@@ -271,7 +276,7 @@ function ArtistContent() {
 
     if (observerRef.current) observer.observe(observerRef.current);
     return () => observer.disconnect();
-  }, [loadMoreSongsBatch, loadMoreAlbumsBatch, viewMode]);
+  },[loadMoreSongsBatch, loadMoreAlbumsBatch, viewMode]);
 
 
   if (loading) return <div className="flex h-screen items-center justify-center bg-neutral-950"><Loader2 className="animate-spin text-white" size={40} /></div>;
@@ -308,7 +313,7 @@ function ArtistContent() {
   );
 
   const GridCards = ({ items, type }: { items: any[], type: string }) => (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-5" style={{ overflowAnchor: 'none' }}>
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-5">
       {items.map((item: any, index: number) => (
         <div key={`grid-${item.id}-${index}`} onClick={() => router.push(`/album?link=${encodeURIComponent(item.url)}`)} className="flex flex-col cursor-pointer group">
           <div className="relative overflow-hidden rounded-lg md:rounded-xl shadow-md mb-2 aspect-square">
@@ -346,7 +351,7 @@ function ArtistContent() {
   if (viewMode === 'songs') return (
     <div className="min-h-screen bg-neutral-950 pb-28 pt-2 px-4 md:px-8 max-w-7xl mx-auto animate-in fade-in">
       <ViewAllHeader title="All Songs" countLabel={`${totalSongsCount.toLocaleString()} Total Songs`} />
-      <div className="flex flex-col gap-1" style={{ overflowAnchor: 'none' }}>
+      <div className="flex flex-col gap-1">
         {songs.map((song, idx) => <SongItem key={`song-list-${song.id}-${idx}`} song={song} index={idx} />)}
       </div>
       <div ref={observerRef} className="py-8 flex justify-center">

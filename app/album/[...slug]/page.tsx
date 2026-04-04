@@ -3,9 +3,9 @@
 "use client";
 
 import React, { useEffect, useState, Suspense, useRef, useCallback, useMemo } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Play, ArrowLeft, Loader2, Shuffle, Share2, Info, BadgeAlert, Heart, Clock, MoreHorizontal } from "lucide-react";
-import { useAppContext } from "../../context/AppContext";
+import { useAppContext } from "../../../context/AppContext"; // Adjusted import path according to deeper folder structure, revert if necessary
 
 // --- UTILITIES ---
 const decodeEntities = (text: string) => {
@@ -75,7 +75,7 @@ const PingPongMarquee = ({ text, isPlaying, isSub }: { text: string, isPlaying?:
     checkOverflow();
     window.addEventListener("resize", checkOverflow);
     return () => window.removeEventListener("resize", checkOverflow);
-  }, [text]);
+  },[text]);
 
   let textColor = "text-white group-hover:text-white";
   if (isPlaying && !isSub) textColor = "text-[#1ed760]";
@@ -125,18 +125,28 @@ const AlbumSkeleton = () => (
 
 // --- MAIN PAGE ---
 function AlbumContent() {
+  const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const link = searchParams.get("link");
+
+  // Smart routing: Extracts from `/album/name/id` OR falls back to `?link=` if still used
+  const slug = params?.slug as string | string[];
+  const queryLink = searchParams.get("link");
+  
+  let link = queryLink;
+  if (slug) {
+    const slugPath = Array.isArray(slug) ? slug.join("/") : slug;
+    link = `https://www.jiosaavn.com/album/${slugPath}`;
+  }
   
   const { currentSong, setCurrentSong, setIsPlaying, setQueue } = useAppContext() as any;
   
   const [album, setAlbum] = useState<any>(null);
-  const[loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   
   // UI States
-  const[headerOpacity, setHeaderOpacity] = useState(0);
-  const [showStickyPlay, setShowStickyPlay] = useState(false);
+  const [headerOpacity, setHeaderOpacity] = useState(0);
+  const[showStickyPlay, setShowStickyPlay] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
 
   // Smooth Scroll Listener for Pro-Level Opacity Transition
@@ -191,7 +201,7 @@ function AlbumContent() {
 
   const handleShuffle = useCallback(() => {
     if (!album?.songs?.length) return;
-    const shuffled = [...album.songs].sort(() => Math.random() - 0.5);
+    const shuffled =[...album.songs].sort(() => Math.random() - 0.5);
     if (setQueue) setQueue(shuffled);
     setCurrentSong(shuffled[0]);
     setIsPlaying(true);
@@ -263,7 +273,7 @@ function AlbumContent() {
         </div>
       );
     });
-  }, [album?.songs, currentSongId, handlePlaySong]);
+  },[album?.songs, currentSongId, handlePlaySong]);
 
   if (loading) return <AlbumSkeleton />;
   if (!album) {

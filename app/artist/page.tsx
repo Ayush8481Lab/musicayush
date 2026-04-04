@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 
-// --- Global In-Memory Cache ---
+// --- Global In-Memory Cache (Survives navigation perfectly) ---
 const memoryCache: Record<string, any> = {};
 
 // --- Helpers ---
@@ -43,7 +43,7 @@ const formatFollowers = (count: number) => {
   return count.toLocaleString();
 };
 
-// --- Smart Marquee Component ---
+// --- Smart Marquee Component (Auto-scrolls only if text is too long) ---
 const ScrollableTitle = ({ text, className }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
@@ -79,42 +79,43 @@ const ScrollableTitle = ({ text, className }: { text: string, className?: string
   );
 };
 
-
-// --- UI REUSABLE COMPONENTS (Extracted to completely prevent unmounting & scroll jumps) ---
+// --- UI REUSABLE COMPONENTS (Extracted for Maximum Performance & Zero Jumps) ---
 
 const ViewAllHeader = ({ title, countLabel, artist, onBack }: any) => (
   <div className="sticky top-0 bg-neutral-950/90 backdrop-blur-xl z-40 -mx-4 px-4 py-3 md:py-4 mb-6 flex items-center gap-4 shadow-lg border-b border-white/5">
     <button onClick={onBack} className="p-2.5 bg-white/10 rounded-full hover:bg-white/20 text-white transition-all">
       <ArrowLeft size={22} />
     </button>
-    <img src={getImageUrl(artist?.image)} className="w-12 h-12 md:w-14 md:h-14 rounded-full object-cover shadow-lg border border-white/10" />
-    <div className="overflow-hidden">
+    <img src={getImageUrl(artist?.image)} className="w-12 h-12 md:w-14 md:h-14 rounded-full object-cover shadow-lg border border-white/10 shrink-0" />
+    <div className="overflow-hidden min-w-0">
       <h1 className="text-lg md:text-xl font-black text-white leading-tight truncate">{decodeHTMLEntities(artist?.name)}</h1>
-      <p className="text-xs md:text-sm text-neutral-400 font-medium">{title} • {countLabel}</p>
+      <p className="text-xs md:text-sm text-neutral-400 font-medium truncate">{title} • {countLabel}</p>
     </div>
   </div>
 );
 
 const SongItem = ({ song, index, fallbackArtistName, onPlay }: any) => (
   <div onClick={() => onPlay(song)} className="flex items-center gap-3 md:gap-4 p-2.5 md:p-3 rounded-xl hover:bg-white/5 cursor-pointer group transition-colors">
-    <span className="text-neutral-500 text-sm font-medium w-6 text-center group-hover:text-white">{index + 1}</span>
+    <span className="text-neutral-500 text-sm font-medium w-6 text-center group-hover:text-white shrink-0">{index + 1}</span>
     <img src={getImageUrl(song.image)} className="w-12 h-12 rounded-md object-cover shadow-sm bg-neutral-800 shrink-0" />
     <div className="flex-1 overflow-hidden min-w-0">
       <ScrollableTitle text={song.name || song.title} className="text-sm md:text-base font-bold text-white" />
-      <p className="text-xs md:text-sm text-neutral-400 truncate mt-0.5">{decodeHTMLEntities(song.artists?.primary?.map((a:any) => a.name).join(', ') || fallbackArtistName)}</p>
+      <p className="text-xs md:text-sm text-neutral-400 truncate mt-0.5">
+        {decodeHTMLEntities(song.artists?.primary?.map((a:any) => a.name).join(', ') || fallbackArtistName)}
+      </p>
     </div>
     <div className="hidden md:block text-sm text-neutral-500 w-16 text-right mr-4 font-medium shrink-0">{formatDuration(song.duration)}</div>
     <MoreVertical size={20} className="text-neutral-500 hover:text-white shrink-0" />
   </div>
 );
 
-// Strictly 2 to 4 columns depending on device size
+// Strictly 2 to 4 columns
 const GridCards = ({ items, type }: { items: any[], type: string }) => {
   const router = useRouter();
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 md:gap-5" style={{ overflowAnchor: 'none' }}>
-      {items.map((item: any, index: number) => (
-        <div key={`grid-${item.id}-${index}`} onClick={() => router.push(`/album?link=${encodeURIComponent(item.url)}`)} className="flex flex-col cursor-pointer group min-w-0">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 md:gap-5">
+      {items.map((item: any) => (
+        <div key={item.id} onClick={() => router.push(`/album?link=${encodeURIComponent(item.url)}`)} className="flex flex-col cursor-pointer group min-w-0">
           <div className="relative overflow-hidden rounded-lg md:rounded-xl shadow-md mb-2 aspect-square w-full">
             <img src={getImageUrl(item.image)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 bg-neutral-800" />
           </div>
@@ -132,8 +133,8 @@ const TwoLineCards = ({ items, type }: { items: any[], type: string }) => {
   const router = useRouter();
   return (
     <div className="grid grid-rows-2 grid-flow-col gap-4 md:gap-6 overflow-x-auto snap-x hide-scrollbar pb-6 pt-2 auto-cols-[130px] sm:auto-cols-[150px] md:auto-cols-[170px] scroll-smooth">
-      {items.map((item: any, index: number) => (
-        <div key={`scroll-${item.id}-${index}`} onClick={() => router.push(`/album?link=${encodeURIComponent(item.url)}`)} className="snap-start flex flex-col cursor-pointer group min-w-0">
+      {items.map((item: any) => (
+        <div key={item.id} onClick={() => router.push(`/album?link=${encodeURIComponent(item.url)}`)} className="snap-start flex flex-col cursor-pointer group min-w-0">
           <div className="relative overflow-hidden rounded-lg md:rounded-xl aspect-square shadow-md mb-2 w-full">
             <img src={getImageUrl(item.image)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 bg-neutral-800" />
           </div>
@@ -160,19 +161,19 @@ function ArtistContent() {
   // --- States ---
   const [artist, setArtist] = useState<any>(null);
 
-  const[songs, setSongs] = useState<any[]>([]);
-  const [totalSongsCount, setTotalSongsCount] = useState<number>(0);
+  const [songs, setSongs] = useState<any[]>([]);
+  const[totalSongsCount, setTotalSongsCount] = useState<number>(0);
 
-  const[albums, setAlbums] = useState<any[]>([]);
-  const[totalAlbumsCount, setTotalAlbumsCount] = useState<number>(0);
+  const [albums, setAlbums] = useState<any[]>([]);
+  const [totalAlbumsCount, setTotalAlbumsCount] = useState<number>(0);
 
   const [singles, setSingles] = useState<any[]>([]);
 
-  const [loading, setLoading] = useState(true);
+  const[loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'main' | 'songs' | 'albums'>('main');
 
   // --- Infinite Scroll States ---
-  const [songPage, setSongPage] = useState(0);
+  const[songPage, setSongPage] = useState(0);
   const [loadingMoreSongs, setLoadingMoreSongs] = useState(false);
 
   const [albumPage, setAlbumPage] = useState(0);
@@ -204,8 +205,8 @@ function ArtistContent() {
       try {
         const [artistRes, songsRes, albumsRes] = await Promise.allSettled([
           fetch(`https://ayushm-psi.vercel.app/api/artists/${id}`).then(r => r.json()),
-          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/songs?page=1`).then(r => r.json()),
-          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/albums?page=1`).then(r => r.json())
+          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/songs?page=0`).then(r => r.json()),
+          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/albums?page=0`).then(r => r.json())
         ]);
 
         let fetchedSongs =[];
@@ -231,7 +232,9 @@ function ArtistContent() {
         // 3. Process Main API & Fallback
         if (artistRes.status === "fulfilled" && artistRes.value.success && artistRes.value.data?.name) {
           fetchedArtist = artistRes.value.data;
-          fetchedArtist.isVerified = artistRes.value.data.isVerified === true; 
+          
+          // Secure verified check
+          fetchedArtist.isVerified = artistRes.value.data.isVerified === true || artistRes.value.data.isVerified === "true";
           
           // Grab singles and strictly sort from highest to lowest year
           const rawSingles = fetchedArtist.singles ||[];
@@ -243,7 +246,7 @@ function ArtistContent() {
             const firstSong = fetchedSongs[0];
             const targetId = String(id);
             
-            // Search inside all arrays for exact artist ID match
+            // Deep search inside all arrays for exact artist ID match
             let primaryArtist = firstSong.artists?.all?.find((a: any) => String(a.id) === targetId);
             if (!primaryArtist) {
               primaryArtist = firstSong.artists?.primary?.find((a: any) => String(a.id) === targetId);
@@ -258,7 +261,7 @@ function ArtistContent() {
                 dominantLanguage: firstSong.language || "Unknown",
                 followerCount: 0,
                 isVerified: false,
-                bio:[]
+                bio: []
               };
             }
           }
@@ -274,8 +277,8 @@ function ArtistContent() {
           albums: fetchedAlbums,
           totalAlbumsCount: albumsRes.status === 'fulfilled' ? albumsRes.value.data?.total : 0,
           singles: fetchedSingles,
-          songPage: 1,
-          albumPage: 1
+          songPage: 0,
+          albumPage: 0
         };
 
       } catch (error) {
@@ -310,14 +313,16 @@ function ArtistContent() {
       let newBatch: any[] =[];
       results.forEach(res => {
         if (res.status === 'fulfilled' && res.value.success && res.value.data?.songs) {
-          newBatch =[...newBatch, ...res.value.data.songs];
+          newBatch = [...newBatch, ...res.value.data.songs];
         }
       });
 
       setSongs(prev => {
         const existingIds = new Set(prev.map(s => s.id));
         const unique = newBatch.filter(s => !existingIds.has(s.id));
-        const finalData =[...prev, ...unique]; 
+        
+        // Strict Append to bottom - Prevents Jumps!
+        const finalData = [...prev, ...unique]; 
         
         if (memoryCache[id]) {
           memoryCache[id].songs = finalData;
@@ -332,7 +337,7 @@ function ArtistContent() {
     } finally {
       setLoadingMoreSongs(false);
     }
-  },[id, songPage, songs.length, totalSongsCount, loadingMoreSongs]);
+  }, [id, songPage, songs.length, totalSongsCount, loadingMoreSongs]);
 
 
   const loadMoreAlbumsBatch = useCallback(async () => {
@@ -355,21 +360,16 @@ function ArtistContent() {
       let newBatch: any[] =[];
       results.forEach(res => {
         if (res.status === 'fulfilled' && res.value.success && res.value.data?.albums) {
-          newBatch =[...newBatch, ...res.value.data.albums];
+          newBatch = [...newBatch, ...res.value.data.albums];
         }
       });
 
       setAlbums(prev => {
         const existingIds = new Set(prev.map(a => a.id));
-        
-        // 1. Get truly new items
         const unique = newBatch.filter(a => !existingIds.has(a.id));
         
-        // 2. Sort ONLY the new items (Prevents shuffling and jumping of the entire list)
-        const sortedUnique = unique.sort((a, b) => (b.year || 0) - (a.year || 0));
-        
-        // 3. Cleanly append to bottom
-        const finalData =[...prev, ...sortedUnique];
+        // We only append to avoid destroying the user's scroll position
+        const finalData = [...prev, ...unique];
 
         if (memoryCache[id]) {
           memoryCache[id].albums = finalData;
@@ -384,7 +384,7 @@ function ArtistContent() {
     } finally {
       setLoadingMoreAlbums(false);
     }
-  }, [id, albumPage, albums.length, totalAlbumsCount, loadingMoreAlbums]);
+  },[id, albumPage, albums.length, totalAlbumsCount, loadingMoreAlbums]);
 
   // Observer Trigger
   useEffect(() => {
@@ -393,11 +393,11 @@ function ArtistContent() {
         if (viewMode === 'songs') loadMoreSongsBatch();
         if (viewMode === 'albums') loadMoreAlbumsBatch();
       }
-    }, { rootMargin: '600px', threshold: 0.1 }); // Starts loading safely before bottom
+    }, { rootMargin: '600px', threshold: 0.1 }); 
 
     if (observerRef.current) observer.observe(observerRef.current);
     return () => observer.disconnect();
-  }, [loadMoreSongsBatch, loadMoreAlbumsBatch, viewMode]);
+  },[loadMoreSongsBatch, loadMoreAlbumsBatch, viewMode]);
 
 
   if (loading) return <div className="flex h-screen items-center justify-center bg-neutral-950"><Loader2 className="animate-spin text-white" size={40} /></div>;
@@ -415,10 +415,10 @@ function ArtistContent() {
         artist={artist} 
         onBack={() => { setViewMode('main'); window.scrollTo(0, 0); }} 
       />
-      <div className="flex flex-col gap-1" style={{ overflowAnchor: 'none' }}>
+      <div className="flex flex-col gap-1">
         {songs.map((song, idx) => (
           <SongItem 
-            key={`song-list-${song.id}-${idx}`} 
+            key={song.id} 
             song={song} 
             index={idx} 
             fallbackArtistName={artist?.name} 
@@ -426,7 +426,8 @@ function ArtistContent() {
           />
         ))}
       </div>
-      <div ref={observerRef} className="py-8 flex justify-center">
+      {/* min-h-[80px] prevents the container from collapsing and causing jump when loading spinner hides */}
+      <div ref={observerRef} className="py-8 flex justify-center min-h-[80px]">
         {loadingMoreSongs ? <Loader2 className="animate-spin text-white" size={32} /> :
           songs.length >= totalSongsCount && <span className="text-neutral-500 font-medium text-sm">End of tracklist</span>}
       </div>
@@ -442,7 +443,7 @@ function ArtistContent() {
         onBack={() => { setViewMode('main'); window.scrollTo(0, 0); }} 
       />
       <GridCards items={albums} type="Album" />
-      <div ref={observerRef} className="py-10 flex justify-center">
+      <div ref={observerRef} className="py-10 flex justify-center min-h-[80px]">
         {loadingMoreAlbums ? <Loader2 className="animate-spin text-white" size={32} /> :
           albums.length >= totalAlbumsCount && <span className="text-neutral-500 font-medium text-sm">End of albums</span>}
       </div>
@@ -523,7 +524,7 @@ function ArtistContent() {
             <div className="flex flex-col gap-1 bg-white/[0.02] p-2 md:p-3 rounded-2xl border border-white/5">
               {songs.slice(0, 10).map((song: any, index: number) => (
                 <SongItem 
-                  key={`top-song-${song.id}-${index}`} 
+                  key={`top-${song.id}-${index}`} 
                   song={song} 
                   index={index} 
                   fallbackArtistName={artist?.name}
@@ -534,7 +535,7 @@ function ArtistContent() {
           </section>
         )}
 
-        {/* 3. Albums (Sorted by Year Descending) */}
+        {/* 3. Albums */}
         {albums.length > 0 && (
           <section className="mb-12">
             <div className="flex justify-between items-end mb-4">

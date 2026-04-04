@@ -3,7 +3,7 @@
 "use client";
 
 import React, { useEffect, useState, Suspense, useRef, useCallback, useMemo } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Play, ArrowLeft, Loader2, Shuffle, Share2, Info, BadgeAlert, Heart, Clock } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 
@@ -125,22 +125,33 @@ const PlaylistSkeleton = () => (
 
 // --- MAIN PAGE ---
 function PlaylistContent() {
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const link = searchParams.get("link");
+
+  // Construct the JioSaavn link by pairing their base domain with our dynamically visited path
+  const link = useMemo(() => {
+    if (!pathname) return "";
+    let fullUrl = `https://www.jiosaavn.com${pathname}`;
+    const queryString = searchParams.toString();
+    if (queryString) {
+      fullUrl += `?${queryString}`;
+    }
+    return fullUrl;
+  },[pathname, searchParams]);
   
   const { currentSong, setCurrentSong, setIsPlaying, setQueue } = useAppContext() as any;
   
   const [playlist, setPlaylist] = useState<any>(null);
-  const[page, setPage] = useState(1);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const[loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const[hasMore, setHasMore] = useState(true);
   
   // UI States
-  const [headerOpacity, setHeaderOpacity] = useState(0);
-  const[showStickyPlay, setShowStickyPlay] = useState(false);
-  const[isLiked, setIsLiked] = useState(false);
+  const[headerOpacity, setHeaderOpacity] = useState(0);
+  const [showStickyPlay, setShowStickyPlay] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -182,7 +193,7 @@ function PlaylistContent() {
             if (!prev) return newData;
             const existingIds = new Set(prev.songs.map((s: any) => s.id));
             const newSongs = newData.songs?.filter((s: any) => !existingIds.has(s.id)) ||[];
-            return { ...prev, songs:[...prev.songs, ...newSongs] };
+            return { ...prev, songs: [...prev.songs, ...newSongs] };
           });
           setHasMore(newData.songs && newData.songs.length > 0);
         }
@@ -209,20 +220,20 @@ function PlaylistContent() {
     setCurrentSong(song);
     setIsPlaying(true);
     if (setQueue && playlist?.songs) setQueue(playlist.songs);
-  },[setCurrentSong, setIsPlaying, setQueue, playlist?.songs]);
+  }, [setCurrentSong, setIsPlaying, setQueue, playlist?.songs]);
 
   const handlePlayPlaylist = useCallback(() => {
     if (!playlist?.songs?.length) return;
     handlePlaySong(playlist.songs[0]);
-  },[playlist?.songs, handlePlaySong]);
+  }, [playlist?.songs, handlePlaySong]);
 
   const handleShuffle = useCallback(() => {
     if (!playlist?.songs?.length) return;
-    const shuffled =[...playlist.songs].sort(() => Math.random() - 0.5);
+    const shuffled = [...playlist.songs].sort(() => Math.random() - 0.5);
     if (setQueue) setQueue(shuffled);
     setCurrentSong(shuffled[0]);
     setIsPlaying(true);
-  },[playlist?.songs, setQueue, setCurrentSong, setIsPlaying]);
+  }, [playlist?.songs, setQueue, setCurrentSong, setIsPlaying]);
 
   const handleShare = useCallback(async () => {
     const shareData = {
@@ -291,7 +302,7 @@ function PlaylistContent() {
         </div>
       );
     });
-  },[playlist?.songs, currentSongId, lastElementRef, handlePlaySong]);
+  }, [playlist?.songs, currentSongId, lastElementRef, handlePlaySong]);
 
   if (loading && page === 1) return <PlaylistSkeleton />;
   if (!playlist) {
@@ -329,7 +340,7 @@ function PlaylistContent() {
 
   return (
     // select-none and touch-callout block zooming, text selection, and image preview globally
-    <div className="pb-40 bg-[#121212] min-h-screen relative text-white select-none [-webkit-touch-callout:none] font-sans">
+    <div className="pb-40 bg-[#121212] min-h-screen relative text-white select-none[-webkit-touch-callout:none] font-sans">
 
       <style dangerouslySetInnerHTML={{__html: `
         /* SLOW, READABLE MARQUEE WITH PAUSES */

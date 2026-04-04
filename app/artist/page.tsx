@@ -44,7 +44,6 @@ const formatFollowers = (count: number) => {
 };
 
 // --- Smart Marquee Component ---
-// Auto-detects if text is overflowing the container. If yes, animates infinitely.
 const ScrollableTitle = ({ text, className }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
@@ -91,22 +90,22 @@ function ArtistContent() {
   // --- States ---
   const [artist, setArtist] = useState<any>(null);
 
-  const[songs, setSongs] = useState<any[]>([]);
-  const[totalSongsCount, setTotalSongsCount] = useState<number>(0);
+  const [songs, setSongs] = useState<any[]>([]);
+  const [totalSongsCount, setTotalSongsCount] = useState<number>(0);
 
-  const [albums, setAlbums] = useState<any[]>([]);
-  const[totalAlbumsCount, setTotalAlbumsCount] = useState<number>(0);
+  const[albums, setAlbums] = useState<any[]>([]);
+  const [totalAlbumsCount, setTotalAlbumsCount] = useState<number>(0);
 
-  const[singles, setSingles] = useState<any[]>([]);
+  const [singles, setSingles] = useState<any[]>([]);
 
-  const [loading, setLoading] = useState(true);
+  const[loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'main' | 'songs' | 'albums'>('main');
 
   // --- Infinite Scroll States ---
-  const[songPage, setSongPage] = useState(1);
+  const[songPage, setSongPage] = useState(0);
   const [loadingMoreSongs, setLoadingMoreSongs] = useState(false);
 
-  const[albumPage, setAlbumPage] = useState(1);
+  const [albumPage, setAlbumPage] = useState(0);
   const[loadingMoreAlbums, setLoadingMoreAlbums] = useState(false);
 
   // UI Refs
@@ -135,12 +134,12 @@ function ArtistContent() {
       try {
         const [artistRes, songsRes, albumsRes] = await Promise.allSettled([
           fetch(`https://ayushm-psi.vercel.app/api/artists/${id}`).then(r => r.json()),
-          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/songs?page=1`).then(r => r.json()),
-          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/albums?page=1`).then(r => r.json())
+          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/songs?page=0`).then(r => r.json()),
+          fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/albums?page=0`).then(r => r.json())
         ]);
 
         let fetchedSongs =[];
-        let fetchedAlbums =[];
+        let fetchedAlbums = [];
         let fetchedSingles =[];
         let fetchedArtist = null;
 
@@ -162,8 +161,9 @@ function ArtistContent() {
         // 3. Process Main API & Fallback
         if (artistRes.status === "fulfilled" && artistRes.value.success && artistRes.value.data?.name) {
           fetchedArtist = artistRes.value.data;
+          fetchedArtist.isVerified = artistRes.value.data.isVerified === true; // Capture verified state securely
           
-          // Grab singles and sort them high to low
+          // Grab singles and strictly sort from highest to lowest year
           const rawSingles = fetchedArtist.singles ||[];
           fetchedSingles = rawSingles.sort((a: any, b: any) => (b.year || 0) - (a.year || 0));
           setSingles(fetchedSingles);
@@ -186,7 +186,8 @@ function ArtistContent() {
                 dominantType: primaryArtist.role || primaryArtist.type || "Artist",
                 dominantLanguage: firstSong.language || "Unknown",
                 followerCount: 0,
-                bio:[]
+                isVerified: false,
+                bio: []
               };
             }
           }
@@ -202,8 +203,8 @@ function ArtistContent() {
           albums: fetchedAlbums,
           totalAlbumsCount: albumsRes.status === 'fulfilled' ? albumsRes.value.data?.total : 0,
           singles: fetchedSingles,
-          songPage: 1,
-          albumPage: 1
+          songPage: 0,
+          albumPage: 0
         };
 
       } catch (error) {
@@ -214,7 +215,7 @@ function ArtistContent() {
     };
 
     fetchInitialData();
-  }, [id]);
+  },[id]);
 
 
   // --- 2. Batch Infinite Loaders (Process 3 Pages Concurrently) ---
@@ -245,7 +246,7 @@ function ArtistContent() {
       setSongs(prev => {
         const existingIds = new Set(prev.map(s => s.id));
         const unique = newBatch.filter(s => !existingIds.has(s.id));
-        const finalData = [...prev, ...unique]; 
+        const finalData = [...prev, ...unique]; // Append uniquely to the bottom
         
         if (memoryCache[id]) {
           memoryCache[id].songs = finalData;
@@ -293,11 +294,11 @@ function ArtistContent() {
         // 1. Get truly new items
         const unique = newBatch.filter(a => !existingIds.has(a.id));
         
-        // 2. Sort ONLY the new items so we don't shuffle the old ones (Fixes the jump!)
+        // 2. Sort ONLY the new items so we don't shuffle the old ones (Completely fixes the scroll jump!)
         const sortedUnique = unique.sort((a, b) => (b.year || 0) - (a.year || 0));
         
         // 3. Cleanly append to bottom
-        const finalData =[...prev, ...sortedUnique];
+        const finalData = [...prev, ...sortedUnique];
 
         if (memoryCache[id]) {
           memoryCache[id].albums = finalData;
@@ -312,7 +313,7 @@ function ArtistContent() {
     } finally {
       setLoadingMoreAlbums(false);
     }
-  }, [id, albumPage, albums.length, totalAlbumsCount, loadingMoreAlbums]);
+  },[id, albumPage, albums.length, totalAlbumsCount, loadingMoreAlbums]);
 
   // Observer Trigger
   useEffect(() => {
@@ -321,11 +322,11 @@ function ArtistContent() {
         if (viewMode === 'songs') loadMoreSongsBatch();
         if (viewMode === 'albums') loadMoreAlbumsBatch();
       }
-    }, { rootMargin: '400px', threshold: 0.1 });
+    }, { rootMargin: '600px', threshold: 0.1 }); // Starts loading safely before bottom
 
     if (observerRef.current) observer.observe(observerRef.current);
     return () => observer.disconnect();
-  },[loadMoreSongsBatch, loadMoreAlbumsBatch, viewMode]);
+  }, [loadMoreSongsBatch, loadMoreAlbumsBatch, viewMode]);
 
 
   if (loading) return <div className="flex h-screen items-center justify-center bg-neutral-950"><Loader2 className="animate-spin text-white" size={40} /></div>;
@@ -361,7 +362,7 @@ function ArtistContent() {
     </div>
   );
 
-  // Grid for 2-4 items strictly
+  // Strictly 2 to 4 columns
   const GridCards = ({ items, type }: { items: any[], type: string }) => (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 md:gap-5">
       {items.map((item: any, index: number) => (
@@ -400,17 +401,6 @@ function ArtistContent() {
 
   if (viewMode === 'songs') return (
     <div className="min-h-screen bg-neutral-950 pb-28 pt-2 px-4 md:px-8 max-w-7xl mx-auto animate-in fade-in">
-      {/* Global Style for Marquee Animation */}
-      <style>{`
-        @keyframes custom-marquee {
-          0% { transform: translateX(0%); }
-          100% { transform: translateX(-50%); }
-        }
-        .animate-marquee-custom {
-          animation: custom-marquee 8s linear infinite;
-        }
-      `}</style>
-      
       <ViewAllHeader title="All Songs" countLabel={`${totalSongsCount.toLocaleString()} Total Songs`} />
       <div className="flex flex-col gap-1">
         {songs.map((song, idx) => <SongItem key={`song-list-${song.id}-${idx}`} song={song} index={idx} />)}
@@ -424,16 +414,6 @@ function ArtistContent() {
 
   if (viewMode === 'albums') return (
     <div className="min-h-screen bg-neutral-950 pb-28 pt-2 px-4 md:px-8 max-w-7xl mx-auto animate-in fade-in">
-      <style>{`
-        @keyframes custom-marquee {
-          0% { transform: translateX(0%); }
-          100% { transform: translateX(-50%); }
-        }
-        .animate-marquee-custom {
-          animation: custom-marquee 8s linear infinite;
-        }
-      `}</style>
-
       <ViewAllHeader title="All Albums" countLabel={`${totalAlbumsCount.toLocaleString()} Total Albums`} />
       <GridCards items={albums} type="Album" />
       <div ref={observerRef} className="py-10 flex justify-center">
@@ -446,15 +426,6 @@ function ArtistContent() {
   // --- MAIN PAGE VIEW ---
   return (
     <div className="pb-28 min-h-screen bg-neutral-950 w-full overflow-hidden">
-      <style>{`
-        @keyframes custom-marquee {
-          0% { transform: translateX(0%); }
-          100% { transform: translateX(-50%); }
-        }
-        .animate-marquee-custom {
-          animation: custom-marquee 8s linear infinite;
-        }
-      `}</style>
       
       {/* 1. Artist Hero Section */}
       <div className="relative w-full h-[400px] md:h-[500px] flex flex-col justify-end bg-neutral-900 overflow-hidden">
@@ -476,13 +447,15 @@ function ArtistContent() {
         <div className="relative z-20 px-4 md:px-10 pb-8 max-w-7xl mx-auto w-full flex flex-col md:flex-row md:items-end gap-5 md:gap-8">
           <img 
             src={getImageUrl(artist.image)} 
-            className="w-36 h-36 md:w-56 md:h-56 rounded-full shadow-[0_15px_40px_rgba(0,0,0,0.4)] object-cover border-[3px] border-white/20 bg-neutral-800" 
+            className="w-36 h-36 md:w-56 md:h-56 rounded-full shadow-[0_15px_40px_rgba(0,0,0,0.4)] object-cover border-[3px] border-white/20 bg-neutral-800 shrink-0" 
             alt={decodeHTMLEntities(artist.name)}
           />
           <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 text-blue-400 font-bold text-xs md:text-sm uppercase tracking-widest drop-shadow-sm">
-              <BadgeCheck size={18} fill="currentColor" className="text-white" /> Verified Artist
-            </div>
+            {artist.isVerified && (
+              <div className="flex items-center gap-1.5 text-blue-400 font-bold text-xs md:text-sm uppercase tracking-widest drop-shadow-sm">
+                <BadgeCheck size={18} fill="currentColor" className="text-white" /> Verified Artist
+              </div>
+            )}
             <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white tracking-tight drop-shadow-lg leading-none truncate">
               {decodeHTMLEntities(artist.name)}
             </h1>
@@ -576,8 +549,19 @@ function ArtistContent() {
 
 export default function ArtistPage() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-neutral-950"><Loader2 className="animate-spin text-white" size={40} /></div>}>
-      <ArtistContent />
-    </Suspense>
+    <>
+      <style>{`
+        @keyframes custom-marquee {
+          0% { transform: translateX(0%); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee-custom {
+          animation: custom-marquee 8s linear infinite;
+        }
+      `}</style>
+      <Suspense fallback={<div className="flex h-screen items-center justify-center bg-neutral-950"><Loader2 className="animate-spin text-white" size={40} /></div>}>
+        <ArtistContent />
+      </Suspense>
+    </>
   );
 }

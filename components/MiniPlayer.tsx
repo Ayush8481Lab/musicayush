@@ -144,6 +144,7 @@ export default function MiniPlayer() {
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
+  const queueContainerRef = useRef<HTMLDivElement>(null);
 
   const rapidKeyIdxRef = useRef(0);
   const[spotifyId, setSpotifyId] = useState<string | null>(null);
@@ -161,6 +162,7 @@ export default function MiniPlayer() {
   const fullLyricsContainerRef = useRef<HTMLDivElement>(null);
   const fullActiveLyricRef = useRef<HTMLParagraphElement>(null);
   const canvasVideoRef = useRef<HTMLVideoElement>(null);
+  const playNextRef = useRef<() => void>(() => {});
 
   // Queue Buffering
   const fetchedRecsFor = useRef<Set<string>>(new Set());
@@ -399,7 +401,7 @@ export default function MiniPlayer() {
       } else if (e.data?.type === 'YTP_STATE') {
         if (e.data.state === 1) { audioRef.current?.pause(); setIsPlaying(true); } 
         else if (e.data.state === 2) { setIsPlaying(false); } 
-        else if (e.data.state === 0) { playNext(); } // End of video -> securely play next!
+        else if (e.data.state === 0) { playNextRef.current(); } // Resolves Stale Closure on Next Action
       }
     };
     window.addEventListener('message', handleMsg);
@@ -673,6 +675,23 @@ export default function MiniPlayer() {
     }
   };
 
+  // Drag Handlers Auto-Scroll Injection
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (dragOverItem.current !== index) {
+      dragOverItem.current = index;
+      setDropTargetIndex(index);
+    }
+    if (queueContainerRef.current) {
+      const container = queueContainerRef.current;
+      const rect = container.getBoundingClientRect();
+      const offsetY = e.clientY - rect.top;
+      const scrollThreshold = 80;
+      if (offsetY < scrollThreshold) container.scrollTop -= 8;
+      else if (offsetY > rect.height - scrollThreshold) container.scrollTop += 8;
+    }
+  };
+
   const handleSort = () => {
     if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
       const _upcomingQueue = [...upcomingQueue];
@@ -701,6 +720,8 @@ export default function MiniPlayer() {
     else if (repeatMode === 1 && queue && queue.length > 0) { setCurrentSong(queue[0]); setIsPlaying(true); } 
     else { setIsPlaying(false); setProgress(0); }
   };
+  
+  useEffect(() => { playNextRef.current = playNext; });
 
   const playPrev = () => {
     if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
@@ -771,15 +792,15 @@ export default function MiniPlayer() {
         <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.85) 100%)' }} />
         {canvasData?.canvasUrl && !isVideoMode && (
           <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 ${isCanvasLoaded && !isScrolledPastMain && !showQueue ? 'opacity-100' : 'opacity-0'}`}>
-            <video ref={canvasVideoRef} src={canvasData.canvasUrl} autoPlay loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-[110%] h-[110%] -top-[5%] -left-[5%] object-cover" />
+            <video ref={canvasVideoRef} src={canvasData.canvasUrl} autoPlay loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover" />
             <div className={`absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/95 transition-opacity duration-500 ${isUiHidden && !isLyricsFullScreen ? 'opacity-0' : 'opacity-100'}`} />
           </div>
         )}
 
         {/* SCROLLABLE MAIN CONTENT */}
-        <div className="absolute inset-0 z-20 overflow-y-auto overflow-x-hidden scrollbar-hide flex flex-col pointer-events-none" onScroll={handleScroll}>
+        <div className={`absolute inset-0 z-20 overflow-x-hidden scrollbar-hide flex flex-col pointer-events-none ${isLyricsFullScreen ? 'overflow-y-hidden' : 'overflow-y-auto'}`} onScroll={handleScroll}>
           
-          <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto" style={{ minHeight: 'calc(100dvh - 90px)' }}>
+          <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto transition-all duration-500" style={{ height: isLyricsFullScreen ? '100%' : undefined, minHeight: isLyricsFullScreen ? '100%' : 'calc(100dvh - 90px)' }}>
             
             {/* Header */}
             <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4 transition-opacity duration-500 ${isUiHidden && !isVideoMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
@@ -795,11 +816,11 @@ export default function MiniPlayer() {
             <div className={`flex-1 min-h-0 w-full flex items-center justify-center relative z-30 transition-all duration-500 ${isLyricsFullScreen ? 'px-0 py-0 flex-col items-stretch justify-start' : (isVideoMode ? 'px-4 py-2' : 'px-8 py-2')}`}>
               
               {isLyricsFullScreen ? (
-                <div className="flex-1 w-full flex flex-col relative overflow-hidden mask-edges-vertical" style={{ minHeight: '40vh' }}>
-                  <div className="absolute top-2 right-6 z-40 bg-black/40 hover:bg-black/60 rounded-full transition-colors cursor-pointer pointer-events-auto">
-                    <button onClick={(e) => { e.stopPropagation(); setIsLyricsFullScreen(false); }} className="p-2 text-white/80 hover:text-white"><Minimize2 size={20} /></button>
+                <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden mask-edges-vertical pointer-events-auto">
+                  <div className="absolute top-2 right-4 z-[60] bg-black/50 hover:bg-black/80 rounded-full transition-colors cursor-pointer backdrop-blur-md pointer-events-auto">
+                    <button onClick={(e) => { e.stopPropagation(); setIsLyricsFullScreen(false); }} className="p-2.5 text-white"><Minimize2 size={22} /></button>
                   </div>
-                  <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-10 pb-8 flex flex-col gap-8 w-full" ref={fullLyricsContainerRef}>
+                  <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-16 pb-[30vh] flex flex-col gap-8 w-full h-full" ref={fullLyricsContainerRef}>
                     {lyrics.map((line, idx) => {
                       const isActive = idx === activeLyricIndex;
                       const isPast = idx < activeLyricIndex;
@@ -1042,7 +1063,7 @@ export default function MiniPlayer() {
             <button className="text-[14px] font-medium text-white/80 active:opacity-50">Edit</button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-5 pb-32 no-select-text">
+          <div className="flex-1 overflow-y-auto px-5 pb-32 no-select-text" ref={queueContainerRef}>
             <span className="text-[14px] font-medium text-white/60 block mb-6 uppercase tracking-wider">Playing {contextName}</span>
             
             <div className="flex items-center justify-between w-full mb-8">
@@ -1070,17 +1091,17 @@ export default function MiniPlayer() {
                   key={index} 
                   draggable
                   onDragStart={(e) => { dragItem.current = index; setDraggedIndex(index); }}
-                  onDragEnter={(e) => { e.preventDefault(); dragOverItem.current = index; setDropTargetIndex(index); }}
-                  onDragOver={(e) => e.preventDefault()}
+                  onDragEnter={(e) => { e.preventDefault(); }}
+                  onDragOver={(e) => handleDragOver(e, index)}
                   onDragEnd={handleSort}
                   onClick={() => {
                      setCurrentSong(track);
                      setUpcomingQueue(prev => prev.filter((_, i) => i !== index));
                      setIsPlaying(true);
                   }}
-                  className={`flex items-center justify-between w-full group p-1 rounded-md transition-all duration-200 cursor-pointer
-                    ${draggedIndex === index ? 'opacity-30 scale-95 bg-white/10' : 'hover:bg-white/5'} 
-                    ${dropTargetIndex === index && draggedIndex !== index ? 'mt-[3.5rem] border-t-2 border-[#1db954] rounded-t-none' : ''}`}
+                  className={`flex items-center justify-between w-full group p-1 rounded-md transition-all duration-300 cursor-pointer
+                    ${draggedIndex === index ? 'opacity-40 scale-[0.98] bg-white/10 shadow-inner' : 'hover:bg-white/5'} 
+                    ${dropTargetIndex === index && draggedIndex !== index ? 'mt-[3.5rem] border-t-2 border-[#1db954] rounded-t-none bg-gradient-to-b from-white/10 to-transparent' : ''}`}
                 >
                   <div className="flex items-center gap-3 overflow-hidden pointer-events-none">
                     <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">

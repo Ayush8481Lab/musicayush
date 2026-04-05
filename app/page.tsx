@@ -224,14 +224,14 @@ const AsyncCarousel = ({ title, items, type, onItemClick }: any) => {
 
 export default function Home() {
   const { language, setCurrentSong, setIsPlaying } = useAppContext();
-  const [loading, setLoading] = useState(true);
+  const[loading, setLoading] = useState(true);
   const router = useRouter();
 
   const [trending, setTrending] = useState<any[]>([]);
   const[newReleases, setNewReleases] = useState<any[]>([]);
   const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
-  const [otherPromos, setOtherPromos] = useState<any[]>([]);
-  const [topArtists, setTopArtists] = useState<any[]>([]);
+  const[otherPromos, setOtherPromos] = useState<any[]>([]);
+  const[topArtists, setTopArtists] = useState<any[]>([]);
   const [charts, setCharts] = useState<any[]>([]);
 
   const [recoArtists, setRecoArtists] = useState<any[]>([]);
@@ -271,11 +271,11 @@ export default function Home() {
         };
 
         // Apply formatting directly to trending and new releases
-        setTrending(applySubtitleFallback(data.trending || []));
+        setTrending(applySubtitleFallback(data.trending ||[]));
         setNewReleases(applySubtitleFallback(data.new_releases ||[]));
 
         // Filter all sections that render playlists
-        setFeaturedPlaylists(filterJioPlaylists(data.featured_playlists || []));
+        setFeaturedPlaylists(filterJioPlaylists(data.featured_playlists ||[]));
         setCharts(filterJioPlaylists(data.top_charts ||[]));
         setRecoPlaylists(filterJioPlaylists(data.recommended_playlists ||[]));
 
@@ -285,7 +285,7 @@ export default function Home() {
         })).filter((promo: any) => promo.data.length > 0);
         setOtherPromos(cleanedPromos);
 
-        setTopArtists(data.top_artists || []);
+        setTopArtists(data.top_artists ||[]);
         setRecoArtists(data.recommended_artists ||[]);
         setRecoActors(data.recommended_actors ||[]);
         setRecoAlbums(data.recommended_albums ||[]);
@@ -316,8 +316,32 @@ export default function Home() {
       targetPath = link.split("?")[0]; // removes any trailing queries
     }
 
+    // --- FIX: Map and normalize extracted artists to prevent 'Unknown Artist' in MiniPlayer ---
+    let extractedArtists = item.more_info?.singers || item.primaryArtists || item.singers;
+    
+    if (!extractedArtists && item.more_info?.artistMap?.primary_artists && Array.isArray(item.more_info.artistMap.primary_artists)) {
+      extractedArtists = item.more_info.artistMap.primary_artists.map((a: any) => a.name).join(", ");
+    }
+    if (!extractedArtists && item.more_info?.artistMap?.artists && Array.isArray(item.more_info.artistMap.artists)) {
+      extractedArtists = item.more_info.artistMap.artists.map((a: any) => a.name).join(", ");
+    }
+    if (!extractedArtists && item.subtitle && item.subtitle.toLowerCase() !== "song") {
+      extractedArtists = item.subtitle;
+    }
+    if (!extractedArtists) {
+      extractedArtists = "Unknown Artist";
+    }
+
+    const normalizedSongItem = {
+      ...item,
+      artists: item.artists || extractedArtists,
+      singers: item.singers || extractedArtists,
+      primaryArtists: item.primaryArtists || extractedArtists
+    };
+    // ----------------------------------------------------------------------------------------
+
     if (type === "song") {
-      setCurrentSong(item);
+      setCurrentSong(normalizedSongItem);
       setIsPlaying(true);
     } else if (type === "album" || link.includes("/album/")) {
       router.push(targetPath);
@@ -326,7 +350,8 @@ export default function Home() {
     } else if (artistId || link.includes("/artist/")) {
       router.push(`/artist?id=${artistId || item.id}`);
     } else {
-      setCurrentSong(item);
+      // Fallback
+      setCurrentSong(normalizedSongItem);
       setIsPlaying(true);
     }
   };

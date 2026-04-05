@@ -77,14 +77,13 @@ const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
     >
       <div className={`relative overflow-hidden bg-white/5 border border-white/5 mb-2 transition-transform duration-300 active:scale-95 shadow-md ${isCircular ? "rounded-full aspect-square" : "rounded-xl aspect-[1/1]"}`}>
         <img
-          src={getImageUrl(item.image)}
+          src={getImageUrl(item.image_link || item.image)}
           alt={title}
           loading="lazy"
           decoding="async"
           onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/500x500?text=Music"; }}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
         />
-        {/* Removed the black overlay to keep original colors bright and vibrant */}
       </div>
 
       <div className="w-full overflow-hidden whitespace-nowrap text-center">
@@ -112,11 +111,17 @@ const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
 
 // Async Image Card (Highly Optimized Observer - No Subtitles)
 const AsyncImageCard = ({ item, type, onClick }: any) => {
-  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  // Try to use image_link directly from the new API to avoid unneeded fetches
+  const [imgUrl, setImgUrl] = useState<string | null>(
+    (item.image_link || item.image) ? getImageUrl(item.image_link || item.image) : null
+  );
   const cardRef = useRef<HTMLDivElement>(null);
   const fetched = useRef(false);
 
   useEffect(() => {
+    // Skip intersection observer if we already have the image directly from API
+    if (imgUrl) return;
+
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && !fetched.current) {
         fetched.current = true;
@@ -127,7 +132,7 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
 
     if (cardRef.current) observer.observe(cardRef.current);
     return () => observer.disconnect();
-  }, [item]);
+  }, [item, imgUrl]);
 
   const fetchImage = async () => {
     try {
@@ -223,16 +228,16 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const[trending, setTrending] = useState<any[]>([]);
+  const [trending, setTrending] = useState<any[]>([]);
   const [newReleases, setNewReleases] = useState<any[]>([]);
   const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
-  const[otherPromos, setOtherPromos] = useState<any[]>([]);
-  const[topArtists, setTopArtists] = useState<any[]>([]);
+  const [otherPromos, setOtherPromos] = useState<any[]>([]);
+  const [topArtists, setTopArtists] = useState<any[]>([]);
   const [charts, setCharts] = useState<any[]>([]);
 
   const [recoArtists, setRecoArtists] = useState<any[]>([]);
-  const[recoActors, setRecoActors] = useState<any[]>([]);
-  const[recoAlbums, setRecoAlbums] = useState<any[]>([]);
+  const [recoActors, setRecoActors] = useState<any[]>([]);
+  const [recoAlbums, setRecoAlbums] = useState<any[]>([]);
   const [recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
 
   useEffect(() => {
@@ -243,48 +248,19 @@ export default function Home() {
       setRecoArtists([]); setRecoActors([]); setRecoAlbums([]); setRecoPlaylists([]);
 
       try {
-        const[launchRes, artistsRes, featuredRes, albumsRes, trendingRes, footerRes] = await Promise.all([
-          fetch(`/api/jiosaavn?__call=webapi.getLaunchData&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
-          fetch(`/api/jiosaavn?__call=social.getTopArtists&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
-          fetch(`/api/jiosaavn?__call=content.getFeaturedPlaylists&fetch_from_serialized_files=true&p=1&n=50&api_version=4&_format=json&_marker=0&ctx=wap6dot0&languages=${language}`),
-          fetch(`/api/jiosaavn?__call=content.getAlbums&api_version=4&_format=json&_marker=0&n=50&p=1&ctx=wap6dot0&languages=${language}`),
-          fetch(`/api/jiosaavn?__call=content.getTrending&api_version=4&_format=json&_marker=0&n=50&p=1&ctx=wap6dot0&languages=${language}`),
-          fetch(`/api/jiosaavn?__call=webapi.getFooterDetails&language=${language}&api_version=4&_format=json&_marker=0`)
-        ]);
+        const res = await fetch(`https://ayushpr.vercel.app/home?ln=${language}`);
+        const data = await res.json();
 
-        const launchJson = await launchRes.json();
-        const artistsJson = await artistsRes.json();
-        const featuredJson = await featuredRes.json();
-        const albumsJson = await albumsRes.json();
-        const trendingJson = await trendingRes.json();
-        const footerJson = await footerRes.json();
-
-        const trendData = Array.isArray(trendingJson) ? trendingJson : trendingJson.data ||[];
-        setTrending(mergeAndDedupe(launchJson.new_trending, trendData));
-
-        const albumsData = Array.isArray(albumsJson) ? albumsJson : albumsJson.data ||[];
-        setNewReleases(albumsData);
-
-        setFeaturedPlaylists(Array.isArray(featuredJson) ? featuredJson : featuredJson.data ||[]);
-
-        if (launchJson.modules) {
-          const activeModules = Object.keys(launchJson.modules)
-            .map((key) => ({ key, ...launchJson.modules[key] }))
-            .sort((a, b) => a.position - b.position)
-            .filter((m) => m.source !== "radio" && m.type !== "radio_station" && m.source !== "artist_recos");
-
-          setCharts(launchJson.charts || []);
-
-          const exclude =["new_trending", "new_albums", "charts", "top_playlists"];
-          const promos = activeModules.filter((m) => !exclude.includes(m.source));
-          setOtherPromos(promos.map((p) => ({ title: p.title, data: launchJson[p.key] ||[] })).filter(p => p.data.length > 0));
-        }
-
-        setTopArtists(artistsJson.top_artists ||[]);
-        setRecoArtists(footerJson.artist || []);
-        setRecoActors(footerJson.actor ||[]);
-        setRecoAlbums(footerJson.album ||[]);
-        setRecoPlaylists(footerJson.playlist ||[]);
+        setTrending(data.trending || []);
+        setNewReleases(data.new_releases || []);
+        setFeaturedPlaylists(data.featured_playlists || []);
+        setOtherPromos(data.promo_modules || []);
+        setTopArtists(data.top_artists || []);
+        setCharts(data.top_charts || []);
+        setRecoArtists(data.recommended_artists || []);
+        setRecoActors(data.recommended_actors || []);
+        setRecoAlbums(data.recommended_albums || []);
+        setRecoPlaylists(data.recommended_playlists || []);
 
       } catch (error) {
         console.error("Fetch error:", error);
@@ -297,16 +273,28 @@ export default function Home() {
 
   const handleItemClick = (item: any) => {
     const type = item.type;
-    const link = item.perma_url || item.url || (item.action ? `https://www.jiosaavn.com${item.action}` : "");
+    let link = item.perma_url || item.url || (item.action ? `https://www.jiosaavn.com${item.action}` : "");
     const artistId = item.artistid || (type === "artist" ? item.id : null);
+
+    // Dynamic clean-up for new routing logic
+    let targetPath = link;
+    if (link.startsWith("http")) {
+      try {
+        targetPath = new URL(link).pathname; // Gets /album/... or /featured/... directly
+      } catch (e) {
+        targetPath = link;
+      }
+    } else if (link.startsWith("/")) {
+      targetPath = link.split("?")[0]; // removes any trailing queries
+    }
 
     if (type === "song") {
       setCurrentSong(item);
       setIsPlaying(true);
     } else if (type === "album" || link.includes("/album/")) {
-      router.push(`/album?link=${encodeURIComponent(link)}`);
+      router.push(targetPath);
     } else if (type === "playlist" || link.includes("/playlist/") || link.includes("/featured/")) {
-      router.push(`/playlist?link=${encodeURIComponent(link)}`);
+      router.push(targetPath);
     } else if (artistId || link.includes("/artist/")) {
       router.push(`/artist?id=${artistId || item.id}`);
     } else {

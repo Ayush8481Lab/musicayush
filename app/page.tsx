@@ -47,13 +47,12 @@ const getSubtitle = (item: any, hideSubtitle: boolean) => {
   if (!sub && item.primaryArtists) sub = item.primaryArtists;
   if (!sub && item.singers) sub = item.singers;
 
-  return sub || (item.type && item.type !== "album" ? item.type.charAt(0).toUpperCase() + item.type.slice(1) : "");
+  return sub || (item.type ? item.type.charAt(0).toUpperCase() + item.type.slice(1) : "");
 };
 
 // Remove duplicates based on ID
 const mergeAndDedupe = (arr1: any[], arr2: any[]) => {
-  const map = new Map();
-  [...(arr1 || []), ...(arr2 ||[])].forEach(item => {
+  const map = new Map();[...(arr1 || []), ...(arr2 ||[])].forEach(item => {
     if (item && item.id && !map.has(item.id)) map.set(item.id, item);
   });
   return Array.from(map.values());
@@ -112,7 +111,7 @@ const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
 // Async Image Card (Highly Optimized Observer - No Subtitles)
 const AsyncImageCard = ({ item, type, onClick }: any) => {
   // Try to use image_link directly from the new API to avoid unneeded fetches
-  const [imgUrl, setImgUrl] = useState<string | null>(
+  const[imgUrl, setImgUrl] = useState<string | null>(
     (item.image_link || item.image) ? getImageUrl(item.image_link || item.image) : null
   );
   const cardRef = useRef<HTMLDivElement>(null);
@@ -229,7 +228,7 @@ export default function Home() {
   const router = useRouter();
 
   const [trending, setTrending] = useState<any[]>([]);
-  const [newReleases, setNewReleases] = useState<any[]>([]);
+  const[newReleases, setNewReleases] = useState<any[]>([]);
   const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
   const [otherPromos, setOtherPromos] = useState<any[]>([]);
   const [topArtists, setTopArtists] = useState<any[]>([]);
@@ -237,8 +236,8 @@ export default function Home() {
 
   const [recoArtists, setRecoArtists] = useState<any[]>([]);
   const [recoActors, setRecoActors] = useState<any[]>([]);
-  const [recoAlbums, setRecoAlbums] = useState<any[]>([]);
-  const [recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
+  const[recoAlbums, setRecoAlbums] = useState<any[]>([]);
+  const[recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchAllData = async () => {
@@ -251,16 +250,45 @@ export default function Home() {
         const res = await fetch(`https://ayushpr.vercel.app/home?ln=${language}`);
         const data = await res.json();
 
-        setTrending(data.trending || []);
-        setNewReleases(data.new_releases || []);
-        setFeaturedPlaylists(data.featured_playlists || []);
-        setOtherPromos(data.promo_modules || []);
+        // Helper to filter out playlists containing 'Jio'
+        const filterJioPlaylists = (items: any[]) => {
+          return items.filter(item => {
+            if (item.type === "playlist" && item.title && item.title.toLowerCase().includes("jio")) {
+              return false;
+            }
+            return true;
+          });
+        };
+
+        // Helper to fallback to item type if subtitle is empty
+        const applySubtitleFallback = (items: any[]) => {
+          return items.map(item => {
+            if (!item.subtitle && item.type) {
+              return { ...item, subtitle: item.type.charAt(0).toUpperCase() + item.type.slice(1) };
+            }
+            return item;
+          });
+        };
+
+        // Apply formatting directly to trending and new releases
+        setTrending(applySubtitleFallback(data.trending || []));
+        setNewReleases(applySubtitleFallback(data.new_releases ||[]));
+
+        // Filter all sections that render playlists
+        setFeaturedPlaylists(filterJioPlaylists(data.featured_playlists || []));
+        setCharts(filterJioPlaylists(data.top_charts ||[]));
+        setRecoPlaylists(filterJioPlaylists(data.recommended_playlists ||[]));
+
+        const cleanedPromos = (data.promo_modules ||[]).map((promo: any) => ({
+          ...promo,
+          data: filterJioPlaylists(promo.data ||[])
+        })).filter((promo: any) => promo.data.length > 0);
+        setOtherPromos(cleanedPromos);
+
         setTopArtists(data.top_artists || []);
-        setCharts(data.top_charts || []);
-        setRecoArtists(data.recommended_artists || []);
-        setRecoActors(data.recommended_actors || []);
-        setRecoAlbums(data.recommended_albums || []);
-        setRecoPlaylists(data.recommended_playlists || []);
+        setRecoArtists(data.recommended_artists ||[]);
+        setRecoActors(data.recommended_actors ||[]);
+        setRecoAlbums(data.recommended_albums ||[]);
 
       } catch (error) {
         console.error("Fetch error:", error);

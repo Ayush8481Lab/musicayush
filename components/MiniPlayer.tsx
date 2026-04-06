@@ -123,22 +123,22 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
 export default function MiniPlayer() {
   const { currentSong, isPlaying, setIsPlaying, setCurrentSong, queue } = useAppContext();
   
-  const [audioUrl, setAudioUrl] = useState("");
+  const[audioUrl, setAudioUrl] = useState("");
   const[loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const[progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const[isExpanded, setIsExpanded] = useState(false);
-  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   
   const [isUiHidden, setIsUiHidden] = useState(false); 
-  const [isShuffle, setIsShuffle] = useState(false);
+  const[isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
 
   const [showQueue, setShowQueue] = useState(false);
-  const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
   const [historyQueue, setHistoryQueue] = useState<any[]>([]);
   const currentTrackRef = useRef<any>(null);
@@ -170,9 +170,9 @@ export default function MiniPlayer() {
 
   const fetchedRecsFor = useRef<Set<string>>(new Set());
   const fetchingRecsRef = useRef(false);
-  const [isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
+  const[isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
   
-  const [swipeX, setSwipeX] = useState(0);
+  const[swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const isSeekingRef = useRef(false);
@@ -229,7 +229,7 @@ export default function MiniPlayer() {
   useEffect(() => { 
     isLyricsEnabledRef.current = isLyricsEnabled; 
     if (!isLyricsEnabled) setIsLyricsFullScreen(false);
-  }, [isLyricsEnabled]);
+  },[isLyricsEnabled]);
 
   useEffect(() => {
     if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong));
@@ -680,6 +680,8 @@ export default function MiniPlayer() {
   }, [isScrolledPastMain]);
 
   useEffect(() => {
+    if (isSeekingRef.current) return; // Prevent scroll spam during seek dragging
+
     if (activeLyricRef.current && lyricsContainerRef.current) {
       const container = lyricsContainerRef.current; const element = activeLyricRef.current;
       const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + (element.clientHeight / 2);
@@ -749,7 +751,7 @@ export default function MiniPlayer() {
 
   const handleSort = () => {
     if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
-      const _upcomingQueue = [...upcomingQueue];
+      const _upcomingQueue =[...upcomingQueue];
       const draggedItemContent = _upcomingQueue.splice(dragItem.current, 1)[0];
       _upcomingQueue.splice(dragOverItem.current, 0, draggedItemContent);
       setUpcomingQueue(_upcomingQueue);
@@ -824,7 +826,7 @@ export default function MiniPlayer() {
         </p>
       )
     });
-  }, [lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled]);
+  },[lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled]);
 
   const RenderedArtists = useMemo(() => {
     return uniqueArtists.map((artist: any) => {
@@ -847,7 +849,7 @@ export default function MiniPlayer() {
         </Link>
       )
     });
-  }, [uniqueArtists]);
+  },[uniqueArtists]);
 
   const RenderedQueue = useMemo(() => {
     return upcomingQueue.map((track, index) => (
@@ -899,9 +901,7 @@ export default function MiniPlayer() {
     <>
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes spotify-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-        @keyframes slide-up-lyric { 0% { transform: translateY(12px) scale(0.98); opacity: 0; filter: blur(3px); } 100% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0); } }
         .animate-spotify-marquee { animation: spotify-marquee 12s linear infinite; display: inline-block; }
-        .animate-lyric-change { animation: slide-up-lyric 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
         .mask-edges { mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); }
         .mask-edges-vertical { mask-image: linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%); }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
@@ -952,9 +952,9 @@ export default function MiniPlayer() {
           <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 ${isCanvasLoaded && !isScrolledPastMain && !showQueue && !isLyricsFullScreen ? 'opacity-100' : 'opacity-0'}`}>
             <video ref={canvasVideoRef} src={canvasData.canvasUrl} autoPlay loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover" />
             {/* Standard Canvas Gradient */}
-            <div className={`absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/70 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
+            <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/70 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
             {/* Minimal UI Canvas Gradient */}
-            <div className={`absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/40 transition-opacity duration-500 ${isUiHidden ? 'opacity-100' : 'opacity-0'}`} />
+            <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/30 transition-opacity duration-500 ${isUiHidden ? 'opacity-100' : 'opacity-0'}`} />
           </div>
         )}
 
@@ -1007,7 +1007,7 @@ export default function MiniPlayer() {
               
               <div className={`transition-all duration-500 overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'max-h-[30px] opacity-100 mb-2'}`}>
                 {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && !isVideoMode && (
-                  <div key={activeLyricIndex} className="text-white/95 text-[15px] font-bold text-left animate-lyric-change drop-shadow-lg pr-4 line-clamp-2 no-select-text">
+                  <div className="text-white/95 text-[15px] font-bold text-left drop-shadow-lg pr-4 line-clamp-2 no-select-text transition-opacity duration-300">
                     {lyrics[activeLyricIndex].words || "♪"}
                   </div>
                 )}

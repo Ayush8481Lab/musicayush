@@ -126,7 +126,7 @@ export default function MiniPlayer() {
   const [audioUrl, setAudioUrl] = useState("");
   const[loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const[currentTime, setCurrentTime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const[isExpanded, setIsExpanded] = useState(false);
@@ -139,13 +139,12 @@ export default function MiniPlayer() {
 
   const [showQueue, setShowQueue] = useState(false);
   const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
-  const[queueTab, setQueueTab] = useState<'context' | 'recs'>('context'); 
   
-  const[historyQueue, setHistoryQueue] = useState<any[]>([]);
+  const [historyQueue, setHistoryQueue] = useState<any[]>([]);
   const currentTrackRef = useRef<any>(null);
   const maxListenRef = useRef<number>(0);
   
-  const[draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
@@ -153,11 +152,11 @@ export default function MiniPlayer() {
 
   const rapidKeyIdxRef = useRef(0);
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
-  const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
+  const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const[lyrics, setLyrics] = useState<any[]>([]);
   const[syncType, setSyncType] = useState<string | null>(null);
   const[activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const[isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
+  const [isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
   
   const[canvasData, setCanvasData] = useState<any>(null);
   const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
@@ -189,7 +188,7 @@ export default function MiniPlayer() {
   // SETTINGS
   const[isSessionRestored, setIsSessionRestored] = useState(false);
   const[showSettingsMenu, setShowSettingsMenu] = useState(false);
-  const[selectedQuality, setSelectedQuality] = useState("320");
+  const [selectedQuality, setSelectedQuality] = useState("320");
   const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
   const[isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const restoreTimeRef = useRef<number | null>(null);
@@ -229,7 +228,7 @@ export default function MiniPlayer() {
   useEffect(() => { 
     isLyricsEnabledRef.current = isLyricsEnabled; 
     if (!isLyricsEnabled) setIsLyricsFullScreen(false);
-  },[isLyricsEnabled]);
+  }, [isLyricsEnabled]);
 
   useEffect(() => {
     if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong));
@@ -255,8 +254,6 @@ export default function MiniPlayer() {
   else if (queue && queue.length > 1 && currentSong?.album?.name) { contextType = "ALBUM"; contextName = currentSong.album.name; } 
   else if (songDetails?.album?.name) { contextType = "ALBUM"; contextName = songDetails.album.name; }
 
-  const isContextActive = contextType === "PLAYLIST" || contextType === "ALBUM";
-
   const uniqueArtists = useMemo(() => {
     if (!songDetails?.artists) return[];
     const primaryArr = Array.isArray(songDetails.artists.primary) ? songDetails.artists.primary :[];
@@ -271,7 +268,7 @@ export default function MiniPlayer() {
       if (!map.has(a.id)) { map.set(a.id, { ...a, role: (a.role || "Artist").replace(/_/g, ' ') }); }
     });
     return Array.from(map.values());
-  },[songDetails]);
+  }, [songDetails]);
 
   const updateTop30Cache = useCallback((song: any, maxPercent: number) => {
     if (!song) return;
@@ -305,7 +302,6 @@ export default function MiniPlayer() {
     return null;
   };
 
-  // MAIN CONTROLLER - CLEANS UP OLD SONG AND STARTS NEW
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true; 
@@ -328,7 +324,6 @@ export default function MiniPlayer() {
     const instantTitle = decodeEntities(currentSong.title || currentSong.name || "Unknown");
     const instantArtists = decodeEntities(getArtistsText(currentSong));
 
-    // Handle Video Mode if Active
     if (isVideoMode) {
       setIsVideoLoading(true);
       videoStartTimeRef.current = 0;
@@ -343,11 +338,12 @@ export default function MiniPlayer() {
          }
          setIsVideoLoading(false);
       });
+    } else {
+      prefetchVideoId(instantTitle, instantArtists); 
     }
 
     if (!isCanvasEnabledRef.current && !isLyricsEnabledRef.current) return;
 
-    // Isolate Spotify match in background so it doesn't block audio playback
     const fetchSpotifyMatch = async () => {
       const cacheKey = `spotify_match_${currentSong.id}`;
       const cachedUrl = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
@@ -397,44 +393,43 @@ export default function MiniPlayer() {
     return () => { isCurrent = false; };
   },[currentSong]);
 
-  // AUDIO FETCHING (OPTIMIZED - INSTANT PLAY)
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true;
 
-    const setAudioFromUrls = (urls: any[]) => {
-      const targetQ = selectedQuality + "kbps";
-      const match = urls.find((u: any) => u.quality === targetQ) || urls.find((u: any) => u.quality?.includes(selectedQuality));
-      setAudioUrl(match ? match.url : urls[urls.length - 1].url);
-    };
-
-    // ZERO BUFFERING ROUTE: Use pre-existing URLs (like from Recommendations API or Queue)
-    if (currentSong.downloadUrl && currentSong.downloadUrl.length > 0) {
-      setAudioFromUrls(currentSong.downloadUrl);
-      setSongDetails(currentSong);
-      setLoading(false);
-    } else {
-      // SLOW ROUTE: Need to fetch from proxy if URL is missing
+    const fetchAudioData = async () => {
       setLoading(true);
-      const fetchAudioData = async () => {
-        try {
-          const fetchLink = encodeURIComponent(currentSong.url || currentSong.perma_url || "");
-          const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${fetchLink}`);
-          const json = await res.json();
+      try {
+        const fetchLink = encodeURIComponent(currentSong.url || currentSong.perma_url || "");
+        const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${fetchLink}`);
+        const json = await res.json();
 
-          if (!isCurrent) return; 
-          if (json.data?.[0]?.downloadUrl) {
-            setSongDetails(json.data[0]);
-            setAudioFromUrls(json.data[0].downloadUrl);
-          }
-        } catch (err) {
-            // Fallback safety just in case
-            if (currentSong.downloadUrl?.length > 0) setAudioFromUrls(currentSong.downloadUrl);
+        if (!isCurrent) return; 
+
+        let urls: any[] = [];
+        if (json.data?.[0]?.downloadUrl) {
+          urls = json.data[0].downloadUrl;
+          setSongDetails((prev: any) => prev?.id === json.data[0].id ? prev : json.data[0]); 
+        } else if (currentSong.downloadUrl?.length > 0) {
+          urls = currentSong.downloadUrl;
         }
-        if (isCurrent) setLoading(false);
-      };
-      fetchAudioData();
-    }
+
+        if (urls.length > 0) {
+          const targetQ = selectedQuality + "kbps";
+          const match = urls.find((u: any) => u.quality === targetQ) || urls.find((u: any) => u.quality?.includes(selectedQuality));
+          setAudioUrl(match ? match.url : urls[urls.length - 1].url);
+        }
+      } catch (err) {
+        if (isCurrent && currentSong.downloadUrl?.length > 0) {
+          const urls = currentSong.downloadUrl;
+          const targetQ = selectedQuality + "kbps";
+          const match = urls.find((u: any) => u.quality === targetQ) || urls.find((u: any) => u.quality?.includes(selectedQuality));
+          setAudioUrl(match ? match.url : urls[urls.length - 1].url);
+        }
+      }
+      if (isCurrent) setLoading(false);
+    };
+    fetchAudioData();
 
     return () => { isCurrent = false; };
   }, [currentSong, selectedQuality]);
@@ -446,100 +441,6 @@ export default function MiniPlayer() {
       else setUpcomingQueue(queue.slice(0, 10));
     }
   }, [queue]); 
-
-  // INFINITE RECOMMENDATION LOOP API
-  useEffect(() => {
-    let isSubscribed = true;
-
-    const fetchRecommendations = async () => {
-      const recSongs = upcomingQueue.filter(s => s.isRecommendation);
-      // Trigger when 3 or fewer recommendations are left
-      if (recSongs.length <= 3 && !fetchingRecsRef.current && currentSong) {
-        fetchingRecsRef.current = true; 
-        setIsFetchingRecsUI(true);
-        
-        try {
-          // Use the last recommendation in the queue as the seed, or default to current track
-          const seedTrack = recSongs.length > 0 
-             ? recSongs[recSongs.length - 1] 
-             : (upcomingQueue.length > 0 ? upcomingQueue[upcomingQueue.length - 1] : currentSong);
-          
-          const seedId = seedTrack.id || seedTrack.url;
-          
-          if (!fetchedRecsFor.current.has(seedId)) {
-            fetchedRecsFor.current.add(seedId);
-            
-            let targetVid = seedTrack.ytVideoId;
-            if (!targetVid) {
-               const seedTitle = decodeEntities(seedTrack.title || seedTrack.name || "Unknown");
-               const seedArtists = decodeEntities(getArtistsText(seedTrack));
-               const query = `${seedTitle} ${seedArtists.split(',').slice(0, 2).join(' ')} official music video`;
-               const vidRes = await fetch(`https://ayushvid.vercel.app/api?q=${encodeURIComponent(query)}`);
-               const vidData = await vidRes.json();
-               targetVid = vidData?.top_result?.videoId;
-            }
-
-            let apiSongs: any[] =[];
-
-            // Execute New Recommendations API if Video ID is successfully fetched
-            if (targetVid) {
-              const recRes = await fetch(`https://ayushmind.vercel.app/api/rec?vid=${targetVid}`);
-              const parsedData = await recRes.json();
-              if (parsedData?.recommendations?.length > 0) {
-                apiSongs = parsedData.recommendations.map((rec: any) => {
-                  const saavnIdMatch = rec["Perma URL"]?.match(/\/([^\/]+)$/);
-                  const saavnId = saavnIdMatch ? saavnIdMatch[1] : Math.random().toString();
-                  return {
-                    id: saavnId, 
-                    title: rec.Title, 
-                    name: rec.Title, 
-                    artists: rec.Artists,
-                    image: rec.Banner, 
-                    url: rec["Perma URL"], 
-                    downloadUrl:[
-                      { quality: "12kbps", url: rec.Stream },
-                      { quality: "48kbps", url: rec.Stream },
-                      { quality: "96kbps", url: rec.Stream },
-                      { quality: "160kbps", url: rec.Stream },
-                      { quality: "320kbps", url: rec.Stream }
-                    ],
-                    isRecommendation: true, 
-                    spotifyUrl: rec.Spotify
-                  };
-                }).slice(0, 10); 
-              }
-            }
-
-            // Fallback Injection: Inject top user songs if API fails or lacks results
-            if (apiSongs.length === 0) {
-              let top30: any[] =[];
-              try { top30 = JSON.parse(localStorage.getItem('top_30_songs') || '[]'); } catch (e) {}
-              apiSongs = top30.slice(0, 7).sort(() => 0.5 - Math.random()).map(song => ({ ...song, isRecommendation: true }));
-            }
-
-            if (isSubscribed && apiSongs.length > 0) {
-              setUpcomingQueue(prev => {
-                const existingIds = new Set(prev.map(s => s.id));
-                existingIds.add(currentSong.id);
-                historyQueue.forEach(h => existingIds.add(h.id));
-                
-                const newSongs = apiSongs.filter((m: any) => !existingIds.has(m.id));
-                return [...prev, ...newSongs];
-              });
-            }
-          }
-        } catch (error) {
-            console.error("Error fetching recs:", error);
-        }
-        
-        fetchingRecsRef.current = false;
-        if (isSubscribed) setIsFetchingRecsUI(false);
-      }
-    };
-
-    fetchRecommendations();
-    return () => { isSubscribed = false; };
-  },[upcomingQueue.length, currentSong, historyQueue]);
 
   useEffect(() => {
     const handleMsg = (e: MessageEvent) => {
@@ -619,6 +520,64 @@ export default function MiniPlayer() {
   };
 
   useEffect(() => {
+    let isSubscribed = true;
+    const fetchRecommendations = async () => {
+      if (upcomingQueue.length <= 3 && !fetchingRecsRef.current && currentSong) {
+        fetchingRecsRef.current = true; setIsFetchingRecsUI(true);
+        
+        try {
+          const targetSong = historyQueue.length > 0 ? historyQueue[0] : currentSong;
+          const targetSpotifyUrl = targetSong.spotifyUrl || spotifyUrl;
+          
+          let apiSongs: any[] =[];
+          if (targetSpotifyUrl && !fetchedRecsFor.current.has(targetSpotifyUrl)) {
+            fetchedRecsFor.current.add(targetSpotifyUrl);
+            const targetUrl = `https://ayushdetaser.vercel.app/api?link=${encodeURIComponent(targetSpotifyUrl)}`;
+            try {
+              const res = await fetch(targetUrl);
+              const parsedData = await res.json();
+              if (parsedData?.status === 'success' && parsedData.recommendations?.length > 0) {
+                apiSongs = parsedData.recommendations.map((rec: any) => {
+                  const saavnIdMatch = rec?.jiosaavn_link?.match(/\/([^\/]+)$/);
+                  const saavnId = saavnIdMatch ? saavnIdMatch[1] : Math.random().toString();
+                  return {
+                    id: saavnId, title: rec.title, name: rec.title, artists: rec.artist,
+                    image: rec.banner_link, url: rec.jiosaavn_link, downloadUrl:[{ url: rec.stream_url }],
+                    isRecommendation: true, spotifyUrl: rec.spotify_link
+                  };
+                }).slice(0, 6); 
+              }
+            } catch (err) {}
+          }
+
+          let top30: any[] =[];
+          try { top30 = JSON.parse(localStorage.getItem('top_30_songs') || '[]'); } catch (e) {}
+          const shuffledTop30 = top30.sort(() => 0.5 - Math.random()).slice(0, 4);
+
+          const mixed =[...apiSongs, ...shuffledTop30];
+
+          if (isSubscribed && mixed.length > 0) {
+            setUpcomingQueue(prev => {
+              const existingIds = new Set(prev.map(s => s.id));
+              existingIds.add(currentSong.id);
+              historyQueue.forEach(h => existingIds.add(h.id));
+              
+              const newSongs = mixed.filter(m => !existingIds.has(m.id));
+              const updated = [...prev, ...newSongs];
+              return updated.slice(0, 10); 
+            });
+          }
+        } catch (error) {}
+        
+        fetchingRecsRef.current = false;
+        if (isSubscribed) setIsFetchingRecsUI(false);
+      }
+    };
+    fetchRecommendations();
+    return () => { isSubscribed = false; };
+  },[upcomingQueue.length, currentSong, historyQueue, spotifyUrl]);
+
+  useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
     let isCurrent = true;
 
@@ -645,7 +604,7 @@ export default function MiniPlayer() {
     };
     fetchExtras();
     return () => { isCurrent = false; };
-  },[spotifyId, spotifyUrl]);
+  }, [spotifyId, spotifyUrl]);
 
   useEffect(() => {
     if (!displayImage) return;
@@ -664,7 +623,7 @@ export default function MiniPlayer() {
         setDominantColor(count > 0 ? `rgb(${Math.floor(r/count)}, ${Math.floor(g/count)}, ${Math.floor(b/count)})` : "rgb(83, 83, 83)");
       } catch (e) { setDominantColor("rgb(30, 30, 30)"); }
     };
-  },[displayImage]);
+  }, [displayImage]);
 
   useEffect(() => {
     if (audioRef.current && audioUrl) {
@@ -894,56 +853,48 @@ export default function MiniPlayer() {
     });
   }, [uniqueArtists]);
 
-  // Tabbed display for the queue
   const RenderedQueue = useMemo(() => {
-    const itemsToRender = isContextActive 
-      ? upcomingQueue.filter(s => queueTab === 'context' ? !s.isRecommendation : s.isRecommendation)
-      : upcomingQueue;
-
-    return itemsToRender.map((track) => {
-      const index = upcomingQueue.findIndex(t => t.id === track.id);
-      return (
-        <div 
-          key={track.id || index} 
-          draggable
-          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-          onDragStart={(e) => { dragItem.current = index; setDraggedIndex(index); }}
-          onDragEnter={(e) => { e.preventDefault(); }}
-          onDragOver={(e) => handleDragOver(e, index)}
-          onDragEnd={handleSort}
-          onClick={() => {
-              setCurrentSong(track);
-              setUpcomingQueue(prev => prev.filter((_, i) => i !== index));
-              setIsPlaying(true);
-          }}
-          style={{
-            WebkitTouchCallout: 'none', WebkitUserSelect: 'none',
-            willChange: 'transform, margin',
-            transform: 'translateZ(0)',
-            transition: 'all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1)',
-            marginTop: dropTargetIndex === index && draggedIndex !== index && draggedIndex! > index ? '3.5rem' : '0',
-            marginBottom: dropTargetIndex === index && draggedIndex !== index && draggedIndex! < index ? '3.5rem' : '0',
-          }}
-          className={`flex items-center justify-between w-full group p-1 rounded-md cursor-pointer
-            ${draggedIndex === index ? 'opacity-40 scale-[0.98] bg-white/10 shadow-inner' : 'hover:bg-white/5'} 
-          `}
-        >
-          <div className="flex items-center gap-3 overflow-hidden pointer-events-none">
-            <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">
-              <img draggable={false} src={getImageUrl(track.image) || "https://via.placeholder.com/150"} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />
-            </div>
-            <div className="flex flex-col min-w-0 pr-2 overflow-hidden">
-              <span className="text-[16px] font-bold text-white truncate">{decodeEntities(track.title || track.name)}</span>
-              <span className="text-[14px] font-medium text-white/60 truncate">{decodeEntities(getArtistsText(track))}</span>
-            </div>
+    return upcomingQueue.map((track, index) => (
+      <div 
+        key={index} 
+        draggable
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDragStart={(e) => { dragItem.current = index; setDraggedIndex(index); }}
+        onDragEnter={(e) => { e.preventDefault(); }}
+        onDragOver={(e) => handleDragOver(e, index)}
+        onDragEnd={handleSort}
+        onClick={() => {
+            setCurrentSong(track);
+            setUpcomingQueue(prev => prev.filter((_, i) => i !== index));
+            setIsPlaying(true);
+        }}
+        style={{
+          WebkitTouchCallout: 'none', WebkitUserSelect: 'none',
+          willChange: 'transform, margin',
+          transform: 'translateZ(0)',
+          transition: 'all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1)',
+          marginTop: dropTargetIndex === index && draggedIndex !== index && draggedIndex! > index ? '3.5rem' : '0',
+          marginBottom: dropTargetIndex === index && draggedIndex !== index && draggedIndex! < index ? '3.5rem' : '0',
+        }}
+        className={`flex items-center justify-between w-full group p-1 rounded-md cursor-pointer
+          ${draggedIndex === index ? 'opacity-40 scale-[0.98] bg-white/10 shadow-inner' : 'hover:bg-white/5'} 
+        `}
+      >
+        <div className="flex items-center gap-3 overflow-hidden pointer-events-none">
+          <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">
+            <img draggable={false} src={getImageUrl(track.image) || "https://via.placeholder.com/150"} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />
           </div>
-          <div className="flex-shrink-0 px-2 cursor-grab active:cursor-grabbing text-white/50 hover:text-white transition-colors">
-            <Menu size={20} />
+          <div className="flex flex-col min-w-0 pr-2 overflow-hidden">
+            <span className="text-[16px] font-bold text-white truncate">{decodeEntities(track.title || track.name)}</span>
+            <span className="text-[14px] font-medium text-white/60 truncate">{decodeEntities(getArtistsText(track))}</span>
           </div>
         </div>
-      )
-    });
-  },[upcomingQueue, draggedIndex, dropTargetIndex, queueTab, isContextActive]);
+        <div className="flex-shrink-0 px-2 cursor-grab active:cursor-grabbing text-white/50 hover:text-white transition-colors">
+          <Menu size={20} />
+        </div>
+      </div>
+    ));
+  },[upcomingQueue, draggedIndex, dropTargetIndex]);
 
 
   if (!currentSong) return null;
@@ -1312,33 +1263,13 @@ export default function MiniPlayer() {
               </div>
             </div>
 
-            {/* TABBED QUEUE VIEW (ALBUM/PLAYLIST vs RECOMMENDATIONS) */}
-            {isContextActive && (
-              <div className="flex items-center gap-6 border-b border-white/10 mb-4 px-1">
-                <button 
-                  onClick={() => setQueueTab('context')} 
-                  className={`text-[15px] font-bold pb-2 transition-colors relative ${queueTab === 'context' ? 'text-white' : 'text-white/50'}`}
-                >
-                  From {contextType === 'PLAYLIST' ? 'Playlist' : 'Album'}
-                  {queueTab === 'context' && <div className="absolute bottom-[-1px] left-0 w-full h-[2px] bg-[#1db954] rounded-t-full" />}
-                </button>
-                <button 
-                  onClick={() => setQueueTab('recs')} 
-                  className={`text-[15px] font-bold pb-2 transition-colors relative ${queueTab === 'recs' ? 'text-white' : 'text-white/50'}`}
-                >
-                  Recommendations
-                  {queueTab === 'recs' && <div className="absolute bottom-[-1px] left-0 w-full h-[2px] bg-[#1db954] rounded-t-full" />}
-                </button>
-              </div>
-            )}
-
-            {!isContextActive && <span className="text-[16px] font-bold text-white block mb-4">Next in queue</span>}
+            <span className="text-[16px] font-bold text-white block mb-4">Next in queue</span>
             
             <div className="flex flex-col gap-1">
               {RenderedQueue}
             </div>
 
-            {isFetchingRecsUI && queueTab === 'recs' && (
+            {isFetchingRecsUI && (
               <div className="flex flex-col gap-3 mt-4">
                 {[1, 2, 3, 4, 5].map(i => (
                   <div key={i} className="flex items-center gap-3 w-full animate-pulse px-1">

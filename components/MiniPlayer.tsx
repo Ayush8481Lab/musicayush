@@ -175,6 +175,7 @@ export default function MiniPlayer() {
   const [swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const isSeekingRef = useRef(false);
 
   const[songDetails, setSongDetails] = useState<any>(null);
 
@@ -446,11 +447,11 @@ export default function MiniPlayer() {
     const handleMsg = (e: MessageEvent) => {
       if (e.data?.type === 'YTP_TIME') {
         if (isVideoMode) {
-          setCurrentTime(e.data.time);
+          if (!isSeekingRef.current) setCurrentTime(e.data.time);
           if (e.data.duration) {
             if (duration !== e.data.duration) setDuration(e.data.duration);
-            setProgress((e.data.time / e.data.duration) * 100);
-          } else if (duration > 0) {
+            if (!isSeekingRef.current) setProgress((e.data.time / e.data.duration) * 100);
+          } else if (duration > 0 && !isSeekingRef.current) {
             setProgress((e.data.time / duration) * 100);
           }
         }
@@ -649,32 +650,12 @@ export default function MiniPlayer() {
     }
   }, [duration]);
 
-  useEffect(() => {
-    if ('mediaSession' in navigator && currentSong) {
-      const validImg = displayImage || 'https://via.placeholder.com/500';
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: displayTitle || 'Unknown Track',
-        artist: displayArtists || 'Unknown Artist',
-        album: decodeEntities(contextName),
-        artwork:[
-          { src: validImg, sizes: '96x96', type: 'image/jpeg' },
-          { src: validImg, sizes: '256x256', type: 'image/jpeg' },
-          { src: validImg, sizes: '512x512', type: 'image/jpeg' }
-        ]
-      });
-      navigator.mediaSession.setActionHandler('play', () => handlePlayPauseToggle());
-      navigator.mediaSession.setActionHandler('pause', () => handlePlayPauseToggle());
-      navigator.mediaSession.setActionHandler('previoustrack', () => playPrev());
-      navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
-    }
-  },[currentSong, displayTitle, displayArtists, displayImage, contextName, isVideoMode, isPlaying]);
-
   const handleTimeUpdate = () => {
     if (audioRef.current && !isVideoMode) {
       const c = audioRef.current.currentTime; const d = audioRef.current.duration;
       setCurrentTime(c); setDuration(d || 0);
       
-      if (d > 0) {
+      if (d > 0 && !isSeekingRef.current) {
         const currentPercent = (c / d) * 100;
         setProgress(currentPercent);
         if (currentPercent > maxListenRef.current) maxListenRef.current = currentPercent;
@@ -685,7 +666,7 @@ export default function MiniPlayer() {
          localStorage.setItem('last_session_time', c.toString());
       }
 
-      if (isLyricsEnabled && syncType === "LINE_SYNCED" && lyrics.length > 0) {
+      if (isLyricsEnabled && syncType === "LINE_SYNCED" && lyrics.length > 0 && !isSeekingRef.current) {
         let activeIdx = -1;
         for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].time <= c) activeIdx = i; else break; }
         if (activeIdx !== activeLyricIndex) setActiveLyricIndex(activeIdx);
@@ -719,19 +700,34 @@ export default function MiniPlayer() {
     }
   };
 
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (isVideoMode && videoIframeRef.current?.contentWindow) {
-      videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
+  const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value); 
+    setProgress(val);
+    const newTime = (val / 100) * duration;
+    setCurrentTime(newTime);
+    
+    if (isLyricsEnabled && syncType === "LINE_SYNCED" && lyrics.length > 0) {
+      let activeIdx = -1;
+      for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].time <= newTime) activeIdx = i; else break; }
+      if (activeIdx !== activeLyricIndex) setActiveLyricIndex(activeIdx);
     }
-    const val = parseFloat(e.target.value); setProgress(val);
+  };
+
+  const handleSeekStart = () => {
+    isSeekingRef.current = true;
+  };
+
+  const handleSeekEnd = (e: React.SyntheticEvent<HTMLInputElement>) => {
+    isSeekingRef.current = false;
+    const val = parseFloat(e.currentTarget.value);
     const newTime = (val / 100) * duration;
     
     if (isVideoMode && videoIframeRef.current?.contentWindow) {
       videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_SEEK', time: newTime }, '*');
-      setCurrentTime(newTime);
+      videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
     } else if (audioRef.current && duration > 0) {
       audioRef.current.currentTime = newTime;
-      setCurrentTime(newTime); syncPosition();
+      syncPosition();
     }
   };
 
@@ -947,7 +943,7 @@ export default function MiniPlayer() {
            className="absolute inset-0 z-0 pointer-events-none transition-all duration-700" 
            style={{ 
              backgroundColor: dominantColor, 
-             backgroundImage: isLyricsFullScreen ? 'none' : 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.85) 100%)' 
+             backgroundImage: isLyricsFullScreen ? 'none' : 'linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%)' 
            }} 
         />
         
@@ -956,9 +952,9 @@ export default function MiniPlayer() {
           <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 ${isCanvasLoaded && !isScrolledPastMain && !showQueue && !isLyricsFullScreen ? 'opacity-100' : 'opacity-0'}`}>
             <video ref={canvasVideoRef} src={canvasData.canvasUrl} autoPlay loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover" />
             {/* Standard Canvas Gradient */}
-            <div className={`absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/95 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
+            <div className={`absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/70 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
             {/* Minimal UI Canvas Gradient */}
-            <div className={`absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/80 transition-opacity duration-500 ${isUiHidden ? 'opacity-100' : 'opacity-0'}`} />
+            <div className={`absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/40 transition-opacity duration-500 ${isUiHidden ? 'opacity-100' : 'opacity-0'}`} />
           </div>
         )}
 
@@ -1031,7 +1027,19 @@ export default function MiniPlayer() {
               </div>
 
               <div className="w-full flex flex-col gap-1 mb-5 relative drop-shadow-md">
-                <input type="range" min="0" max="100" value={duration > 0 ? progress : 0} onChange={handleSeek} className="w-full mobile-slider relative z-10 pointer-events-auto" style={{ background: `linear-gradient(to right, #fff ${progress}%, rgba(255,255,255,0.2) ${progress}%)` }} />
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="100" 
+                  value={duration > 0 ? progress : 0} 
+                  onChange={handleSeekChange} 
+                  onPointerDown={handleSeekStart}
+                  onPointerUp={handleSeekEnd}
+                  onTouchStart={handleSeekStart}
+                  onTouchEnd={handleSeekEnd}
+                  className="w-full mobile-slider relative z-10 pointer-events-auto" 
+                  style={{ background: `linear-gradient(to right, #fff ${progress}%, rgba(255,255,255,0.2) ${progress}%)` }} 
+                />
                 <div className="flex items-center justify-between text-[11px] font-medium text-[#a7a7a7] mt-1 w-full pointer-events-none no-select-text">
                   <span>{formatTime(currentTime)}</span>
                   <span>{formatTime(duration)}</span>

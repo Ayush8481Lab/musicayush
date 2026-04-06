@@ -172,18 +172,18 @@ export default function SearchPage() {
   const router = useRouter();
   const CACHE_KEY = "search_page_cache_ultimate";
 
-  const [isRestored, setIsRestored] = useState(false);
+  const[isRestored, setIsRestored] = useState(false);
   const [query, setQuery] = useState("");
   const[debouncedQuery, setDebouncedQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
   
   const [allData, setAllData] = useState<any>({ topMatches:[], songs: [], albums:[], playlists:[], artists:[] });
-  const [allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
+  const[allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
   const [allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
-  const [horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
+  const[horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
   
   const [results, setResults] = useState<any[]>([]);
-  const [page, setPage] = useState(1);
+  const[page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true); // Default to true!
   
   const [loading, setLoading] = useState(false);
@@ -231,7 +231,7 @@ export default function SearchPage() {
       requestAnimationFrame(restore);
       setTimeout(restore, 100);
     }
-  }, [activeTab, isRestored]);
+  },[activeTab, isRestored]);
 
   // 3. Live Window Scroll Tracker (Ensures Browser Back button works)
   useEffect(() => {
@@ -349,7 +349,7 @@ export default function SearchPage() {
   const loadMoreHorizontal = useCallback(async (type: string) => {
     if (horizontalLoading[type] || !allHasMore[type]) return;
     
-    setHorizontalLoading((prev: any) => ({ ...prev, [type]: true }));
+    setHorizontalLoading((prev: any) => ({ ...prev,[type]: true }));
     try {
       const nextPage = allPages[type] + 1;
       const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${type}?query=${encodeURIComponent(debouncedQuery)}&page=${nextPage}`);
@@ -359,7 +359,7 @@ export default function SearchPage() {
       if (newData.length === 0) {
         setAllHasMore((prev: any) => ({ ...prev, [type]: false }));
       } else {
-        setAllData((prev: any) => ({ ...prev, [type]: [...prev[type], ...newData] }));
+        setAllData((prev: any) => ({ ...prev,[type]: [...prev[type], ...newData] }));
         setAllPages((prev: any) => ({ ...prev, [type]: nextPage }));
       }
     } catch (e) {}
@@ -388,13 +388,20 @@ export default function SearchPage() {
     let link = item.url || item.perma_url || item.action || "";
     if (link && !link.startsWith("http")) link = `https://www.jiosaavn.com${link}`;
     
+    let path = link;
+    try {
+      path = new URL(link).pathname;
+    } catch (e) {
+      path = link.replace("https://www.jiosaavn.com", "");
+    }
+
     if (type === "songs" || type === "song") {
       setCurrentSong(item);
       setIsPlaying(true);
     } else if (type === "albums" || type === "album") {
-      router.push(`/album?link=${encodeURIComponent(link)}`);
+      router.push(path);
     } else if (type === "playlists" || type === "playlist") {
-      router.push(`/playlist?link=${encodeURIComponent(link)}`);
+      router.push(path);
     } else if (type === "artists" || type === "artist") {
       router.push(`/artist?id=${item.id}`);
     }

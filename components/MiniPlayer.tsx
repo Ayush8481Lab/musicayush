@@ -3,13 +3,13 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useAppContext } from "../context/AppContext";
 import { 
   Play, Pause, SkipForward, SkipBack, Loader2, ChevronDown, 
   MoreHorizontal, Shuffle, Repeat, Heart, ListMusic, 
-  MonitorPlay, Maximize2, Minimize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe, Settings2
+  MonitorPlay, Maximize2, Minimize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe, Settings2, Check
 } from "lucide-react";
 
 // --- UTILITIES ---
@@ -34,6 +34,12 @@ const getImageUrl = (img: any) => {
   if (typeof img === "string" && img.trim() !== "") return img.replace("50x50", "500x500").replace("150x150", "500x500");
   if (Array.isArray(img) && img[0]?.url) return img[img.length - 1]?.url || img[0]?.url;
   return null;
+};
+
+const getArtistColor = (str: string) => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return `hsl(${Math.abs(hash) % 360}, 45%, 35%)`;
 };
 
 const formatTime = (time: number) => {
@@ -89,7 +95,6 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
   return null;
 };
 
-// --- PERFECT MARQUEE COMPONENT ---
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
@@ -124,26 +129,23 @@ export default function MiniPlayer() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const[isExpanded, setIsExpanded] = useState(false);
   const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
-  const [isScrolledPastMain, setIsScrolledPastMain] = useState(false);
+  const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   
-  // MINIMAL UI STATE
   const [isUiHidden, setIsUiHidden] = useState(false); 
-
   const [isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
 
   const [showQueue, setShowQueue] = useState(false);
   const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   
-  // History & Permanent Top 30 Cache
   const [historyQueue, setHistoryQueue] = useState<any[]>([]);
   const currentTrackRef = useRef<any>(null);
   const maxListenRef = useRef<number>(0);
   
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
   const queueContainerRef = useRef<HTMLDivElement>(null);
@@ -151,12 +153,12 @@ export default function MiniPlayer() {
   const rapidKeyIdxRef = useRef(0);
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
   const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
-  const [lyrics, setLyrics] = useState<any[]>([]);
+  const[lyrics, setLyrics] = useState<any[]>([]);
   const[syncType, setSyncType] = useState<string | null>(null);
   const[activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const [isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
   
-  const [canvasData, setCanvasData] = useState<any>(null);
+  const[canvasData, setCanvasData] = useState<any>(null);
   const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
@@ -166,7 +168,6 @@ export default function MiniPlayer() {
   const canvasVideoRef = useRef<HTMLVideoElement>(null);
   const playNextRef = useRef<() => void>(() => {});
 
-  // Queue Buffering
   const fetchedRecsFor = useRef<Set<string>>(new Set());
   const fetchingRecsRef = useRef(false);
   const [isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
@@ -175,9 +176,8 @@ export default function MiniPlayer() {
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const [songDetails, setSongDetails] = useState<any>(null);
+  const[songDetails, setSongDetails] = useState<any>(null);
 
-  // VIDEO PLAYER STATES
   const [isVideoMode, setIsVideoMode] = useState(false);
   const [ytVideoId, setYtVideoId] = useState<string | null>(null);
   const prefetchedYtIdRef = useRef<string | null>(null); 
@@ -185,23 +185,25 @@ export default function MiniPlayer() {
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
 
-  // SETTINGS & QUALITY STATES
+  // SETTINGS
   const[isSessionRestored, setIsSessionRestored] = useState(false);
   const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [selectedQuality, setSelectedQuality] = useState("320");
   const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
-  const [isLyricsEnabled, setIsLyricsEnabled] = useState(true);
+  const[isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const restoreTimeRef = useRef<number | null>(null);
 
-  // Load Settings and Restore Session On Mount
+  const isCanvasEnabledRef = useRef(true);
+  const isLyricsEnabledRef = useRef(true);
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
        const q = localStorage.getItem('audio_quality');
        if (q) setSelectedQuality(q);
        const c = localStorage.getItem('canvas_enabled');
-       if (c !== null) setIsCanvasEnabled(c === 'true');
+       if (c !== null) { setIsCanvasEnabled(c === 'true'); isCanvasEnabledRef.current = c === 'true'; }
        const l = localStorage.getItem('lyrics_enabled');
-       if (l !== null) setIsLyricsEnabled(l === 'true');
+       if (l !== null) { setIsLyricsEnabled(l === 'true'); isLyricsEnabledRef.current = l === 'true'; }
 
        const storedSong = localStorage.getItem('last_session_song');
        if (storedSong && !currentSong && !isSessionRestored) {
@@ -222,7 +224,12 @@ export default function MiniPlayer() {
     }
   },[currentSong, isSessionRestored, setCurrentSong]);
 
-  // Session Saver Hooks
+  useEffect(() => { isCanvasEnabledRef.current = isCanvasEnabled; }, [isCanvasEnabled]);
+  useEffect(() => { 
+    isLyricsEnabledRef.current = isLyricsEnabled; 
+    if (!isLyricsEnabled) setIsLyricsFullScreen(false);
+  }, [isLyricsEnabled]);
+
   useEffect(() => {
     if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong));
   },[currentSong]);
@@ -247,8 +254,8 @@ export default function MiniPlayer() {
   else if (queue && queue.length > 1 && currentSong?.album?.name) { contextType = "ALBUM"; contextName = currentSong.album.name; } 
   else if (songDetails?.album?.name) { contextType = "ALBUM"; contextName = songDetails.album.name; }
 
-  let uniqueArtists: any[] =[];
-  if (songDetails?.artists) {
+  const uniqueArtists = useMemo(() => {
+    if (!songDetails?.artists) return[];
     const primaryArr = Array.isArray(songDetails.artists.primary) ? songDetails.artists.primary :[];
     const allArr = Array.isArray(songDetails.artists.all) ? songDetails.artists.all :[];
     const map = new Map();
@@ -260,8 +267,8 @@ export default function MiniPlayer() {
     allArr.forEach((a: any) => {
       if (!map.has(a.id)) { map.set(a.id, { ...a, role: (a.role || "Artist").replace(/_/g, ' ') }); }
     });
-    uniqueArtists = Array.from(map.values());
-  }
+    return Array.from(map.values());
+  }, [songDetails]);
 
   const updateTop30Cache = useCallback((song: any, maxPercent: number) => {
     if (!song) return;
@@ -295,7 +302,6 @@ export default function MiniPlayer() {
     return null;
   };
 
-  // Main Background Reset Effect
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true; 
@@ -335,6 +341,8 @@ export default function MiniPlayer() {
     } else {
       prefetchVideoId(instantTitle, instantArtists); 
     }
+
+    if (!isCanvasEnabledRef.current && !isLyricsEnabledRef.current) return;
 
     const fetchSpotifyMatch = async () => {
       const cacheKey = `spotify_match_${currentSong.id}`;
@@ -385,7 +393,6 @@ export default function MiniPlayer() {
     return () => { isCurrent = false; };
   },[currentSong]);
 
-  // Audio Quality Engine Effect
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true;
@@ -535,7 +542,7 @@ export default function MiniPlayer() {
                   const saavnId = saavnIdMatch ? saavnIdMatch[1] : Math.random().toString();
                   return {
                     id: saavnId, title: rec.title, name: rec.title, artists: rec.artist,
-                    image: rec.banner_link, url: rec.jiosaavn_link, downloadUrl: [{ url: rec.stream_url }],
+                    image: rec.banner_link, url: rec.jiosaavn_link, downloadUrl:[{ url: rec.stream_url }],
                     isRecommendation: true, spotifyUrl: rec.spotify_link
                   };
                 }).slice(0, 6); 
@@ -568,7 +575,7 @@ export default function MiniPlayer() {
     };
     fetchRecommendations();
     return () => { isSubscribed = false; };
-  }, [upcomingQueue.length, currentSong, historyQueue, spotifyUrl]);
+  },[upcomingQueue.length, currentSong, historyQueue, spotifyUrl]);
 
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
@@ -576,18 +583,23 @@ export default function MiniPlayer() {
 
     const fetchExtras = async () => {
       try {
-        const lyricsRes = await fetch(`https://lyr-nine.vercel.app/api/lyrics?url=${encodeURIComponent(spotifyUrl)}&format=lrc`);
-        if (lyricsRes.ok) {
-          const lyricsJson = await lyricsRes.json();
-          if (isCurrent && lyricsJson.lines) { setLyrics(lyricsJson.lines.map((l: any) => ({ time: parseTimeTag(l.timeTag), words: l.words }))); setSyncType(lyricsJson.syncType); }
+        if (isLyricsEnabledRef.current) {
+          const lyricsRes = await fetch(`https://lyr-nine.vercel.app/api/lyrics?url=${encodeURIComponent(spotifyUrl)}&format=lrc`);
+          if (lyricsRes.ok) {
+            const lyricsJson = await lyricsRes.json();
+            if (isCurrent && lyricsJson.lines) { setLyrics(lyricsJson.lines.map((l: any) => ({ time: parseTimeTag(l.timeTag), words: l.words }))); setSyncType(lyricsJson.syncType); }
+          }
         }
-        let canvasJson = null;
-        const targetCanvasUrl = `https://ayush-gamma-coral.vercel.app/api/canvas?trackId=${spotifyId}`;
-        try {
-          const res = await fetch(targetCanvasUrl);
-          if (res.ok) canvasJson = await res.json();
-        } catch (e) {}
-        if (isCurrent && canvasJson?.canvasesList?.length > 0) setCanvasData(canvasJson.canvasesList[0]);
+        
+        if (isCanvasEnabledRef.current) {
+          let canvasJson = null;
+          const targetCanvasUrl = `https://ayush-gamma-coral.vercel.app/api/canvas?trackId=${spotifyId}`;
+          try {
+            const res = await fetch(targetCanvasUrl);
+            if (res.ok) canvasJson = await res.json();
+          } catch (e) {}
+          if (isCurrent && canvasJson?.canvasesList?.length > 0) setCanvasData(canvasJson.canvasesList[0]);
+        }
       } catch (e) {}
     };
     fetchExtras();
@@ -673,7 +685,7 @@ export default function MiniPlayer() {
          localStorage.setItem('last_session_time', c.toString());
       }
 
-      if (syncType === "LINE_SYNCED" && lyrics.length > 0) {
+      if (isLyricsEnabled && syncType === "LINE_SYNCED" && lyrics.length > 0) {
         let activeIdx = -1;
         for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].time <= c) activeIdx = i; else break; }
         if (activeIdx !== activeLyricIndex) setActiveLyricIndex(activeIdx);
@@ -803,6 +815,88 @@ export default function MiniPlayer() {
     if (match) albumRoute = `/album/${match[1]}`;
   }
 
+  // --- HEAVY DOM MEMOIZATION ---
+  const RenderedLyrics = useMemo(() => {
+    if (!isLyricsEnabled) return null;
+    return lyrics.map((line, idx) => {
+      const isActive = idx === activeLyricIndex;
+      const isPast = idx < activeLyricIndex;
+      return (
+        <p key={idx} ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} onClick={() => handleLyricClick(line.time)} 
+          className={`cursor-pointer transition-all duration-300 no-select-text ${isActive ? (isLyricsFullScreen ? 'text-white text-[32px] font-extrabold drop-shadow-xl leading-tight' : 'text-white text-[28px] font-extrabold drop-shadow-lg leading-tight') : isPast ? (isLyricsFullScreen ? 'text-white/60 text-[26px] font-bold hover:text-white/80 leading-tight' : 'text-white/60 text-[24px] font-bold hover:text-white/80 leading-tight') : (isLyricsFullScreen ? 'text-white/30 text-[26px] font-bold hover:text-white/50 leading-tight' : 'text-black/40 text-[24px] font-bold hover:text-white/60 leading-tight')}`}>
+          {line.words || '♪'}
+        </p>
+      )
+    });
+  }, [lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled]);
+
+  const RenderedArtists = useMemo(() => {
+    return uniqueArtists.map((artist: any) => {
+      const artistImg = getImageUrl(artist.image);
+      const fallbackColor = getArtistColor(artist.name || "Unknown");
+      return (
+        <Link key={artist.id} href={`/artist?id=${artist.id}`} onClick={() => setIsExpanded(false)} className="flex flex-col items-center gap-2 flex-shrink-0 w-[84px] group no-select-text">
+          <div className="w-[84px] h-[84px] rounded-full overflow-hidden relative flex items-center justify-center shadow-lg border border-white/10 group-hover:scale-105 transition-transform"
+                style={{ backgroundColor: artistImg ? '#282828' : fallbackColor }}>
+            {!artistImg ? (
+              <span className="text-white font-bold text-3xl no-select-text">{decodeEntities(artist.name).charAt(0).toUpperCase()}</span>
+            ) : (
+              <img draggable={false} src={artistImg} onError={(e) => { e.currentTarget.style.display = 'none'; }} className="w-full h-full object-cover relative z-10 no-select pointer-events-none" alt={artist.name} />
+            )}
+          </div>
+          <div className="flex flex-col items-center w-full px-1 no-select-text">
+            <span className="text-white/90 text-[12px] text-center font-bold line-clamp-1 leading-tight drop-shadow-md">{decodeEntities(artist.name)}</span>
+            <span className="text-white/50 text-[10px] text-center font-medium line-clamp-1 capitalize mt-[2px]">{artist.role}</span>
+          </div>
+        </Link>
+      )
+    });
+  }, [uniqueArtists]);
+
+  const RenderedQueue = useMemo(() => {
+    return upcomingQueue.map((track, index) => (
+      <div 
+        key={index} 
+        draggable
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDragStart={(e) => { dragItem.current = index; setDraggedIndex(index); }}
+        onDragEnter={(e) => { e.preventDefault(); }}
+        onDragOver={(e) => handleDragOver(e, index)}
+        onDragEnd={handleSort}
+        onClick={() => {
+            setCurrentSong(track);
+            setUpcomingQueue(prev => prev.filter((_, i) => i !== index));
+            setIsPlaying(true);
+        }}
+        style={{
+          WebkitTouchCallout: 'none', WebkitUserSelect: 'none',
+          willChange: 'transform, margin',
+          transform: 'translateZ(0)',
+          transition: 'all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1)',
+          marginTop: dropTargetIndex === index && draggedIndex !== index && draggedIndex! > index ? '3.5rem' : '0',
+          marginBottom: dropTargetIndex === index && draggedIndex !== index && draggedIndex! < index ? '3.5rem' : '0',
+        }}
+        className={`flex items-center justify-between w-full group p-1 rounded-md cursor-pointer
+          ${draggedIndex === index ? 'opacity-40 scale-[0.98] bg-white/10 shadow-inner' : 'hover:bg-white/5'} 
+        `}
+      >
+        <div className="flex items-center gap-3 overflow-hidden pointer-events-none">
+          <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">
+            <img draggable={false} src={getImageUrl(track.image) || "https://via.placeholder.com/150"} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />
+          </div>
+          <div className="flex flex-col min-w-0 pr-2 overflow-hidden">
+            <span className="text-[16px] font-bold text-white truncate">{decodeEntities(track.title || track.name)}</span>
+            <span className="text-[14px] font-medium text-white/60 truncate">{decodeEntities(getArtistsText(track))}</span>
+          </div>
+        </div>
+        <div className="flex-shrink-0 px-2 cursor-grab active:cursor-grabbing text-white/50 hover:text-white transition-colors">
+          <Menu size={20} />
+        </div>
+      </div>
+    ));
+  },[upcomingQueue, draggedIndex, dropTargetIndex]);
+
+
   if (!currentSong) return null;
 
   return (
@@ -848,17 +942,22 @@ export default function MiniPlayer() {
           <div className="absolute inset-0 z-10 cursor-pointer" onClick={() => setIsUiHidden(!isUiHidden)} />
         )}
 
-        {/* BACKGROUNDS */}
-        <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: dominantColor, backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.85) 100%)' }} />
+        {/* ROOT BACKGROUND: Smoothly removes gradient and applies flat solid color in Fullscreen Lyrics */}
+        <div 
+           className="absolute inset-0 z-0 pointer-events-none transition-all duration-700" 
+           style={{ 
+             backgroundColor: dominantColor, 
+             backgroundImage: isLyricsFullScreen ? 'none' : 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.85) 100%)' 
+           }} 
+        />
         
-        {/* CANVAS VIDEO (Hidden smoothly when lyrics fullscreen opens) */}
+        {/* CANVAS VIDEO */}
         {canvasData?.canvasUrl && !isVideoMode && isCanvasEnabled && (
           <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 ${isCanvasLoaded && !isScrolledPastMain && !showQueue && !isLyricsFullScreen ? 'opacity-100' : 'opacity-0'}`}>
             <video ref={canvasVideoRef} src={canvasData.canvasUrl} autoPlay loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover" />
-            
             {/* Standard Canvas Gradient */}
             <div className={`absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/95 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
-            {/* Minimal UI Canvas Gradient (Crossfaded to keep text readable but show more artwork) */}
+            {/* Minimal UI Canvas Gradient */}
             <div className={`absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/80 transition-opacity duration-500 ${isUiHidden ? 'opacity-100' : 'opacity-0'}`} />
           </div>
         )}
@@ -869,7 +968,7 @@ export default function MiniPlayer() {
           <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto transition-all duration-500" style={{ height: isLyricsFullScreen ? '100%' : undefined, minHeight: isLyricsFullScreen ? '100%' : '100dvh' }}>
             
             {/* Header */}
-            <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4 transition-opacity duration-500`}>
+            <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4`}>
               <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md no-select-text">
                 <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {contextType}</span>
@@ -881,22 +980,13 @@ export default function MiniPlayer() {
             {/* Artwork / Video / Lyrics Fullscreen Wrapper */}
             <div className={`flex-1 min-h-0 w-full flex items-center justify-center relative z-30 transition-all duration-500 ${isLyricsFullScreen ? 'px-0 py-0 flex-col items-stretch justify-start' : (isVideoMode ? 'px-4 py-2' : 'px-8 py-2')}`}>
               
-              {isLyricsFullScreen ? (
-                <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden pointer-events-auto transition-colors duration-700 shadow-2xl" style={{ backgroundColor: dominantColor }}>
+              {isLyricsFullScreen && isLyricsEnabled ? (
+                <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden pointer-events-auto transition-colors duration-700 bg-transparent">
                   <div className="absolute top-4 right-4 z-[60] bg-black/40 hover:bg-black/60 rounded-full transition-colors cursor-pointer backdrop-blur-md pointer-events-auto">
                     <button onClick={(e) => { e.stopPropagation(); setIsLyricsFullScreen(false); }} className="p-2.5 text-white"><Minimize2 size={22} /></button>
                   </div>
                   <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-16 pb-[30vh] flex flex-col gap-8 w-full h-full mask-edges-vertical" ref={fullLyricsContainerRef}>
-                    {lyrics.map((line, idx) => {
-                      const isActive = idx === activeLyricIndex;
-                      const isPast = idx < activeLyricIndex;
-                      return (
-                        <p key={idx} ref={isActive ? fullActiveLyricRef : null} onClick={() => handleLyricClick(line.time)} 
-                          className={`cursor-pointer transition-all duration-300 no-select-text ${isActive ? 'text-white text-[32px] font-extrabold drop-shadow-xl leading-tight' : isPast ? 'text-white/60 text-[26px] font-bold hover:text-white/80 leading-tight' : 'text-white/30 text-[26px] font-bold hover:text-white/50 leading-tight'}`}>
-                          {line.words || '♪'}
-                        </p>
-                      )
-                    })}
+                    {RenderedLyrics}
                   </div>
                 </div>
               ) : isVideoMode && ytVideoId ? (
@@ -920,7 +1010,7 @@ export default function MiniPlayer() {
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
               <div className={`transition-all duration-500 overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'max-h-[30px] opacity-100 mb-2'}`}>
-                {!isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && !isVideoMode && (
+                {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && !isVideoMode && (
                   <div key={activeLyricIndex} className="text-white/95 text-[15px] font-bold text-left animate-lyric-change drop-shadow-lg pr-4 line-clamp-2 no-select-text">
                     {lyrics[activeLyricIndex].words || "♪"}
                   </div>
@@ -990,16 +1080,7 @@ export default function MiniPlayer() {
                   <button onClick={() => setIsLyricsFullScreen(true)} className="p-2 text-white/80 hover:text-white rounded-full bg-black/30 pointer-events-auto"><Maximize2 size={16} /></button>
                 </div>
                 <div className="relative z-10 flex flex-col gap-5 max-h-[300px] overflow-y-auto scrollbar-hide pb-10" ref={lyricsContainerRef}>
-                  {lyrics.map((line, idx) => {
-                    const isActive = idx === activeLyricIndex;
-                    const isPast = idx < activeLyricIndex;
-                    return (
-                      <p key={idx} ref={isActive ? activeLyricRef : null} onClick={() => handleLyricClick(line.time)} 
-                        className={`cursor-pointer transition-all duration-300 no-select-text ${isActive ? 'text-white text-[28px] font-extrabold drop-shadow-lg leading-tight' : isPast ? 'text-white/60 text-[24px] font-bold hover:text-white/80 leading-tight' : 'text-black/40 text-[24px] font-bold hover:text-white/60 leading-tight'}`}>
-                        {line.words || '♪'}
-                      </p>
-                    )
-                  })}
+                  {RenderedLyrics}
                 </div>
               </div>
             )}
@@ -1008,25 +1089,7 @@ export default function MiniPlayer() {
               <div className="w-full mt-2">
                 <h3 className="text-white font-bold text-[18px] mb-4 drop-shadow-md no-select-text">Artists</h3>
                 <div className="flex overflow-x-auto gap-4 scrollbar-hide pb-2 pointer-events-auto">
-                  {uniqueArtists.map((artist: any) => {
-                    const artistImg = getImageUrl(artist.image);
-                    return (
-                      <Link key={artist.id} href={`/artist?id=${artist.id}`} onClick={() => setIsExpanded(false)} className="flex flex-col items-center gap-2 flex-shrink-0 w-[84px] group no-select-text">
-                        <div className="w-[84px] h-[84px] rounded-full overflow-hidden relative flex items-center justify-center shadow-lg border border-white/10 group-hover:scale-105 transition-transform"
-                             style={{ backgroundColor: artistImg ? '#282828' : `hsl(${Math.random() * 360}, 60%, 40%)` }}>
-                          {!artistImg ? (
-                            <span className="text-white font-bold text-3xl no-select-text">{decodeEntities(artist.name).charAt(0).toUpperCase()}</span>
-                          ) : (
-                            <img draggable={false} src={artistImg} onError={(e) => { e.currentTarget.style.display = 'none'; }} className="w-full h-full object-cover relative z-10 no-select pointer-events-none" alt={artist.name} />
-                          )}
-                        </div>
-                        <div className="flex flex-col items-center w-full px-1 no-select-text">
-                          <span className="text-white/90 text-[12px] text-center font-bold line-clamp-1 leading-tight drop-shadow-md">{decodeEntities(artist.name)}</span>
-                          <span className="text-white/50 text-[10px] text-center font-medium line-clamp-1 capitalize mt-[2px]">{artist.role}</span>
-                        </div>
-                      </Link>
-                    )
-                  })}
+                  {RenderedArtists}
                 </div>
               </div>
             )}
@@ -1115,55 +1178,57 @@ export default function MiniPlayer() {
             SETTINGS / QUALITY OVERLAY MENU 
         ========================================= */}
         <div className={`absolute inset-0 z-[100000] bg-black/60 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto ${showSettingsMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowSettingsMenu(false)}>
-          <div className={`absolute bottom-0 left-0 w-full bg-[#1e1e1e] rounded-t-3xl transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] shadow-2xl border-t border-white/10 ${showSettingsMenu ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}>
-             <div className="p-6 flex flex-col gap-5 pb-[max(2rem,env(safe-area-inset-bottom))]">
+          <div className={`absolute bottom-0 left-0 w-full bg-[#121212] rounded-t-[28px] transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] shadow-2xl border-t border-white/10 ${showSettingsMenu ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}>
+             <div className="px-6 pt-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] flex flex-col gap-7">
                 
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between">
                    <h3 className="text-white font-extrabold text-[22px] flex items-center gap-2"><Settings2 size={24}/> Settings</h3>
-                   <button onClick={() => setShowSettingsMenu(false)} className="text-white/60 p-2 hover:text-white"><ChevronDown size={28} /></button>
+                   <button onClick={() => setShowSettingsMenu(false)} className="text-white/60 p-2 hover:text-white bg-white/5 rounded-full"><ChevronDown size={20} /></button>
                 </div>
 
                 {/* Audio Quality Section */}
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-3">
                    <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Audio Quality</span>
-                   <div className="flex bg-white/5 rounded-[12px] p-1 shadow-inner">
-                      {['12', '48', '96', '160', '320'].map(q => (
+                   <div className="flex flex-col bg-[#1e1e1e] rounded-[16px] overflow-hidden">
+                      {['12', '48', '96', '160', '320'].map((q, idx) => (
                          <button key={q} onClick={() => {
                             setSelectedQuality(q);
                             localStorage.setItem('audio_quality', q);
                             setShowSettingsMenu(false);
                             restoreTimeRef.current = audioRef.current?.currentTime || 0;
-                         }} className={`flex-1 py-2.5 text-[14px] font-bold rounded-[8px] transition-all duration-300 ${selectedQuality === q ? 'bg-[#1db954] text-black shadow-md scale-[1.02]' : 'text-white/70 hover:text-white hover:bg-white/5'}`}>
-                            {q}
+                         }} className={`w-full flex items-center justify-between px-5 py-3.5 transition-colors active:bg-white/10 ${idx !== 4 ? 'border-b border-white/5' : ''}`}>
+                            <span className={`text-[15px] font-bold transition-colors ${selectedQuality === q ? 'text-[#1db954]' : 'text-white'}`}>{q} kbps</span>
+                            {selectedQuality === q && <Check size={20} className="text-[#1db954]" strokeWidth={3} />}
                          </button>
                       ))}
                    </div>
                 </div>
 
                 {/* Playback Toggles Section */}
-                <div className="flex flex-col gap-2 mt-2">
+                <div className="flex flex-col gap-3">
                    <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Playback Extras</span>
                    
-                   <div className="flex items-center justify-between bg-white/5 rounded-[12px] px-5 py-4">
-                      <div className="flex flex-col">
-                         <span className="text-white font-bold text-[15px]">Canvas</span>
-                         <span className="text-white/50 text-[12px] font-medium mt-0.5">Show short loop videos</span>
+                   <div className="flex flex-col bg-[#1e1e1e] rounded-[16px] overflow-hidden">
+                      <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+                        <div className="flex flex-col">
+                          <span className="text-white font-bold text-[15px]">Canvas</span>
+                          <span className="text-white/50 text-[12px] font-medium mt-0.5">Short looping visuals on tracks</span>
+                        </div>
+                        <button onClick={() => { setIsCanvasEnabled(!isCanvasEnabled); localStorage.setItem('canvas_enabled', (!isCanvasEnabled).toString()); }} className={`w-11 h-[26px] rounded-full relative transition-colors duration-300 flex items-center ${isCanvasEnabled ? 'bg-[#1db954]' : 'bg-[#535353]'}`}>
+                          <div className={`w-[22px] h-[22px] bg-white rounded-full absolute shadow-md transition-transform duration-300 ${isCanvasEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} />
+                        </button>
                       </div>
-                      <button onClick={() => { setIsCanvasEnabled(!isCanvasEnabled); localStorage.setItem('canvas_enabled', (!isCanvasEnabled).toString()); }} className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${isCanvasEnabled ? 'bg-[#1db954]' : 'bg-white/20'}`}>
-                         <div className={`w-5 h-5 bg-white rounded-full absolute top-[2px] transition-transform duration-300 ${isCanvasEnabled ? 'translate-x-6 left-[2px]' : 'translate-x-0 left-[2px]'}`} />
-                      </button>
-                   </div>
 
-                   <div className="flex items-center justify-between bg-white/5 rounded-[12px] px-5 py-4">
-                      <div className="flex flex-col">
-                         <span className="text-white font-bold text-[15px]">Lyrics Card</span>
-                         <span className="text-white/50 text-[12px] font-medium mt-0.5">Show auto-scrolling lyrics</span>
+                      <div className="flex items-center justify-between px-5 py-4">
+                        <div className="flex flex-col">
+                          <span className="text-white font-bold text-[15px]">Lyrics Card</span>
+                          <span className="text-white/50 text-[12px] font-medium mt-0.5">Show auto-scrolling lyrics</span>
+                        </div>
+                        <button onClick={() => { setIsLyricsEnabled(!isLyricsEnabled); localStorage.setItem('lyrics_enabled', (!isLyricsEnabled).toString()); }} className={`w-11 h-[26px] rounded-full relative transition-colors duration-300 flex items-center ${isLyricsEnabled ? 'bg-[#1db954]' : 'bg-[#535353]'}`}>
+                          <div className={`w-[22px] h-[22px] bg-white rounded-full absolute shadow-md transition-transform duration-300 ${isLyricsEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} />
+                        </button>
                       </div>
-                      <button onClick={() => { setIsLyricsEnabled(!isLyricsEnabled); localStorage.setItem('lyrics_enabled', (!isLyricsEnabled).toString()); }} className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${isLyricsEnabled ? 'bg-[#1db954]' : 'bg-white/20'}`}>
-                         <div className={`w-5 h-5 bg-white rounded-full absolute top-[2px] transition-transform duration-300 ${isLyricsEnabled ? 'translate-x-6 left-[2px]' : 'translate-x-0 left-[2px]'}`} />
-                      </button>
                    </div>
-
                 </div>
 
              </div>
@@ -1201,44 +1266,7 @@ export default function MiniPlayer() {
             <span className="text-[16px] font-bold text-white block mb-4">Next in queue</span>
             
             <div className="flex flex-col gap-1">
-              {upcomingQueue.map((track, index) => (
-                <div 
-                  key={index} 
-                  draggable
-                  onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                  onDragStart={(e) => { dragItem.current = index; setDraggedIndex(index); }}
-                  onDragEnter={(e) => { e.preventDefault(); }}
-                  onDragOver={(e) => handleDragOver(e, index)}
-                  onDragEnd={handleSort}
-                  onClick={() => {
-                     setCurrentSong(track);
-                     setUpcomingQueue(prev => prev.filter((_, i) => i !== index));
-                     setIsPlaying(true);
-                  }}
-                  style={{
-                    WebkitTouchCallout: 'none', WebkitUserSelect: 'none',
-                    transition: 'all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1)',
-                    marginTop: dropTargetIndex === index && draggedIndex !== index && draggedIndex! > index ? '3.5rem' : '0',
-                    marginBottom: dropTargetIndex === index && draggedIndex !== index && draggedIndex! < index ? '3.5rem' : '0',
-                  }}
-                  className={`flex items-center justify-between w-full group p-1 rounded-md cursor-pointer
-                    ${draggedIndex === index ? 'opacity-40 scale-[0.98] bg-white/10 shadow-inner' : 'hover:bg-white/5'} 
-                  `}
-                >
-                  <div className="flex items-center gap-3 overflow-hidden pointer-events-none">
-                    <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">
-                      <img draggable={false} src={getImageUrl(track.image) || "https://via.placeholder.com/150"} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />
-                    </div>
-                    <div className="flex flex-col min-w-0 pr-2 overflow-hidden">
-                      <span className="text-[16px] font-bold text-white truncate">{decodeEntities(track.title || track.name)}</span>
-                      <span className="text-[14px] font-medium text-white/60 truncate">{decodeEntities(getArtistsText(track))}</span>
-                    </div>
-                  </div>
-                  <div className="flex-shrink-0 px-2 cursor-grab active:cursor-grabbing text-white/50 hover:text-white transition-colors">
-                    <Menu size={20} />
-                  </div>
-                </div>
-              ))}
+              {RenderedQueue}
             </div>
 
             {isFetchingRecsUI && (

@@ -139,6 +139,7 @@ export default function MiniPlayer() {
 
   const [showQueue, setShowQueue] = useState(false);
   const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  const [queueTab, setQueueTab] = useState<'context' | 'recs'>('context'); // NEW QUEUE TAB STATE
   
   const [historyQueue, setHistoryQueue] = useState<any[]>([]);
   const currentTrackRef = useRef<any>(null);
@@ -253,6 +254,8 @@ export default function MiniPlayer() {
   else if (rawPlaylistName) { contextType = "PLAYLIST"; contextName = rawPlaylistName; } 
   else if (queue && queue.length > 1 && currentSong?.album?.name) { contextType = "ALBUM"; contextName = currentSong.album.name; } 
   else if (songDetails?.album?.name) { contextType = "ALBUM"; contextName = songDetails.album.name; }
+
+  const isContextActive = contextType === "PLAYLIST" || contextType === "ALBUM";
 
   const uniqueArtists = useMemo(() => {
     if (!songDetails?.artists) return[];
@@ -519,6 +522,7 @@ export default function MiniPlayer() {
     setIsVideoLoading(false);
   };
 
+  // --- NEW INFINITE RECOMMENDATION QUEUE LOGIC ---
   useEffect(() => {
     let isSubscribed = true;
     const fetchRecommendations = async () => {
@@ -526,35 +530,48 @@ export default function MiniPlayer() {
         fetchingRecsRef.current = true; setIsFetchingRecsUI(true);
         
         try {
-          const targetSong = historyQueue.length > 0 ? historyQueue[0] : currentSong;
-          const targetSpotifyUrl = targetSong.spotifyUrl || spotifyUrl;
+          let currentVid = ytVideoId || prefetchedYtIdRef.current;
+          if (!currentVid) currentVid = await prefetchVideoId(displayTitle, displayArtists);
           
           let apiSongs: any[] =[];
-          if (targetSpotifyUrl && !fetchedRecsFor.current.has(targetSpotifyUrl)) {
-            fetchedRecsFor.current.add(targetSpotifyUrl);
-            const targetUrl = `https://ayushdetaser.vercel.app/api?link=${encodeURIComponent(targetSpotifyUrl)}`;
+          if (currentVid && !fetchedRecsFor.current.has(currentVid)) {
+            fetchedRecsFor.current.add(currentVid);
+            const targetUrl = `https://ayushmind.vercel.app/api/rec?vid=${currentVid}`;
             try {
               const res = await fetch(targetUrl);
               const parsedData = await res.json();
-              if (parsedData?.status === 'success' && parsedData.recommendations?.length > 0) {
+              if (parsedData?.recommendations?.length > 0) {
                 apiSongs = parsedData.recommendations.map((rec: any) => {
-                  const saavnIdMatch = rec?.jiosaavn_link?.match(/\/([^\/]+)$/);
+                  const saavnIdMatch = rec["Perma URL"]?.match(/\/([^\/]+)$/);
                   const saavnId = saavnIdMatch ? saavnIdMatch[1] : Math.random().toString();
                   return {
-                    id: saavnId, title: rec.title, name: rec.title, artists: rec.artist,
-                    image: rec.banner_link, url: rec.jiosaavn_link, downloadUrl:[{ url: rec.stream_url }],
-                    isRecommendation: true, spotifyUrl: rec.spotify_link
+                    id: saavnId, 
+                    title: rec.Title, 
+                    name: rec.Title, 
+                    artists: rec.Artists,
+                    image: rec.Banner, 
+                    url: rec["Perma URL"], 
+                    downloadUrl: [
+                      { quality: "12kbps", url: rec.Stream },
+                      { quality: "48kbps", url: rec.Stream },
+                      { quality: "96kbps", url: rec.Stream },
+                      { quality: "160kbps", url: rec.Stream },
+                      { quality: "320kbps", url: rec.Stream }
+                    ],
+                    isRecommendation: true, 
+                    spotifyUrl: rec.Spotify
                   };
-                }).slice(0, 6); 
+                }).slice(0, 10); 
               }
             } catch (err) {}
           }
 
           let top30: any[] =[];
           try { top30 = JSON.parse(localStorage.getItem('top_30_songs') || '[]'); } catch (e) {}
-          const shuffledTop30 = top30.sort(() => 0.5 - Math.random()).slice(0, 4);
+          // Get the top 7 high-percentage played songs and add them as recommendations
+          const top7 = top30.slice(0, 7).sort(() => 0.5 - Math.random());
 
-          const mixed =[...apiSongs, ...shuffledTop30];
+          const mixed = [...apiSongs, ...top7].map(song => ({ ...song, isRecommendation: true }));
 
           if (isSubscribed && mixed.length > 0) {
             setUpcomingQueue(prev => {
@@ -563,8 +580,7 @@ export default function MiniPlayer() {
               historyQueue.forEach(h => existingIds.add(h.id));
               
               const newSongs = mixed.filter(m => !existingIds.has(m.id));
-              const updated = [...prev, ...newSongs];
-              return updated.slice(0, 10); 
+              return [...prev, ...newSongs];
             });
           }
         } catch (error) {}
@@ -575,7 +591,7 @@ export default function MiniPlayer() {
     };
     fetchRecommendations();
     return () => { isSubscribed = false; };
-  },[upcomingQueue.length, currentSong, historyQueue, spotifyUrl]);
+  },[upcomingQueue.length, currentSong, historyQueue, ytVideoId, displayTitle, displayArtists]);
 
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
@@ -853,48 +869,56 @@ export default function MiniPlayer() {
     });
   }, [uniqueArtists]);
 
+  // Tabbed display for the queue
   const RenderedQueue = useMemo(() => {
-    return upcomingQueue.map((track, index) => (
-      <div 
-        key={index} 
-        draggable
-        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-        onDragStart={(e) => { dragItem.current = index; setDraggedIndex(index); }}
-        onDragEnter={(e) => { e.preventDefault(); }}
-        onDragOver={(e) => handleDragOver(e, index)}
-        onDragEnd={handleSort}
-        onClick={() => {
-            setCurrentSong(track);
-            setUpcomingQueue(prev => prev.filter((_, i) => i !== index));
-            setIsPlaying(true);
-        }}
-        style={{
-          WebkitTouchCallout: 'none', WebkitUserSelect: 'none',
-          willChange: 'transform, margin',
-          transform: 'translateZ(0)',
-          transition: 'all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1)',
-          marginTop: dropTargetIndex === index && draggedIndex !== index && draggedIndex! > index ? '3.5rem' : '0',
-          marginBottom: dropTargetIndex === index && draggedIndex !== index && draggedIndex! < index ? '3.5rem' : '0',
-        }}
-        className={`flex items-center justify-between w-full group p-1 rounded-md cursor-pointer
-          ${draggedIndex === index ? 'opacity-40 scale-[0.98] bg-white/10 shadow-inner' : 'hover:bg-white/5'} 
-        `}
-      >
-        <div className="flex items-center gap-3 overflow-hidden pointer-events-none">
-          <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">
-            <img draggable={false} src={getImageUrl(track.image) || "https://via.placeholder.com/150"} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />
+    const itemsToRender = isContextActive 
+      ? upcomingQueue.filter(s => queueTab === 'context' ? !s.isRecommendation : s.isRecommendation)
+      : upcomingQueue;
+
+    return itemsToRender.map((track) => {
+      const index = upcomingQueue.findIndex(t => t.id === track.id);
+      return (
+        <div 
+          key={track.id || index} 
+          draggable
+          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDragStart={(e) => { dragItem.current = index; setDraggedIndex(index); }}
+          onDragEnter={(e) => { e.preventDefault(); }}
+          onDragOver={(e) => handleDragOver(e, index)}
+          onDragEnd={handleSort}
+          onClick={() => {
+              setCurrentSong(track);
+              setUpcomingQueue(prev => prev.filter((_, i) => i !== index));
+              setIsPlaying(true);
+          }}
+          style={{
+            WebkitTouchCallout: 'none', WebkitUserSelect: 'none',
+            willChange: 'transform, margin',
+            transform: 'translateZ(0)',
+            transition: 'all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1)',
+            marginTop: dropTargetIndex === index && draggedIndex !== index && draggedIndex! > index ? '3.5rem' : '0',
+            marginBottom: dropTargetIndex === index && draggedIndex !== index && draggedIndex! < index ? '3.5rem' : '0',
+          }}
+          className={`flex items-center justify-between w-full group p-1 rounded-md cursor-pointer
+            ${draggedIndex === index ? 'opacity-40 scale-[0.98] bg-white/10 shadow-inner' : 'hover:bg-white/5'} 
+          `}
+        >
+          <div className="flex items-center gap-3 overflow-hidden pointer-events-none">
+            <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">
+              <img draggable={false} src={getImageUrl(track.image) || "https://via.placeholder.com/150"} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />
+            </div>
+            <div className="flex flex-col min-w-0 pr-2 overflow-hidden">
+              <span className="text-[16px] font-bold text-white truncate">{decodeEntities(track.title || track.name)}</span>
+              <span className="text-[14px] font-medium text-white/60 truncate">{decodeEntities(getArtistsText(track))}</span>
+            </div>
           </div>
-          <div className="flex flex-col min-w-0 pr-2 overflow-hidden">
-            <span className="text-[16px] font-bold text-white truncate">{decodeEntities(track.title || track.name)}</span>
-            <span className="text-[14px] font-medium text-white/60 truncate">{decodeEntities(getArtistsText(track))}</span>
+          <div className="flex-shrink-0 px-2 cursor-grab active:cursor-grabbing text-white/50 hover:text-white transition-colors">
+            <Menu size={20} />
           </div>
         </div>
-        <div className="flex-shrink-0 px-2 cursor-grab active:cursor-grabbing text-white/50 hover:text-white transition-colors">
-          <Menu size={20} />
-        </div>
-      </div>
-    ));
-  },[upcomingQueue, draggedIndex, dropTargetIndex]);
+      )
+    });
+  },[upcomingQueue, draggedIndex, dropTargetIndex, queueTab, isContextActive]);
 
 
   if (!currentSong) return null;
@@ -1263,13 +1287,33 @@ export default function MiniPlayer() {
               </div>
             </div>
 
-            <span className="text-[16px] font-bold text-white block mb-4">Next in queue</span>
+            {/* TABBED QUEUE VIEW (ALBUM/PLAYLIST vs RECOMMENDATIONS) */}
+            {isContextActive && (
+              <div className="flex items-center gap-6 border-b border-white/10 mb-4 px-1">
+                <button 
+                  onClick={() => setQueueTab('context')} 
+                  className={`text-[15px] font-bold pb-2 transition-colors relative ${queueTab === 'context' ? 'text-white' : 'text-white/50'}`}
+                >
+                  From {contextType === 'PLAYLIST' ? 'Playlist' : 'Album'}
+                  {queueTab === 'context' && <div className="absolute bottom-[-1px] left-0 w-full h-[2px] bg-[#1db954] rounded-t-full" />}
+                </button>
+                <button 
+                  onClick={() => setQueueTab('recs')} 
+                  className={`text-[15px] font-bold pb-2 transition-colors relative ${queueTab === 'recs' ? 'text-white' : 'text-white/50'}`}
+                >
+                  Recommendations
+                  {queueTab === 'recs' && <div className="absolute bottom-[-1px] left-0 w-full h-[2px] bg-[#1db954] rounded-t-full" />}
+                </button>
+              </div>
+            )}
+
+            {!isContextActive && <span className="text-[16px] font-bold text-white block mb-4">Next in queue</span>}
             
             <div className="flex flex-col gap-1">
               {RenderedQueue}
             </div>
 
-            {isFetchingRecsUI && (
+            {isFetchingRecsUI && queueTab === 'recs' && (
               <div className="flex flex-col gap-3 mt-4">
                 {[1, 2, 3, 4, 5].map(i => (
                   <div key={i} className="flex items-center gap-3 w-full animate-pulse px-1">

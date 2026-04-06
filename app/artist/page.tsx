@@ -144,7 +144,7 @@ const ScrollableTitle = ({ text, className, alignCenterOnMobile }: { text: strin
     setTimeout(checkOverflow, 150); 
     window.addEventListener('resize', checkOverflow);
     return () => window.removeEventListener('resize', checkOverflow);
-  }, [text]);
+  },[text]);
 
   const decodedText = decodeHTMLEntities(text || '');
 
@@ -272,7 +272,7 @@ function ArtistContent() {
   const [artist, setArtist] = useState<any>(null);
 
   const [songs, setSongs] = useState<any[]>([]);
-  const [totalSongsCount, setTotalSongsCount] = useState<number>(0);
+  const[totalSongsCount, setTotalSongsCount] = useState<number>(0);
 
   const [albums, setAlbums] = useState<any[]>([]);
   const[totalAlbumsCount, setTotalAlbumsCount] = useState<number>(0);
@@ -282,9 +282,9 @@ function ArtistContent() {
 
   // --- Infinite Scroll States ---
   const [songPage, setSongPage] = useState(0);
-  const [loadingMoreSongs, setLoadingMoreSongs] = useState(false);
+  const[loadingMoreSongs, setLoadingMoreSongs] = useState(false);
   const isFetchingSongs = useRef(false);
-  const [hasMoreSongs, setHasMoreSongs] = useState(true);
+  const[hasMoreSongs, setHasMoreSongs] = useState(true);
 
   const [albumPage, setAlbumPage] = useState(0);
   const[loadingMoreAlbums, setLoadingMoreAlbums] = useState(false);
@@ -326,7 +326,7 @@ function ArtistContent() {
           fetch(`https://ayushm-psi.vercel.app/api/artists/${id}/albums?page=0`).then(r => r.json())
         ]);
 
-        let fetchedSongs = [];
+        let fetchedSongs =[];
         let fetchedAlbums =[];
         let fetchedArtist: any = null;
         let artistUrl = "";
@@ -423,7 +423,21 @@ function ArtistContent() {
       memoryCache[id].viewMode = viewMode;
       memoryCache[id].scrollPos = window.scrollY; 
     }
-    router.push(url.startsWith('/album') || url.startsWith('/playlist') || url.startsWith('/artist') ? url : `/album?link=${encodeURIComponent(url)}`);
+    
+    let targetUrl = url;
+
+    // Convert full jiosaavn urls into relative direct paths
+    if (targetUrl.startsWith('http')) {
+      try {
+        const parsedUrl = new URL(targetUrl);
+        targetUrl = parsedUrl.pathname + parsedUrl.search;
+      } catch (error) {}
+    } else if (!targetUrl.startsWith('/')) {
+      // Safety fallback for relative string mappings
+      targetUrl = '/' + targetUrl;
+    }
+    
+    router.push(targetUrl);
   };
 
   const handleBackToMain = () => {
@@ -512,7 +526,7 @@ function ArtistContent() {
 
     if (observerRef.current) observer.observe(observerRef.current);
     return () => observer.disconnect();
-  }, [loadMoreSongsBatch, loadMoreAlbumsBatch, viewMode]);
+  },[loadMoreSongsBatch, loadMoreAlbumsBatch, viewMode]);
 
 
   if (loading) return (
@@ -682,7 +696,7 @@ function ArtistContent() {
               <div className="flex justify-between items-end mb-4">
                 <h2 className="text-2xl md:text-3xl font-black text-white">{artist.name} Playlists</h2>
               </div>
-              <OneLineCards items={artist.dedicatedPlaylists} type="Playlist" onNavigate={(url) => handleNavigate(`/playlist?link=${encodeURIComponent(url)}`)} />
+              <OneLineCards items={artist.dedicatedPlaylists} type="Playlist" onNavigate={handleNavigate} />
             </section>
           )}
           
@@ -691,7 +705,7 @@ function ArtistContent() {
               <div className="flex justify-between items-end mb-4">
                 <h2 className="text-2xl md:text-3xl font-black text-white">Featured In</h2>
               </div>
-              <OneLineCards items={artist.featuredPlaylists} type="Playlist" onNavigate={(url) => handleNavigate(`/playlist?link=${encodeURIComponent(url)}`)} />
+              <OneLineCards items={artist.featuredPlaylists} type="Playlist" onNavigate={handleNavigate} />
             </section>
           )}
 

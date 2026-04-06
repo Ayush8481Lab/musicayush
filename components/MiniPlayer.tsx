@@ -1,3 +1,4 @@
+
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -167,6 +168,9 @@ export default function MiniPlayer() {
   const fullActiveLyricRef = useRef<HTMLParagraphElement>(null);
   const canvasVideoRef = useRef<HTMLVideoElement>(null);
   const playNextRef = useRef<() => void>(() => {});
+  const playPrevRef = useRef<() => void>(() => {});
+  const isVideoModeRef = useRef<boolean>(false);
+  const syncPositionRef = useRef<() => void>(() => {});
 
   const fetchedRecsFor = useRef<Set<string>>(new Set());
   const fetchingRecsRef = useRef(false);
@@ -777,8 +781,6 @@ export default function MiniPlayer() {
     else if (repeatMode === 1 && queue && queue.length > 0) { setCurrentSong(queue[0]); setIsPlaying(true); } 
     else { setIsPlaying(false); setProgress(0); }
   };
-  
-  useEffect(() => { playNextRef.current = playNext; });
 
   const playPrev = () => {
     if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
@@ -796,6 +798,73 @@ export default function MiniPlayer() {
       if (idx > 0) { setCurrentSong(queue[idx - 1]); setIsPlaying(true); }
     }
   };
+
+  useEffect(() => { 
+    playNextRef.current = playNext; 
+    playPrevRef.current = playPrev;
+    isVideoModeRef.current = isVideoMode;
+    syncPositionRef.current = syncPosition;
+  });
+
+  // --- MEDIA SESSION API ---
+  useEffect(() => {
+    if ('mediaSession' in navigator && currentSong) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: displayTitle || 'Unknown Title',
+        artist: displayArtists || 'Unknown Artist',
+        album: contextName || '',
+        artwork: displayImage ? [
+          { src: displayImage, sizes: '96x96', type: 'image/jpeg' },
+          { src: displayImage, sizes: '128x128', type: 'image/jpeg' },
+          { src: displayImage, sizes: '192x192', type: 'image/jpeg' },
+          { src: displayImage, sizes: '256x256', type: 'image/jpeg' },
+          { src: displayImage, sizes: '384x384', type: 'image/jpeg' },
+          { src: displayImage, sizes: '512x512', type: 'image/jpeg' }
+        ] : []
+      });
+    }
+  }, [currentSong, displayTitle, displayArtists, displayImage, contextName]);
+
+  useEffect(() => {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.setActionHandler('play', () => {
+        setIsPlaying(true);
+        if (isVideoModeRef.current && videoIframeRef.current?.contentWindow) {
+          videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_PLAY' }, '*');
+        } else {
+          audioRef.current?.play().catch(()=>{});
+        }
+      });
+
+      navigator.mediaSession.setActionHandler('pause', () => {
+        setIsPlaying(false);
+        if (isVideoModeRef.current && videoIframeRef.current?.contentWindow) {
+          videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_PAUSE' }, '*');
+        } else {
+          audioRef.current?.pause();
+        }
+      });
+
+      navigator.mediaSession.setActionHandler('previoustrack', () => {
+        if (playPrevRef.current) playPrevRef.current();
+      });
+
+      navigator.mediaSession.setActionHandler('nexttrack', () => {
+        if (playNextRef.current) playNextRef.current();
+      });
+
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (details.seekTime !== undefined) {
+          if (isVideoModeRef.current && videoIframeRef.current?.contentWindow) {
+            videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_SEEK', time: details.seekTime }, '*');
+          } else if (audioRef.current) {
+            audioRef.current.currentTime = details.seekTime;
+            if (syncPositionRef.current) syncPositionRef.current();
+          }
+        }
+      });
+    }
+  }, [setIsPlaying]);
 
   const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
   const handleTouchMove = (e: React.TouchEvent) => {

@@ -9,7 +9,7 @@ import { useAppContext } from "../context/AppContext";
 import { 
   Play, Pause, SkipForward, SkipBack, Loader2, ChevronDown, 
   MoreHorizontal, Shuffle, Repeat, Heart, ListMusic, 
-  MonitorPlay, Maximize2, Minimize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe, Settings2, Check
+  MonitorPlay, Maximize2, Minimize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe, Settings2, Check, Share2
 } from "lucide-react";
 
 const decodeEntities = (text: string) => {
@@ -124,11 +124,11 @@ export default function MiniPlayer() {
     playContext, likedSongs, toggleLikeSong 
   } = useAppContext();
   
-  const[audioUrl, setAudioUrl] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const[progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const[duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
@@ -188,9 +188,9 @@ export default function MiniPlayer() {
   const [isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
 
   const [isSessionRestored, setIsSessionRestored] = useState(false);
-  const[showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [selectedQuality, setSelectedQuality] = useState("320");
-  const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
+  const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
   const[isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const restoreTimeRef = useRef<number | null>(null);
 
@@ -199,6 +199,35 @@ export default function MiniPlayer() {
 
   const isSongLiked = likedSongs.some(s => s && s.id === currentSong?.id);
   const handleLikeClick = (e: any) => { e.stopPropagation(); toggleLikeSong(currentSong); };
+
+  // CUSTOM SHARE FUNCTION
+  const handleShareSong = async () => {
+    try {
+      let path = currentSong.perma_url || currentSong.url || "";
+      if (path && path.includes('jiosaavn.com')) {
+        path = new URL(path).pathname;
+      }
+      
+      const vId = ytVideoId || currentSong.prefetchedYtId || '';
+      const sId = spotifyId || currentSong.spotifyId || '';
+      
+      const shareUrl = `${window.location.origin}/play${path}?token=${vId}&signature=${sId}`;
+
+      if (navigator.share) {
+        await navigator.share({
+          title: displayTitle,
+          text: `Listen to ${displayTitle} by ${displayArtists}`,
+          url: shareUrl,
+        });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        alert("Link copied to clipboard!");
+      }
+    } catch (e) {
+      console.error("Error sharing:", e);
+    }
+    setShowSettingsMenu(false);
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -226,7 +255,7 @@ export default function MiniPlayer() {
           setIsSessionRestored(true);
        }
     }
-  }, [currentSong, isSessionRestored, setCurrentSong]);
+  },[currentSong, isSessionRestored, setCurrentSong, setUpcomingQueue]);
 
   useEffect(() => { isCanvasEnabledRef.current = isCanvasEnabled; }, [isCanvasEnabled]);
   useEffect(() => { 
@@ -236,11 +265,11 @@ export default function MiniPlayer() {
 
   useEffect(() => {
     if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong));
-  }, [currentSong]);
+  },[currentSong]);
 
   useEffect(() => {
     if (upcomingQueue && upcomingQueue.length > 0) localStorage.setItem('last_session_queue', JSON.stringify(upcomingQueue));
-  }, [upcomingQueue]);
+  },[upcomingQueue]);
 
   const rawTitle = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
   const rawArtists = currentSong ? decodeEntities(getArtistsText(currentSong)) : "";
@@ -264,7 +293,7 @@ export default function MiniPlayer() {
       if (!map.has(a.id)) { map.set(a.id, { ...a, role: (a.role || "Artist").replace(/_/g, ' ') }); }
     });
     return Array.from(map.values());
-  }, [songDetails]);
+  },[songDetails]);
 
   const updateTop30Cache = useCallback((song: any, maxPercent: number) => {
     if (!song) return;
@@ -298,7 +327,7 @@ export default function MiniPlayer() {
     return null;
   };
 
-  // SMART RECOMMENDATION ENGINE (Infinite & Memory Based)
+  // SERVER SIDE RECOMMENDATION ENGINE
   useEffect(() => {
     let isSubscribed = true;
     
@@ -309,7 +338,8 @@ export default function MiniPlayer() {
 
       const attemptFetch = async (retriesLeft: number): Promise<any[]> => {
         try {
-           const res = await fetch(`https://ayushmind.vercel.app/api/rec?vid=${vid}`);
+           // NOW USING OUR NEXT.JS SERVER PROXY
+           const res = await fetch(`/api/recommendations?vid=${vid}`);
            if (!res.ok) throw new Error("Rec API Failed");
            const data = await res.json();
            return data.recommendations ||[];
@@ -352,14 +382,12 @@ export default function MiniPlayer() {
 
     const isAutoPlayContext =['Home', 'Search', 'Library', 'External Link', 'Recommendation'].includes(playContext?.type);
     
-    // Only fetch if queue is running out (under 3 left)
     if (isAutoPlayContext && upcomingQueue.length <= 3 && !fetchingRecsRef.current) {
       let seedVid = ytVideoId || currentSong?.prefetchedYtId;
 
-      // Smart Logic: Find the best track from the last 7 played based on Max Listen Percent
       try {
         const top30 = JSON.parse(localStorage.getItem('top_30_songs') || '[]');
-        let bestPercent = 30; // Min threshold to consider it a "loved" track
+        let bestPercent = 30; 
         for (const hSong of historyQueue.slice(0, 7)) {
           const tSong = top30.find((t: any) => t.id === hSong.id);
           if (tSong && tSong.maxListenPercent > bestPercent && hSong.prefetchedYtId) {
@@ -375,7 +403,6 @@ export default function MiniPlayer() {
     return () => { isSubscribed = false; };
   },[upcomingQueue.length, ytVideoId, playContext?.type, historyQueue]);
 
-  // MAIN TRACK CHANGE HOOK
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true; 
@@ -383,7 +410,6 @@ export default function MiniPlayer() {
     if (currentTrackRef.current && currentTrackRef.current.id !== currentSong.id) {
       updateTop30Cache(currentTrackRef.current, maxListenRef.current);
       
-      // Save ytVideoId so history items can be used as accurate Recommendation Seeds later!
       const trackToSave = { ...currentTrackRef.current, prefetchedYtId: ytVideoId || currentTrackRef.current.prefetchedYtId };
 
       setHistoryQueue(prev => {
@@ -480,20 +506,18 @@ export default function MiniPlayer() {
     fetchSpotifyMatch();
 
     return () => { isCurrent = false; };
-  }, [currentSong]);
+  },[currentSong]);
 
-  // SMART QUEUE SYNC - Prevents destroying the queue when a Recommendation plays
   useEffect(() => {
     if (queue && queue.length > 0) {
       const idx = queue.findIndex((s: any) => s.id === currentSong?.id);
       if (idx !== -1) {
         setUpcomingQueue(queue.slice(idx + 1));
       } else if (!currentSong?.isRecommendation) {
-        // Only empty the upcoming queue if it's a completely new, non-recommendation track
         setUpcomingQueue(queue.slice(1));
       }
     }
-  }, [queue, currentSong?.id]); 
+  },[queue, currentSong?.id]); 
 
   useEffect(() => {
     if (!currentSong) return;
@@ -534,7 +558,7 @@ export default function MiniPlayer() {
     fetchAudioData();
 
     return () => { isCurrent = false; };
-  }, [currentSong, selectedQuality]);
+  },[currentSong, selectedQuality]);
 
   useEffect(() => {
     const handleMsg = (e: MessageEvent) => {
@@ -556,7 +580,7 @@ export default function MiniPlayer() {
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
-  }, [isVideoMode, duration, upcomingQueue]);
+  },[isVideoMode, duration, upcomingQueue]);
 
   const handlePlayPauseToggle = (e?: any) => {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -659,7 +683,7 @@ export default function MiniPlayer() {
         setDominantColor(count > 0 ? `rgb(${Math.floor(r/count)}, ${Math.floor(g/count)}, ${Math.floor(b/count)})` : "rgb(83, 83, 83)");
       } catch (e) { setDominantColor("rgb(30, 30, 30)"); }
     };
-  },[displayImage]);
+  }, [displayImage]);
 
   useEffect(() => {
     if (audioRef.current && audioUrl) {
@@ -786,7 +810,7 @@ export default function MiniPlayer() {
 
   const handleSort = () => {
     if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
-      const _upcomingQueue = [...upcomingQueue];
+      const _upcomingQueue =[...upcomingQueue];
       const draggedItemContent = _upcomingQueue.splice(dragItem.current, 1)[0];
       _upcomingQueue.splice(dragOverItem.current, 0, draggedItemContent);
       setUpcomingQueue(_upcomingQueue);
@@ -820,7 +844,7 @@ export default function MiniPlayer() {
     if (historyQueue.length > 0) {
       const prevSong = historyQueue[0];
       setHistoryQueue(prev => prev.slice(1));
-      setUpcomingQueue(prev =>[currentSong, ...prev]);
+      setUpcomingQueue(prev => [currentSong, ...prev]);
       setCurrentSong(prevSong);
       setIsPlaying(true);
     } else {
@@ -850,7 +874,7 @@ export default function MiniPlayer() {
           { src: displayImage, sizes: '256x256', type: 'image/jpeg' },
           { src: displayImage, sizes: '384x384', type: 'image/jpeg' },
           { src: displayImage, sizes: '512x512', type: 'image/jpeg' }
-        ] : []
+        ] :[]
       });
     }
   },[currentSong, displayTitle, displayArtists, displayImage, playContext]);
@@ -912,14 +936,33 @@ export default function MiniPlayer() {
     if (match) albumRoute = `/album/${match[1]}`;
   }
 
+  // SPOTIFY-STYLE LYRICS ANIMATION
   const RenderedLyrics = useMemo(() => {
     if (!isLyricsEnabled) return null;
     return lyrics.map((line, idx) => {
       const isActive = idx === activeLyricIndex;
       const isPast = idx < activeLyricIndex;
+      
+      // Dynamic Spotify-like classes for smooth sliding and popping focus
+      const activeClasses = isLyricsFullScreen 
+        ? "text-white text-[36px] font-black drop-shadow-2xl leading-tight translate-y-0 blur-none opacity-100" 
+        : "text-white text-[28px] font-black drop-shadow-xl leading-tight translate-y-0 blur-none opacity-100";
+        
+      const pastClasses = isLyricsFullScreen 
+        ? "text-white/40 text-[28px] font-bold hover:text-white/70 leading-tight -translate-y-2 blur-[1px] opacity-60" 
+        : "text-white/40 text-[24px] font-bold hover:text-white/70 leading-tight -translate-y-2 blur-[1px] opacity-60";
+        
+      const futureClasses = isLyricsFullScreen 
+        ? "text-white/30 text-[28px] font-bold hover:text-white/50 leading-tight translate-y-4 blur-[1px] opacity-40" 
+        : "text-white/30 text-[24px] font-bold hover:text-white/50 leading-tight translate-y-3 blur-[1px] opacity-40";
+
       return (
-        <p key={idx} ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} onClick={() => handleLyricClick(line.time)} 
-          className={`cursor-pointer transition-all duration-300 no-select-text ${isActive ? (isLyricsFullScreen ? 'text-white text-[32px] font-extrabold drop-shadow-xl leading-tight' : 'text-white text-[28px] font-extrabold drop-shadow-lg leading-tight') : isPast ? (isLyricsFullScreen ? 'text-white/60 text-[26px] font-bold hover:text-white/80 leading-tight' : 'text-white/60 text-[24px] font-bold hover:text-white/80 leading-tight') : (isLyricsFullScreen ? 'text-white/30 text-[26px] font-bold hover:text-white/50 leading-tight' : 'text-black/40 text-[24px] font-bold hover:text-white/60 leading-tight')}`}>
+        <p 
+          key={idx} 
+          ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} 
+          onClick={() => handleLyricClick(line.time)} 
+          className={`cursor-pointer transition-all duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)] origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`}
+        >
           {line.words || '♪'}
         </p>
       )
@@ -991,8 +1034,7 @@ export default function MiniPlayer() {
         </div>
       </div>
     ));
-  }, [upcomingQueue, draggedIndex, dropTargetIndex]);
-
+  },[upcomingQueue, draggedIndex, dropTargetIndex, setCurrentSong, setUpcomingQueue, setIsPlaying]);
 
   if (!currentSong) return null;
 
@@ -1029,12 +1071,15 @@ export default function MiniPlayer() {
         }} 
       />
 
+      {/* FULL SCREEN OVERLAY */}
       <div className={`fixed inset-0 z-[99999] text-white transition-all duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0 opacity-100 overflow-hidden" : "translate-y-full opacity-0 pointer-events-none"}`}>
         
+        {/* Canvas Trigger for Minimal UI */}
         {isCanvasLoaded && !isScrolledPastMain && !showQueue && !isVideoMode && !isLyricsFullScreen && isCanvasEnabled && (
           <div className="absolute inset-0 z-10 cursor-pointer" onClick={() => setIsUiHidden(!isUiHidden)} />
         )}
 
+        {/* ROOT BACKGROUND */}
         <div 
            className="absolute inset-0 z-0 pointer-events-none transition-all duration-700" 
            style={{ 
@@ -1043,6 +1088,7 @@ export default function MiniPlayer() {
            }} 
         />
         
+        {/* CANVAS VIDEO */}
         {canvasData?.canvasUrl && !isVideoMode && isCanvasEnabled && (
           <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 ${isCanvasLoaded && !isScrolledPastMain && !showQueue && !isLyricsFullScreen ? 'opacity-100' : 'opacity-0'}`}>
             <video ref={canvasVideoRef} src={canvasData.canvasUrl} autoPlay loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover" />
@@ -1051,10 +1097,12 @@ export default function MiniPlayer() {
           </div>
         )}
 
+        {/* SCROLLABLE MAIN CONTENT */}
         <div className={`absolute inset-0 z-20 overflow-x-hidden scrollbar-hide flex flex-col pointer-events-none ${isLyricsFullScreen ? 'overflow-y-hidden' : 'overflow-y-auto'}`} onScroll={handleScroll}>
           
           <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto transition-all duration-500" style={{ height: isLyricsFullScreen ? '100%' : undefined, minHeight: isLyricsFullScreen ? '100%' : '100dvh' }}>
             
+            {/* Header */}
             <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4`}>
               <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md no-select-text">
@@ -1064,6 +1112,7 @@ export default function MiniPlayer() {
               <button onClick={() => setShowSettingsMenu(true)} className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><MoreHorizontal size={24} /></button>
             </div>
 
+            {/* Artwork / Video / Lyrics Fullscreen Wrapper */}
             <div className={`flex-1 min-h-0 w-full flex items-center justify-center relative z-30 transition-all duration-500 ${isLyricsFullScreen ? 'px-0 py-0 flex-col items-stretch justify-start' : (isVideoMode ? 'px-4 py-2' : 'px-8 py-2')}`}>
               
               {isLyricsFullScreen && isLyricsEnabled ? (
@@ -1092,6 +1141,7 @@ export default function MiniPlayer() {
               )}
             </div>
 
+            {/* Bottom Controls */}
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
               <div className={`transition-all duration-500 overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'max-h-[30px] opacity-100 mb-2'}`}>
@@ -1137,6 +1187,7 @@ export default function MiniPlayer() {
                 </div>
               </div>
 
+              {/* Minimal UI Wrapper for Buttons */}
               <div className={`flex flex-col w-full transition-all duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 translate-y-6 pointer-events-none' : 'max-h-[140px] opacity-100 translate-y-0 pointer-events-auto'}`}>
                 
                 <div className="flex items-center justify-between w-full mb-5 px-1 drop-shadow-md no-select-text">
@@ -1272,6 +1323,7 @@ export default function MiniPlayer() {
           </div>
         </div>
 
+        {/* SETTINGS / QUALITY OVERLAY MENU */}
         <div className={`absolute inset-0 z-[100000] bg-black/60 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto ${showSettingsMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowSettingsMenu(false)}>
           <div className={`absolute bottom-0 left-0 w-full bg-[#121212] rounded-t-[28px] transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] shadow-2xl border-t border-white/10 ${showSettingsMenu ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}>
              <div className="px-6 pt-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] flex flex-col gap-7">
@@ -1279,6 +1331,19 @@ export default function MiniPlayer() {
                 <div className="flex items-center justify-between">
                    <h3 className="text-white font-extrabold text-[22px] flex items-center gap-2"><Settings2 size={24}/> Settings</h3>
                    <button onClick={() => setShowSettingsMenu(false)} className="text-white/60 p-2 hover:text-white bg-white/5 rounded-full"><ChevronDown size={20} /></button>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                   <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Actions</span>
+                   <div className="flex flex-col bg-[#1e1e1e] rounded-[16px] overflow-hidden">
+                      <button onClick={handleShareSong} className="w-full flex items-center justify-between px-5 py-4 transition-colors active:bg-white/10">
+                        <div className="flex flex-col items-start">
+                          <span className="text-white font-bold text-[15px]">Share Song</span>
+                          <span className="text-white/50 text-[12px] font-medium mt-0.5">Copy link with Video & Spotify IDs</span>
+                        </div>
+                        <Share2 size={22} className="text-[#1db954]" />
+                      </button>
+                   </div>
                 </div>
 
                 <div className="flex flex-col gap-3">
@@ -1328,6 +1393,7 @@ export default function MiniPlayer() {
           </div>
         </div>
 
+        {/* QUEUE OVERLAY SHEET */}
         <div className={`absolute inset-0 z-[60] bg-[#121212] transition-transform duration-300 flex flex-col pointer-events-auto ${showQueue ? 'translate-y-0' : 'translate-y-full'}`}>
           <div className="flex items-center justify-between px-5 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 sticky top-0 bg-[#121212] z-20 shadow-md no-select-text">
             <button onClick={() => setShowQueue(false)} className="p-2 -ml-2 text-white/80 active:opacity-50"><ChevronDown size={28} /></button>

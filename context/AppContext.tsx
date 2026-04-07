@@ -1,6 +1,19 @@
 "use client";
 import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
 
+// Robust Artist Extractor
+const extractArtistsText = (data: any) => {
+  if (!data) return "Unknown Artist";
+  if (typeof data === "string") return data;
+  let names: string[] =[];
+  if (data?.artists?.primary && Array.isArray(data.artists.primary)) names = data.artists.primary.map((a: any) => a.name);
+  else if (Array.isArray(data?.artists)) names = data.artists.map((a: any) => a.name || a);
+  else if (data?.primaryArtists) names = typeof data.primaryArtists === 'string' ? data.primaryArtists.split(',') : data.primaryArtists.map((a:any)=>a.name);
+  else if (data?.singers) names = typeof data.singers === 'string' ? data.singers.split(',') : data.singers;
+  else return "Unknown Artist";
+  return Array.from(new Set(names)).join(", ");
+};
+
 type AppContextType = {
   language: string;
   setLanguage: (lang: string) => void;
@@ -34,19 +47,18 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState("hindi");
-  const [currentSong, setCurrentSong] = useState<any>(null);
+  const[currentSong, setCurrentSong] = useState<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   
-  const[queue, setQueue] = useState<any[]>([]);
-  const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  const [queue, setQueue] = useState<any[]>([]);
+  const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   const [historyQueue, setHistoryQueue] = useState<any[]>([]);
   
-  const[playContext, setPlayContext] = useState({ type: "Track", name: "Single Track" });
+  const [playContext, setPlayContext] = useState({ type: "Track", name: "Single Track" });
 
   const [likedSongs, setLikedSongs] = useState<any[]>([]);
-  const[likedPlaylists, setLikedPlaylists] = useState<any[]>([]);
+  const [likedPlaylists, setLikedPlaylists] = useState<any[]>([]);
 
-  // Safely restore session data and completely filter out nulls/corrupt data
   useEffect(() => {
     try {
        const recent = JSON.parse(localStorage.getItem('recent_songs') || '[]').filter(Boolean);
@@ -62,9 +74,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const toggleLikeSong = (song: any) => {
     if (!song || !song.id) return;
+
+    // Normalize song to fix [object Object] bug before saving
+    const artistStr = extractArtistsText(song);
+    const normalizedSong = { 
+      ...song, 
+      artists: artistStr, 
+      primaryArtists: artistStr, 
+      singers: artistStr 
+    };
+
     setLikedSongs(prev => {
-      const exists = prev.find(s => s && s.id === song.id);
-      const newList = exists ? prev.filter(s => s && s.id !== song.id) : [song, ...prev];
+      const exists = prev.find(s => s && s.id === normalizedSong.id);
+      const newList = exists ? prev.filter(s => s && s.id !== normalizedSong.id) : [normalizedSong, ...prev];
       localStorage.setItem('liked_songs', JSON.stringify(newList));
       return newList;
     });
@@ -73,7 +95,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const toggleLikePlaylist = (playlist: any) => {
     if (!playlist || !playlist.id) return;
     setLikedPlaylists(prev => {
-      // STRICT ID matching to prevent false positive likes on other playlists
       const exists = prev.find(p => p && p.id === playlist.id);
       const newList = exists ? prev.filter(p => p && p.id !== playlist.id) : [playlist, ...prev];
       localStorage.setItem('liked_playlists', JSON.stringify(newList));

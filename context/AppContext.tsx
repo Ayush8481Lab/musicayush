@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useState, ReactNode, useEffect } from "react";
+import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
 
 type AppContextType = {
   language: string;
@@ -64,7 +64,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!song) return;
     setLikedSongs(prev => {
       const exists = prev.find(s => s.id === song.id);
-      const newList = exists ? prev.filter(s => s.id !== song.id) : [song, ...prev];
+      const newList = exists ? prev.filter(s => s.id !== song.id) :[song, ...prev];
       localStorage.setItem('liked_songs', JSON.stringify(newList));
       return newList;
     });

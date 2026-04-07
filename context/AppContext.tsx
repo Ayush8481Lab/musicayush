@@ -1,4 +1,4 @@
- "use client";
+"use client";
 import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
 
 type AppContextType = {
@@ -33,7 +33,7 @@ type AppContextType = {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const[language, setLanguage] = useState("hindi");
+  const [language, setLanguage] = useState("hindi");
   const [currentSong, setCurrentSong] = useState<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   
@@ -43,38 +43,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
   
   const[playContext, setPlayContext] = useState({ type: "Track", name: "Single Track" });
 
-  const[likedSongs, setLikedSongs] = useState<any[]>([]);
-  const [likedPlaylists, setLikedPlaylists] = useState<any[]>([]);
+  const [likedSongs, setLikedSongs] = useState<any[]>([]);
+  const[likedPlaylists, setLikedPlaylists] = useState<any[]>([]);
 
-  // Safely restore session data only on client side to avoid Next.js deployment errors
+  // Safely restore session data and completely filter out nulls/corrupt data
   useEffect(() => {
     try {
-       const recent = JSON.parse(localStorage.getItem('recent_songs') || '[]');
+       const recent = JSON.parse(localStorage.getItem('recent_songs') || '[]').filter(Boolean);
        if (recent.length > 0) setHistoryQueue(recent);
        
-       const storedLikedSongs = JSON.parse(localStorage.getItem('liked_songs') || '[]');
+       const storedLikedSongs = JSON.parse(localStorage.getItem('liked_songs') || '[]').filter(Boolean);
        if (storedLikedSongs.length > 0) setLikedSongs(storedLikedSongs);
 
-       const storedLikedPlaylists = JSON.parse(localStorage.getItem('liked_playlists') || '[]');
+       const storedLikedPlaylists = JSON.parse(localStorage.getItem('liked_playlists') || '[]').filter(Boolean);
        if (storedLikedPlaylists.length > 0) setLikedPlaylists(storedLikedPlaylists);
     } catch(e) {}
   },[]);
 
   const toggleLikeSong = (song: any) => {
-    if (!song) return;
+    if (!song || !song.id) return;
     setLikedSongs(prev => {
-      const exists = prev.find(s => s.id === song.id);
-      const newList = exists ? prev.filter(s => s.id !== song.id) :[song, ...prev];
+      const exists = prev.find(s => s && s.id === song.id);
+      const newList = exists ? prev.filter(s => s && s.id !== song.id) : [song, ...prev];
       localStorage.setItem('liked_songs', JSON.stringify(newList));
       return newList;
     });
   };
 
   const toggleLikePlaylist = (playlist: any) => {
-    if (!playlist) return;
+    if (!playlist || !playlist.id) return;
     setLikedPlaylists(prev => {
-      const exists = prev.find(p => p.id === playlist.id || p.title === playlist.title);
-      const newList = exists ? prev.filter(p => p.id !== playlist.id && p.title !== playlist.title) : [playlist, ...prev];
+      // STRICT ID matching to prevent false positive likes on other playlists
+      const exists = prev.find(p => p && p.id === playlist.id);
+      const newList = exists ? prev.filter(p => p && p.id !== playlist.id) : [playlist, ...prev];
       localStorage.setItem('liked_playlists', JSON.stringify(newList));
       return newList;
     });

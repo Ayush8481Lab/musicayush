@@ -14,24 +14,33 @@ const getImageUrl = (img: any) => {
 
 const decodeEntities = (text: string) => {
   if (!text) return "";
-  return text.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  return String(text).replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 };
 
 export default function LibraryPage() {
   const router = useRouter();
   const { setCurrentSong, setIsPlaying, setQueue, setPlayContext, historyQueue, likedSongs, likedPlaylists } = useAppContext();
   
-  const [topSongs, setTopSongs] = useState<any[]>([]);
-  const[activeTab, setActiveTab] = useState("recent");
+  const[topSongs, setTopSongs] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState("recent");
+  
+  // Hydration safety flag
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    setIsMounted(true);
     try {
       const top = JSON.parse(localStorage.getItem('top_30_songs') || '[]');
-      setTopSongs(top);
-    } catch (e) {}
+      if (Array.isArray(top)) {
+        setTopSongs(top.filter(Boolean));
+      }
+    } catch (e) {
+      console.error("Local storage error:", e);
+    }
   },[]);
 
   const handlePlaySong = (song: any, contextName: string) => {
+    if (!song) return;
     setPlayContext({ type: "Library", name: contextName });
     setQueue([song]); // Triggers recommendation API naturally
     setCurrentSong(song);
@@ -39,6 +48,7 @@ export default function LibraryPage() {
   };
 
   const handlePlayPlaylist = (item: any) => {
+    if (!item) return;
     if (item.type === 'album' || item.url?.includes('album')) {
        router.push(item.url || `/album/${item.id}`);
     } else {
@@ -47,7 +57,10 @@ export default function LibraryPage() {
   };
 
   const renderSongs = (songs: any[], contextName: string) => {
-    if (songs.length === 0) {
+    // Bulletproof array check to prevent map crashes
+    const validSongs = Array.isArray(songs) ? songs.filter(Boolean) :[];
+
+    if (validSongs.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center py-12 px-4 border border-dashed border-white/10 rounded-2xl bg-white/5">
           <ListMusic size={40} className="text-white/30 mb-3" />
@@ -58,14 +71,16 @@ export default function LibraryPage() {
 
     return (
       <div className="flex flex-col gap-1.5">
-        {songs.map((song, idx) => {
+        {validSongs.map((song, idx) => {
+          if (!song) return null; // Double safety
+          
           const title = decodeEntities(song.title || song.name || "Unknown");
           const artist = decodeEntities(song.artists || song.primaryArtists || song.singers || "Unknown Artist");
           const cover = getImageUrl(song.image || song.image_link || song.Banner || song.banner_link);
 
           return (
             <div 
-              key={`${song.id}-${idx}`} 
+              key={`${song.id || Math.random()}-${idx}`} 
               onClick={() => handlePlaySong(song, contextName)}
               className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/10 active:bg-white/5 active:scale-[0.98] cursor-pointer group transition-all"
             >
@@ -87,7 +102,10 @@ export default function LibraryPage() {
   };
 
   const renderPlaylists = () => {
-    if (likedPlaylists.length === 0) {
+    // Bulletproof array check
+    const validPlaylists = Array.isArray(likedPlaylists) ? likedPlaylists.filter(Boolean) :[];
+
+    if (validPlaylists.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center py-12 px-4 border border-dashed border-white/10 rounded-2xl bg-white/5">
           <Disc size={40} className="text-white/30 mb-3" />
@@ -98,13 +116,15 @@ export default function LibraryPage() {
 
     return (
       <div className="grid grid-cols-2 min-[450px]:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4">
-        {likedPlaylists.map((item, idx) => {
+        {validPlaylists.map((item, idx) => {
+          if (!item) return null; // Double safety
+          
           const title = decodeEntities(item.title || item.name || "Unknown");
           const cover = getImageUrl(item.image || item.image_link);
 
           return (
             <div 
-              key={`${item.id}-${idx}`} 
+              key={`${item.id || Math.random()}-${idx}`} 
               onClick={() => handlePlayPlaylist(item)}
               className="flex flex-col cursor-pointer group active:scale-[0.96] transition-transform duration-200"
             >
@@ -119,6 +139,9 @@ export default function LibraryPage() {
       </div>
     );
   };
+
+  // Prevent rendering on the server to avoid local-storage hydration mismatches
+  if (!isMounted) return <div className="min-h-screen bg-[#121212]" />;
 
   return (
     <main className="min-h-screen pt-12 pb-32 px-4 bg-[#121212]">

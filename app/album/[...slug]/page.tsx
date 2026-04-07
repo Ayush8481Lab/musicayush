@@ -4,10 +4,9 @@
 
 import React, { useEffect, useState, Suspense, useRef, useCallback, useMemo } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { Play, ArrowLeft, Loader2, Shuffle, Share2, Info, BadgeAlert, Heart, Clock, MoreHorizontal } from "lucide-react";
-import { useAppContext } from "../../../context/AppContext"; // Adjusted import path according to deeper folder structure, revert if necessary
+import { Play, ArrowLeft, Loader2, Shuffle, Share2, Info, BadgeAlert, Heart, Clock } from "lucide-react";
+import { useAppContext } from "../../../context/AppContext";
 
-// --- UTILITIES ---
 const decodeEntities = (text: string) => {
   if (!text) return "";
   let decoded = text.replace(/&amp;/g, "&"); 
@@ -58,7 +57,6 @@ const getArtists = (data: any) => {
   return Array.from(new Set(names)).join(", ");
 };
 
-// --- COMPONENTS ---
 const PingPongMarquee = ({ text, isPlaying, isSub }: { text: string, isPlaying?: boolean, isSub?: boolean }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -123,13 +121,11 @@ const AlbumSkeleton = () => (
   </div>
 );
 
-// --- MAIN PAGE ---
 function AlbumContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // Smart routing: Extracts from `/album/name/id` OR falls back to `?link=` if still used
   const slug = params?.slug as string | string[];
   const queryLink = searchParams.get("link");
   
@@ -139,17 +135,18 @@ function AlbumContent() {
     link = `https://www.jiosaavn.com/album/${slugPath}`;
   }
   
-  const { currentSong, setCurrentSong, setIsPlaying, setQueue } = useAppContext() as any;
+  // Bring in our updated Global Context
+  const { currentSong, setCurrentSong, setIsPlaying, setQueue, setPlayContext, likedPlaylists, toggleLikePlaylist } = useAppContext() as any;
   
   const [album, setAlbum] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // UI States
   const [headerOpacity, setHeaderOpacity] = useState(0);
-  const[showStickyPlay, setShowStickyPlay] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
+  const [showStickyPlay, setShowStickyPlay] = useState(false);
 
-  // Smooth Scroll Listener for Pro-Level Opacity Transition
+  // Check if this album exists in our liked items
+  const isAlbumLiked = album ? likedPlaylists.some((p: any) => p.id === album.id || p.title === album.title) : false;
+
   useEffect(() => {
     let ticking = false;
     const handleScroll = () => {
@@ -158,7 +155,6 @@ function AlbumContent() {
           const scrollY = window.scrollY;
           const opacity = Math.min(scrollY / 250, 1);
           setHeaderOpacity(opacity);
-          // Show sticky title & banner exactly when massive banner leaves
           setShowStickyPlay(scrollY > 300);
           ticking = false;
         });
@@ -169,7 +165,6 @@ function AlbumContent() {
     return () => window.removeEventListener("scroll", handleScroll);
   },[]);
 
-  // Fetch Logic
   useEffect(() => {
     if (!link) return;
     const fetchAlbum = async () => {
@@ -187,12 +182,14 @@ function AlbumContent() {
     fetchAlbum();
   }, [link]);
 
-  // Actions
   const handlePlaySong = useCallback((song: any) => {
+    if (album) {
+      setPlayContext({ type: "Album", name: album.name || album.title });
+      setQueue(album.songs); // Push entire album into the queue!
+    }
     setCurrentSong(song);
     setIsPlaying(true);
-    if (setQueue && album?.songs) setQueue(album.songs);
-  },[setCurrentSong, setIsPlaying, setQueue, album?.songs]);
+  },[setCurrentSong, setIsPlaying, setQueue, setPlayContext, album]);
 
   const handlePlayAlbum = useCallback(() => {
     if (!album?.songs?.length) return;
@@ -202,10 +199,11 @@ function AlbumContent() {
   const handleShuffle = useCallback(() => {
     if (!album?.songs?.length) return;
     const shuffled =[...album.songs].sort(() => Math.random() - 0.5);
-    if (setQueue) setQueue(shuffled);
+    setPlayContext({ type: "Album", name: album.name || album.title });
+    setQueue(shuffled);
     setCurrentSong(shuffled[0]);
     setIsPlaying(true);
-  },[album?.songs, setQueue, setCurrentSong, setIsPlaying]);
+  },[album, setQueue, setPlayContext, setCurrentSong, setIsPlaying]);
 
   const handleShare = useCallback(async () => {
     const shareData = {
@@ -218,9 +216,8 @@ function AlbumContent() {
       navigator.clipboard.writeText(window.location.href);
       alert("Link copied!");
     }
-  }, [album?.name, album?.title]);
+  },[album?.name, album?.title]);
 
-  // Memoized Tracklist for 120fps Scrolling
   const currentSongId = currentSong?.id;
   const renderedSongs = useMemo(() => {
     return album?.songs?.map((song: any, index: number) => {
@@ -269,7 +266,6 @@ function AlbumContent() {
               {formatDuration(song.duration)}
             </span>
           </div>
-
         </div>
       );
     });
@@ -292,7 +288,6 @@ function AlbumContent() {
   const albumArtists = decodeEntities(getArtists(album));
   const year = album.year;
   
-  // Smart Description formatting (Separates Artists on Cover if present)
   let mainDesc = rawDesc;
   let coverArtistsDesc = "";
   if (rawDesc.includes("Artists on Cover:")) {
@@ -301,7 +296,6 @@ function AlbumContent() {
     coverArtistsDesc = "Artists on Cover: " + parts[1].trim();
   }
 
-  // Smart Total Duration Formatting
   const totalSeconds = album.songs?.reduce((acc: number, song: any) => acc + (song.duration || 0), 0);
   let totalDurationStr = "";
   if (totalSeconds) {
@@ -311,16 +305,11 @@ function AlbumContent() {
   }
 
   return (
-    <div className="pb-40 bg-[#121212] min-h-screen relative text-white select-none [-webkit-touch-callout:none] font-sans">
-
+    <div className="pb-40 bg-[#121212] min-h-screen relative text-white select-none[-webkit-touch-callout:none] font-sans">
       <style dangerouslySetInnerHTML={{__html: `
-        @keyframes ping-pong { 
-          0%, 10% { transform: translateX(0); } 
-          90%, 100% { transform: translateX(var(--overflow-dist)); } 
-        }
+        @keyframes ping-pong { 0%, 10% { transform: translateX(0); } 90%, 100% { transform: translateX(var(--overflow-dist)); } }
         .animate-ping-pong { animation: ping-pong 12s ease-in-out infinite alternate; }
         .mask-linear-fade { mask-image: linear-gradient(to right, transparent, black 2%, black 98%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 2%, black 98%, transparent); }
-        
         @keyframes eq { 0%, 100% { height: 4px; } 50% { height: 16px; } }
         .eq-bar-1 { animation: eq 1s ease-in-out infinite 0s; }
         .eq-bar-2 { animation: eq 1s ease-in-out infinite 0.2s; }
@@ -328,14 +317,12 @@ function AlbumContent() {
         .eq-bar-4 { animation: eq 1s ease-in-out infinite 0.1s; }
       `}} />
 
-      {/* 1. LIGHTER VIBRANT TOP BACKGROUND */}
       <div className="absolute top-0 left-0 w-full h-[450px] md:h-[500px] pointer-events-none overflow-hidden z-0 select-none">
         <div className="absolute inset-0 bg-[#121212]" />
         <img src={coverImage} alt="bg" className="absolute inset-0 w-full h-full object-cover blur-[80px] saturate-[200%] opacity-85 transform-gpu" draggable={false} />
         <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-[#121212]/60 to-[#121212]" />
       </div>
 
-      {/* 2. DYNAMIC STICKY HEADER */}
       <nav 
         className="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 py-3 transition-all duration-100"
         style={{ backgroundColor: `rgba(18, 18, 18, ${headerOpacity})`, borderBottom: `1px solid rgba(255,255,255, ${headerOpacity * 0.05})` }}
@@ -352,7 +339,6 @@ function AlbumContent() {
         </div>
       </nav>
 
-      {/* 3. RESPONSIVE HERO BANNER SECTION */}
       <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-5 md:gap-8 px-5 md:px-8 pt-24 md:pt-32 pb-4">
         <div className="w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 lg:w-60 lg:h-60 flex-shrink-0 shadow-[0_8px_40px_rgba(0,0,0,0.5)] bg-neutral-800 rounded-md overflow-hidden pointer-events-none">
           <img src={coverImage} alt="cover" className="w-full h-full object-cover" draggable={false} />
@@ -385,7 +371,6 @@ function AlbumContent() {
         </div>
       </div>
 
-      {/* 4. MAIN ACTION BAR */}
       <div className="relative z-10 px-5 md:px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-5 md:gap-6">
           <button onClick={handlePlayAlbum} className="w-14 h-14 md:w-16 md:h-16 bg-[#1ed760] hover:bg-[#3be477] text-black rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-lg">
@@ -396,8 +381,8 @@ function AlbumContent() {
             <Shuffle size={28} className="md:w-8 md:h-8" />
           </button>
           
-          <button onClick={() => setIsLiked(!isLiked)} className={`transition-colors active:scale-90 ${isLiked ? "text-[#1ed760]" : "text-neutral-400 hover:text-white"}`}>
-            <Heart size={30} fill={isLiked ? "#1ed760" : "none"} strokeWidth={1.5} className="md:w-[34px] md:h-[34px]" />
+          <button onClick={() => toggleLikePlaylist({ ...album, type: "album" })} className={`transition-colors active:scale-90 ${isAlbumLiked ? "text-[#1ed760]" : "text-neutral-400 hover:text-white"}`}>
+            <Heart size={30} fill={isAlbumLiked ? "#1ed760" : "none"} strokeWidth={1.5} className="md:w-[34px] md:h-[34px]" />
           </button>
           
           <button onClick={handleShare} className="text-neutral-400 hover:text-white transition-colors active:scale-90" title="Share">
@@ -406,7 +391,6 @@ function AlbumContent() {
         </div>
       </div>
 
-      {/* 5. TABLE HEADER (CSS GRID ALIGNED) */}
       <div className="relative z-10 px-4 md:px-8 mt-2 hidden md:grid grid-cols-[48px_1fr_100px_80px] gap-4 items-center text-[12px] md:text-[13px] font-medium uppercase tracking-widest text-neutral-400 border-b border-white/10 pb-2 mb-3 sticky top-[68px] bg-[#121212]/95 backdrop-blur-md">
         <div className="text-center">#</div>
         <div>Title</div>
@@ -414,12 +398,10 @@ function AlbumContent() {
         <div className="text-right pr-6"><Clock size={16} className="inline-block" /></div>
       </div>
 
-      {/* 6. TRACKLIST */}
       <div className="relative z-10 px-2 md:px-6 flex flex-col">
         {renderedSongs}
       </div>
 
-      {/* 7. FOOTER */}
       {album.songs?.length > 0 && (
         <div className="px-5 md:px-12 py-16 mt-6 flex flex-col gap-1 text-neutral-500 text-[12px] md:text-[13px] font-medium border-t border-white/5">
           <p>{album.songs.length} tracks • {totalDurationStr}</p>

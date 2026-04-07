@@ -1,9 +1,11 @@
+
 "use client";
 import React, { useState, useEffect, useRef, useCallback, forwardRef } from "react";
 import { Search as SearchIcon, Loader2, Music2, Disc, ListMusic, Mic2, X } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 import { useRouter } from "next/navigation";
 
+// Safe Image Extractor
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/500x500?text=Music";
   if (typeof img === "string") return img.replace("50x50", "500x500").replace("150x150", "500x500"); 
@@ -11,11 +13,13 @@ const getImageUrl = (img: any) => {
   return "https://via.placeholder.com/500x500?text=Music";
 };
 
+// HTML Entity Decoder
 const decodeEntities = (text: string) => {
   if (!text) return "";
   return text.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 };
 
+// Subtitle Extractor
 const getSubtitle = (item: any, type: string) => {
   if (type === "songs" || item.type === "song") {
     if (item.artists?.primary && Array.isArray(item.artists.primary)) {
@@ -33,6 +37,7 @@ const getSubtitle = (item: any, type: string) => {
   return item.subtitle || item.description || "";
 };
 
+// Smart Scoring Engine for Best Matches
 const getMatchScore = (title: string, query: string) => {
   if (!title || !query) return 0;
   const t = title.toLowerCase();
@@ -43,6 +48,7 @@ const getMatchScore = (title: string, query: string) => {
   return 0;
 };
 
+// Premium Card Component
 const SearchCard = forwardRef<HTMLDivElement, any>(({ item, tabType, onClick, isGrid = false }, ref) => {
   const type = item.type || tabType;
   const title = decodeEntities(item.title || item.name || "Unknown");
@@ -95,6 +101,7 @@ const SearchCard = forwardRef<HTMLDivElement, any>(({ item, tabType, onClick, is
 });
 SearchCard.displayName = "SearchCard";
 
+// Horizontal Infinite Carousel Component
 const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore, onItemClick }: any) => {
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -160,23 +167,23 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
 };
 
 export default function SearchPage() {
-  const { setCurrentSong, setIsPlaying, setPlayContext, setQueue } = useAppContext();
+  const { setCurrentSong, setIsPlaying, setPlayContext, setQueue } = useAppContext() as any;
   const router = useRouter();
   const CACHE_KEY = "search_page_cache_ultimate";
 
   const[isRestored, setIsRestored] = useState(false);
   const [query, setQuery] = useState("");
   const[debouncedQuery, setDebouncedQuery] = useState("");
-  const[activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState("all");
   
-  const [allData, setAllData] = useState<any>({ topMatches:[], songs: [], albums:[], playlists:[], artists:[] });
+  const[allData, setAllData] = useState<any>({ topMatches:[], songs: [], albums:[], playlists:[], artists:[] });
   const[allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
-  const [allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
+  const[allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
   const[horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
   
   const [results, setResults] = useState<any[]>([]);
   const[page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const[hasMore, setHasMore] = useState(true);
   
   const [loading, setLoading] = useState(false);
   const[loadingMore, setLoadingMore] = useState(false);
@@ -236,7 +243,7 @@ export default function SearchPage() {
       window.removeEventListener("scroll", handleWinScroll);
       if (timeout) clearTimeout(timeout);
     };
-  },[activeTab]);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!isRestored) return;
@@ -314,6 +321,7 @@ export default function SearchPage() {
           const newData = json.data?.results || json.data ||[];
 
           setResults(prev => (isNewQueryOrTab || page === 1) ? newData : [...prev, ...newData]);
+          
           setHasMore(newData.length > 0);
         }
         
@@ -340,8 +348,8 @@ export default function SearchPage() {
       if (newData.length === 0) {
         setAllHasMore((prev: any) => ({ ...prev, [type]: false }));
       } else {
-        setAllData((prev: any) => ({ ...prev,[type]:[...prev[type], ...newData] }));
-        setAllPages((prev: any) => ({ ...prev,[type]: nextPage }));
+        setAllData((prev: any) => ({ ...prev,[type]: [...prev[type], ...newData] }));
+        setAllPages((prev: any) => ({ ...prev, [type]: nextPage }));
       }
     } catch (e) {}
     
@@ -367,7 +375,11 @@ export default function SearchPage() {
     if (link && !link.startsWith("http")) link = `https://www.jiosaavn.com${link}`;
     
     let path = link;
-    try { path = new URL(link).pathname; } catch (e) { path = link.replace("https://www.jiosaavn.com", ""); }
+    try {
+      path = new URL(link).pathname;
+    } catch (e) {
+      path = link.replace("https://www.jiosaavn.com", "");
+    }
 
     if (type === "songs" || type === "song") {
       setPlayContext({ type: "Search", name: "Search Results" });

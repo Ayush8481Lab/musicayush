@@ -17,14 +17,26 @@ const decodeEntities = (text: string) => {
   return String(text).replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 };
 
+// Robust Artist Extractor to prevent [object Object]
+const getArtistsText = (data: any) => {
+  if (!data) return "Unknown Artist";
+  if (typeof data === "string") return data;
+  let names: string[] =[];
+  if (data?.artists?.primary && Array.isArray(data.artists.primary)) names = data.artists.primary.map((a: any) => a.name);
+  else if (Array.isArray(data?.artists)) names = data.artists.map((a: any) => a.name || a);
+  else if (data?.primaryArtists) names = typeof data.primaryArtists === 'string' ? data.primaryArtists.split(',') : data.primaryArtists.map((a:any)=>a.name);
+  else if (data?.singers) names = typeof data.singers === 'string' ? data.singers.split(',') : data.singers;
+  else return "Unknown Artist";
+  return Array.from(new Set(names)).join(", ");
+};
+
 export default function LibraryPage() {
   const router = useRouter();
   const { setCurrentSong, setIsPlaying, setQueue, setPlayContext, historyQueue, likedSongs, likedPlaylists } = useAppContext();
   
   const[topSongs, setTopSongs] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState("recent");
+  const[activeTab, setActiveTab] = useState("recent");
   
-  // Hydration safety flag
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -42,7 +54,7 @@ export default function LibraryPage() {
   const handlePlaySong = (song: any, contextName: string) => {
     if (!song) return;
     setPlayContext({ type: "Library", name: contextName });
-    setQueue([song]); // Triggers recommendation API naturally
+    setQueue([song]); 
     setCurrentSong(song);
     setIsPlaying(true);
   };
@@ -57,7 +69,6 @@ export default function LibraryPage() {
   };
 
   const renderSongs = (songs: any[], contextName: string) => {
-    // Bulletproof array check to prevent map crashes
     const validSongs = Array.isArray(songs) ? songs.filter(Boolean) :[];
 
     if (validSongs.length === 0) {
@@ -72,10 +83,10 @@ export default function LibraryPage() {
     return (
       <div className="flex flex-col gap-1.5">
         {validSongs.map((song, idx) => {
-          if (!song) return null; // Double safety
+          if (!song) return null; 
           
           const title = decodeEntities(song.title || song.name || "Unknown");
-          const artist = decodeEntities(song.artists || song.primaryArtists || song.singers || "Unknown Artist");
+          const artist = decodeEntities(getArtistsText(song)); // Safely parses objects!
           const cover = getImageUrl(song.image || song.image_link || song.Banner || song.banner_link);
 
           return (
@@ -102,7 +113,6 @@ export default function LibraryPage() {
   };
 
   const renderPlaylists = () => {
-    // Bulletproof array check
     const validPlaylists = Array.isArray(likedPlaylists) ? likedPlaylists.filter(Boolean) :[];
 
     if (validPlaylists.length === 0) {
@@ -117,7 +127,7 @@ export default function LibraryPage() {
     return (
       <div className="grid grid-cols-2 min-[450px]:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4">
         {validPlaylists.map((item, idx) => {
-          if (!item) return null; // Double safety
+          if (!item) return null; 
           
           const title = decodeEntities(item.title || item.name || "Unknown");
           const cover = getImageUrl(item.image || item.image_link);
@@ -140,7 +150,6 @@ export default function LibraryPage() {
     );
   };
 
-  // Prevent rendering on the server to avoid local-storage hydration mismatches
   if (!isMounted) return <div className="min-h-screen bg-[#121212]" />;
 
   return (

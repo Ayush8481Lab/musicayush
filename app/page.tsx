@@ -1,9 +1,11 @@
+
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { useAppContext } from "../context/AppContext";
 import { Music2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+// Safe image extractor
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/500x500?text=Music";
   if (typeof img === "string") return img.replace("150x150", "500x500").replace("50x50", "500x500");
@@ -11,6 +13,7 @@ const getImageUrl = (img: any) => {
   return "https://via.placeholder.com/500x500?text=Music";
 };
 
+// HTML Entity Decoder to fix &quot;, &#039;, etc.
 const decodeEntities = (text: string) => {
   if (!text) return "";
   return text
@@ -21,10 +24,12 @@ const decodeEntities = (text: string) => {
     .replace(/&gt;/g, ">");
 };
 
+// Bulletproof Subtitle Extractor
 const getSubtitle = (item: any, hideSubtitle: boolean) => {
   if (hideSubtitle) return "";
   let sub = "";
 
+  // If it's an album, strictly extract the Artist Name
   if (item.type === "album") {
     const primary = item.more_info?.artistMap?.primary_artists;
     const all = item.more_info?.artistMap?.artists;
@@ -35,6 +40,7 @@ const getSubtitle = (item: any, hideSubtitle: boolean) => {
     }
   }
 
+  // Fallbacks if not an album or if album artist missing
   if (!sub) sub = item.subtitle || item.header_desc || item.description || "";
   if (!sub && item.more_info) {
     if (item.more_info.singers) sub = item.more_info.singers;
@@ -45,6 +51,7 @@ const getSubtitle = (item: any, hideSubtitle: boolean) => {
   return sub || (item.type ? item.type.charAt(0).toUpperCase() + item.type.slice(1) : "");
 };
 
+// Premium Card Component with Smart Math-based Marquee
 const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
   const title = decodeEntities(item.title || item.name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, hideSubtitle));
@@ -94,6 +101,7 @@ const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
   );
 };
 
+// Async Image Card
 const AsyncImageCard = ({ item, type, onClick }: any) => {
   const[imgUrl, setImgUrl] = useState<string | null>(
     (item.image_link || item.image) ? getImageUrl(item.image_link || item.image) : null
@@ -114,7 +122,7 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
 
     if (cardRef.current) observer.observe(cardRef.current);
     return () => observer.disconnect();
-  }, [item, imgUrl]);
+  },[item, imgUrl]);
 
   const fetchImage = async () => {
     try {
@@ -205,20 +213,20 @@ const AsyncCarousel = ({ title, items, type, onItemClick }: any) => {
 };
 
 export default function Home() {
-  const { language, setCurrentSong, setIsPlaying, setPlayContext, setQueue } = useAppContext();
-  const[loading, setLoading] = useState(true);
+  const { language, setCurrentSong, setIsPlaying, setPlayContext, setQueue } = useAppContext() as any;
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   const [trending, setTrending] = useState<any[]>([]);
-  const[newReleases, setNewReleases] = useState<any[]>([]);
-  const[featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
-  const[otherPromos, setOtherPromos] = useState<any[]>([]);
-  const[topArtists, setTopArtists] = useState<any[]>([]);
-  const [charts, setCharts] = useState<any[]>([]);
+  const [newReleases, setNewReleases] = useState<any[]>([]);
+  const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
+  const [otherPromos, setOtherPromos] = useState<any[]>([]);
+  const [topArtists, setTopArtists] = useState<any[]>([]);
+  const[charts, setCharts] = useState<any[]>([]);
 
   const [recoArtists, setRecoArtists] = useState<any[]>([]);
   const [recoActors, setRecoActors] = useState<any[]>([]);
-  const[recoAlbums, setRecoAlbums] = useState<any[]>([]);
+  const [recoAlbums, setRecoAlbums] = useState<any[]>([]);
   const[recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
 
   useEffect(() => {
@@ -252,6 +260,7 @@ export default function Home() {
 
         setTrending(applySubtitleFallback(data.trending ||[]));
         setNewReleases(applySubtitleFallback(data.new_releases ||[]));
+
         setFeaturedPlaylists(filterJioPlaylists(data.featured_playlists ||[]));
         setCharts(filterJioPlaylists(data.top_charts ||[]));
         setRecoPlaylists(filterJioPlaylists(data.recommended_playlists ||[]));
@@ -275,7 +284,8 @@ export default function Home() {
 
     fetchAllData();
   }, [language]);
-const handleItemClick = (item: any) => {
+
+  const handleItemClick = (item: any) => {
     const type = item.type;
     let link = item.perma_url || item.url || (item.action ? `https://www.jiosaavn.com${item.action}` : "");
     const artistId = item.artistid || (type === "artist" ? item.id : null);
@@ -292,6 +302,7 @@ const handleItemClick = (item: any) => {
     }
 
     let extractedArtists = item.more_info?.singers || item.primaryArtists || item.singers;
+    
     if (!extractedArtists && item.more_info?.artistMap?.primary_artists && Array.isArray(item.more_info.artistMap.primary_artists)) {
       extractedArtists = item.more_info.artistMap.primary_artists.map((a: any) => a.name).join(", ");
     }
@@ -301,7 +312,9 @@ const handleItemClick = (item: any) => {
     if (!extractedArtists && item.subtitle && item.subtitle.toLowerCase() !== "song") {
       extractedArtists = item.subtitle;
     }
-    if (!extractedArtists) extractedArtists = "Unknown Artist";
+    if (!extractedArtists) {
+      extractedArtists = "Unknown Artist";
+    }
 
     const normalizedSongItem = {
       ...item,
@@ -309,8 +322,6 @@ const handleItemClick = (item: any) => {
       singers: item.singers || extractedArtists,
       primaryArtists: item.primaryArtists || extractedArtists
     };
-
-    const { setPlayContext, setQueue, setCurrentSong, setIsPlaying } = useAppContext() as any;
 
     if (type === "song") {
       setPlayContext({ type: "Home", name: "Home Recommendations" });
@@ -330,8 +341,19 @@ const handleItemClick = (item: any) => {
       setIsPlaying(true);
     }
   };
-  
-      
+
+  if (loading) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-[#121212] text-white">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-pulse opacity-40">
+           {[...Array(8)].map((_, i) => (
+             <div key={i} className="w-36 h-36 bg-white/10 rounded-2xl"></div>
+           ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <main className="pt-12 pb-28 min-h-screen bg-gradient-to-b from-[#121212] to-[#000000]">
       <div className="px-4 mb-8 flex items-center justify-between">

@@ -17,10 +17,10 @@ const decodeEntities = (text: string) => {
   return String(text).replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 };
 
-// Robust Artist Extractor to prevent [object Object]
 const getArtistsText = (data: any) => {
   if (!data) return "Unknown Artist";
   if (typeof data === "string") return data;
+  if (typeof data.artists === "string") return data.artists;
   let names: string[] =[];
   if (data?.artists?.primary && Array.isArray(data.artists.primary)) names = data.artists.primary.map((a: any) => a.name);
   else if (Array.isArray(data?.artists)) names = data.artists.map((a: any) => a.name || a);
@@ -34,8 +34,8 @@ export default function LibraryPage() {
   const router = useRouter();
   const { setCurrentSong, setIsPlaying, setQueue, setPlayContext, historyQueue, likedSongs, likedPlaylists } = useAppContext();
   
-  const[topSongs, setTopSongs] = useState<any[]>([]);
-  const[activeTab, setActiveTab] = useState("recent");
+  const [topSongs, setTopSongs] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState("recent");
   
   const [isMounted, setIsMounted] = useState(false);
 
@@ -61,11 +61,18 @@ export default function LibraryPage() {
 
   const handlePlayPlaylist = (item: any) => {
     if (!item) return;
-    if (item.type === 'album' || item.url?.includes('album')) {
-       router.push(item.url || `/album/${item.id}`);
-    } else {
-       router.push(item.url || `/playlist/${item.id}`);
+    let path = item.url || "";
+    // FORCE local routing by parsing out the jiosaavn domain
+    if (path.includes('jiosaavn.com')) {
+      try {
+        path = new URL(path).pathname;
+      } catch (e) {}
     }
+    // Fallback if URL is missing or malformed
+    if (!path || path === "") {
+      path = item.type === 'album' ? `/album/${item.id}` : `/playlist/${item.id}`;
+    }
+    router.push(path);
   };
 
   const renderSongs = (songs: any[], contextName: string) => {
@@ -86,7 +93,7 @@ export default function LibraryPage() {
           if (!song) return null; 
           
           const title = decodeEntities(song.title || song.name || "Unknown");
-          const artist = decodeEntities(getArtistsText(song)); // Safely parses objects!
+          const artist = decodeEntities(getArtistsText(song)); 
           const cover = getImageUrl(song.image || song.image_link || song.Banner || song.banner_link);
 
           return (

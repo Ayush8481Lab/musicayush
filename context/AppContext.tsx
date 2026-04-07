@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useState, ReactNode, useEffect, useRef } from "react";
+import { createContext, useContext, useState, ReactNode, useEffect } from "react";
 
 type AppContextType = {
   language: string;
@@ -8,103 +8,72 @@ type AppContextType = {
   setCurrentSong: (song: any) => void;
   isPlaying: boolean;
   setIsPlaying: (play: boolean) => void;
+  
   queue: any[];
   setQueue: (queue: any[]) => void;
-  
   upcomingQueue: any[];
   setUpcomingQueue: React.Dispatch<React.SetStateAction<any[]>>;
   historyQueue: any[];
   setHistoryQueue: React.Dispatch<React.SetStateAction<any[]>>;
   
-  globalSpotifyUrl: string | null;
-  setGlobalSpotifyUrl: (url: string | null) => void;
-  isFetchingRecsUI: boolean;
+  playContext: { type: string; name: string };
+  setPlayContext: (context: { type: string; name: string }) => void;
+
+  likedSongs: any[];
+  toggleLikeSong: (song: any) => void;
+  likedPlaylists: any[];
+  toggleLikePlaylist: (playlist: any) => void;
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState("hindi");
-  const[currentSong, setCurrentSong] = useState<any>(null);
+  const [currentSong, setCurrentSong] = useState<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   
   const [queue, setQueue] = useState<any[]>([]);
-  const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   const [historyQueue, setHistoryQueue] = useState<any[]>([]);
   
-  const [globalSpotifyUrl, setGlobalSpotifyUrl] = useState<string | null>(null);
-  const [isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
+  const [playContext, setPlayContext] = useState({ type: "Track", name: "Single Track" });
 
-  const fetchingRecsRef = useRef(false);
-  const fetchedRecsFor = useRef<Set<string>>(new Set());
+  const [likedSongs, setLikedSongs] = useState<any[]>([]);
+  const [likedPlaylists, setLikedPlaylists] = useState<any[]>([]);
 
-  // Restore history session instantly
+  // Restore session data (History 20 Items, Liked Items)
   useEffect(() => {
     try {
        const recent = JSON.parse(localStorage.getItem('recent_songs') || '[]');
        if (recent.length > 0) setHistoryQueue(recent);
+       
+       const storedLikedSongs = JSON.parse(localStorage.getItem('liked_songs') || '[]');
+       if (storedLikedSongs.length > 0) setLikedSongs(storedLikedSongs);
+
+       const storedLikedPlaylists = JSON.parse(localStorage.getItem('liked_playlists') || '[]');
+       if (storedLikedPlaylists.length > 0) setLikedPlaylists(storedLikedPlaylists);
     } catch(e) {}
   },[]);
 
-  // Global Intelligent Recommendation Engine
-  useEffect(() => {
-    let isSubscribed = true;
-    const fetchRecommendations = async () => {
-      if (upcomingQueue.length <= 3 && !fetchingRecsRef.current && currentSong) {
-        fetchingRecsRef.current = true;
-        setIsFetchingRecsUI(true);
-        
-        try {
-          const targetSong = historyQueue.length > 0 ? historyQueue[0] : currentSong;
-          const targetSpotifyUrl = targetSong.spotifyUrl || globalSpotifyUrl;
-          
-          let apiSongs: any[] =[];
-          if (targetSpotifyUrl && !fetchedRecsFor.current.has(targetSpotifyUrl)) {
-            fetchedRecsFor.current.add(targetSpotifyUrl);
-            const targetUrl = `https://ayushdetaser.vercel.app/api?link=${encodeURIComponent(targetSpotifyUrl)}`;
-            try {
-              const res = await fetch(targetUrl);
-              const parsedData = await res.json();
-              if (parsedData?.status === 'success' && parsedData.recommendations?.length > 0) {
-                apiSongs = parsedData.recommendations.map((rec: any) => {
-                  const saavnIdMatch = rec?.jiosaavn_link?.match(/\/([^\/]+)$/);
-                  const saavnId = saavnIdMatch ? saavnIdMatch[1] : Math.random().toString();
-                  return {
-                    id: saavnId, title: rec.title, name: rec.title, artists: rec.artist,
-                    image: rec.banner_link, url: rec.jiosaavn_link, downloadUrl: [{ url: rec.stream_url }],
-                    isRecommendation: true, spotifyUrl: rec.spotify_link
-                  };
-                }).slice(0, 6); 
-              }
-            } catch (err) {}
-          }
+  const toggleLikeSong = (song: any) => {
+    if (!song) return;
+    setLikedSongs(prev => {
+      const exists = prev.find(s => s.id === song.id);
+      const newList = exists ? prev.filter(s => s.id !== song.id) : [song, ...prev];
+      localStorage.setItem('liked_songs', JSON.stringify(newList));
+      return newList;
+    });
+  };
 
-          let top30: any[] =[];
-          try { top30 = JSON.parse(localStorage.getItem('top_30_songs') || '[]'); } catch (e) {}
-          const shuffledTop30 = top30.sort(() => 0.5 - Math.random()).slice(0, 4);
-
-          const mixed =[...apiSongs, ...shuffledTop30];
-
-          if (isSubscribed && mixed.length > 0) {
-            setUpcomingQueue(prev => {
-              const existingIds = new Set(prev.map(s => s.id));
-              existingIds.add(currentSong.id);
-              historyQueue.forEach(h => existingIds.add(h.id));
-              
-              const newSongs = mixed.filter(m => !existingIds.has(m.id));
-              const updated = [...prev, ...newSongs];
-              return updated.slice(0, 10); 
-            });
-          }
-        } catch (error) {}
-        
-        fetchingRecsRef.current = false;
-        if (isSubscribed) setIsFetchingRecsUI(false);
-      }
-    };
-    fetchRecommendations();
-    return () => { isSubscribed = false; };
-  },[upcomingQueue.length, currentSong, historyQueue, globalSpotifyUrl]);
+  const toggleLikePlaylist = (playlist: any) => {
+    if (!playlist) return;
+    setLikedPlaylists(prev => {
+      const exists = prev.find(p => p.id === playlist.id || p.title === playlist.title);
+      const newList = exists ? prev.filter(p => p.id !== playlist.id && p.title !== playlist.title) : [playlist, ...prev];
+      localStorage.setItem('liked_playlists', JSON.stringify(newList));
+      return newList;
+    });
+  };
 
   return (
     <AppContext.Provider value={{ 
@@ -114,8 +83,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       queue, setQueue,
       upcomingQueue, setUpcomingQueue,
       historyQueue, setHistoryQueue,
-      globalSpotifyUrl, setGlobalSpotifyUrl,
-      isFetchingRecsUI
+      playContext, setPlayContext,
+      likedSongs, toggleLikeSong,
+      likedPlaylists, toggleLikePlaylist
     }}>
       {children}
     </AppContext.Provider>

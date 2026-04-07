@@ -18,8 +18,6 @@ const decodeEntities = (text: string) => {
 };
 
 const getArtistsText = (data: any) => {
-  if (!data) return "Unknown Artist";
-  if (typeof data.artists === "string") return data.artists;
   let names: string[] =[];
   if (data?.artists?.primary && Array.isArray(data.artists.primary)) names = data.artists.primary.map((a: any) => a.name);
   else if (Array.isArray(data?.artists)) names = data.artists.slice(0, 4).map((a: any) => a.name);
@@ -98,7 +96,7 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
 const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const [isOverflowing, setIsOverflowing] = useState(false);
+  const[isOverflowing, setIsOverflowing] = useState(false);
 
   useEffect(() => {
     const checkOverflow = () => { if (containerRef.current && textRef.current) setIsOverflowing(textRef.current.scrollWidth > containerRef.current.clientWidth + 2); };
@@ -126,19 +124,19 @@ export default function MiniPlayer() {
     playContext, likedSongs, toggleLikeSong 
   } = useAppContext();
   
-  const[audioUrl, setAudioUrl] = useState("");
-  const [loading, setLoading] = useState(false);
-  const[progress, setProgress] = useState(0);
+  const [audioUrl, setAudioUrl] = useState("");
+  const[loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
-  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const [isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   
   const [isUiHidden, setIsUiHidden] = useState(false); 
-  const[isShuffle, setIsShuffle] = useState(false);
-  const [repeatMode, setRepeatMode] = useState(0); 
+  const [isShuffle, setIsShuffle] = useState(false);
+  const[repeatMode, setRepeatMode] = useState(0); 
 
   const [showQueue, setShowQueue] = useState(false);
   
@@ -146,7 +144,7 @@ export default function MiniPlayer() {
   const maxListenRef = useRef<number>(0);
   
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
   const queueContainerRef = useRef<HTMLDivElement>(null);
@@ -199,10 +197,10 @@ export default function MiniPlayer() {
   const isCanvasEnabledRef = useRef(true);
   const isLyricsEnabledRef = useRef(true);
 
-  const isSongLiked = likedSongs.some(s => s && s.id === currentSong?.id);
+  const isSongLiked = likedSongs.some((s: any) => s && s.id === currentSong?.id);
   const handleLikeClick = (e: any) => { e.stopPropagation(); toggleLikeSong(currentSong); };
 
-  // Advanced Sharing Setup
+  // ADVANCED SHARING WITH IMAGE
   const handleShareSong = async () => {
     try {
       let path = currentSong.perma_url || currentSong.url || "";
@@ -249,7 +247,8 @@ export default function MiniPlayer() {
         setIsVideoMode(false);
         if (audioRef.current) {
            audioRef.current.currentTime = videoStartTimeRef.current; 
-           audioRef.current.play().catch(()=>{});
+           const playPromise = audioRef.current.play();
+           if (playPromise !== undefined) playPromise.catch(()=>{});
         }
       }
     };
@@ -293,7 +292,7 @@ export default function MiniPlayer() {
 
   useEffect(() => {
     if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong));
-  },[currentSong]);
+  }, [currentSong]);
 
   useEffect(() => {
     if (upcomingQueue && upcomingQueue.length > 0) localStorage.setItem('last_session_queue', JSON.stringify(upcomingQueue));
@@ -355,51 +354,62 @@ export default function MiniPlayer() {
     return null;
   };
 
-  // GLOBAL RECOMMENDATION ENGINE - Triggered anytime queue runs out!
+  // SERVER SIDE RECOMMENDATION ENGINE
   useEffect(() => {
     let isSubscribed = true;
     const abortController = new AbortController();
     
-    const fetchRecs = async (vid: string) => {
+    const fetchRecs = async (vid: string, retries = 5) => {
       if (!vid || fetchingRecsRef.current) return;
       fetchingRecsRef.current = true;
       setIsFetchingRecsUI(true);
 
-      try {
+      const attemptFetch = async (retriesLeft: number): Promise<any[]> => {
+        try {
            const res = await fetch(`/api/recommendations?vid=${vid}`, { signal: abortController.signal });
            if (!res.ok) throw new Error("Rec API Failed");
            const data = await res.json();
-           const recs = data.recommendations ||[];
-           
-           if (isSubscribed && recs.length > 0) {
-             const formatted = recs.map((r: any) => ({
-               id: r["Perma URL"] ? r["Perma URL"].split('/').pop() : Math.random().toString(),
-               title: r.Title,
-               name: r.Title,
-               artists: r.Artists,
-               image: r.Banner,
-               downloadUrl:[{ url: r.Stream, quality: "320kbps" }],
-               url: r["Perma URL"],
-               spotifyUrl: r.Spotify,
-               isRecommendation: true
-             }));
-
-             setUpcomingQueue(prev => {
-               const existingIds = new Set(prev.map(s => s.id));
-               existingIds.add(currentSong.id);
-               historyQueue.forEach(h => existingIds.add(h.id));
-               const newSongs = formatted.filter(s => !existingIds.has(s.id));
-               return [...prev, ...newSongs];
-             });
+           return data.recommendations ||[];
+        } catch (e) {
+           if (retriesLeft > 0 && isSubscribed) {
+              await new Promise(r => setTimeout(r, 2000));
+              return attemptFetch(retriesLeft - 1);
            }
-      } catch (e) {}
+           return[];
+        }
+      };
+
+      const recs = await attemptFetch(retries);
       
+      if (isSubscribed && recs.length > 0) {
+        const formatted = recs.map((r: any) => ({
+          id: r["Perma URL"] ? r["Perma URL"].split('/').pop() : Math.random().toString(),
+          title: r.Title,
+          name: r.Title,
+          artists: r.Artists,
+          image: r.Banner,
+          downloadUrl:[{ url: r.Stream, quality: "320kbps" }],
+          url: r["Perma URL"],
+          spotifyUrl: r.Spotify,
+          isRecommendation: true
+        }));
+
+        setUpcomingQueue(prev => {
+          const existingIds = new Set(prev.map((s: any) => s.id));
+          existingIds.add(currentSong.id);
+          historyQueue.forEach((h: any) => existingIds.add(h.id));
+          const newSongs = formatted.filter((s: any) => !existingIds.has(s.id));
+          return [...prev, ...newSongs];
+        });
+      }
+
       fetchingRecsRef.current = false;
       if (isSubscribed) setIsFetchingRecsUI(false);
     };
 
-    // Regardless of context, if queue is empty, keep the party going!
-    if (upcomingQueue.length <= 3 && !fetchingRecsRef.current) {
+    const isAutoPlayContext =['Home', 'Search', 'Library', 'External Link', 'Recommendation'].includes(playContext?.type);
+    
+    if (isAutoPlayContext && upcomingQueue.length <= 3 && !fetchingRecsRef.current) {
       let seedVid = ytVideoId || currentSong?.prefetchedYtId;
 
       try {
@@ -422,9 +432,9 @@ export default function MiniPlayer() {
       abortController.abort(); 
       fetchingRecsRef.current = false; 
     };
-  },[upcomingQueue.length, ytVideoId, historyQueue]);
+  },[upcomingQueue.length, ytVideoId, playContext?.type, historyQueue]);
 
-
+  // MAIN TRACK CHANGE HOOK
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true; 
@@ -437,7 +447,7 @@ export default function MiniPlayer() {
       const trackToSave = { ...currentTrackRef.current, prefetchedYtId: ytVideoId || currentTrackRef.current.prefetchedYtId };
 
       setHistoryQueue(prev => {
-        const newHist =[trackToSave, ...prev].filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+        const newHist = [trackToSave, ...prev].filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.id === v.id) === i);
         const sliced = newHist.slice(0, 20); 
         localStorage.setItem('recent_songs', JSON.stringify(sliced));
         return sliced;
@@ -558,7 +568,7 @@ export default function MiniPlayer() {
 
         if (!isCurrent) return; 
 
-        let urls: any[] = [];
+        let urls: any[] =[];
         if (json.data?.[0]?.downloadUrl) {
           urls = json.data[0].downloadUrl;
           setSongDetails((prev: any) => prev?.id === json.data[0].id ? prev : json.data[0]); 
@@ -590,7 +600,7 @@ export default function MiniPlayer() {
     const handleMsg = (e: MessageEvent) => {
       if (e.data?.type === 'YTP_TIME') {
         if (isVideoMode) {
-          videoStartTimeRef.current = e.data.time; // Live sync for background switch!
+          videoStartTimeRef.current = e.data.time; 
           if (!isSeekingRef.current) setCurrentTime(e.data.time);
           if (e.data.duration) {
             if (duration !== e.data.duration) setDuration(e.data.duration);
@@ -607,7 +617,7 @@ export default function MiniPlayer() {
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
-  }, [isVideoMode, duration, upcomingQueue]);
+  },[isVideoMode, duration, upcomingQueue]);
 
   const handlePlayPauseToggle = (e?: any) => {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -617,8 +627,12 @@ export default function MiniPlayer() {
     if (isVideoMode && videoIframeRef.current?.contentWindow) {
       videoIframeRef.current.contentWindow.postMessage({ type: newState ? 'MUSIC_PLAY' : 'MUSIC_PAUSE' }, '*');
     } else {
-      if (newState) audioRef.current?.play().catch(()=>{});
-      else audioRef.current?.pause();
+      if (newState) {
+        const playPromise = audioRef.current?.play();
+        if (playPromise !== undefined) playPromise.catch(()=>{});
+      } else {
+        audioRef.current?.pause();
+      }
     }
   };
 
@@ -633,7 +647,8 @@ export default function MiniPlayer() {
         const safeTime = (audioDur > 0 && currentTime > audioDur) ? audioDur - 2 : currentTime;
         audioRef.current.currentTime = safeTime; 
         setCurrentTime(safeTime);
-        audioRef.current.play().catch(()=>{}); 
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) playPromise.catch(()=>{});
         setIsPlaying(true); 
       }
       return;
@@ -659,7 +674,11 @@ export default function MiniPlayer() {
       setYtVideoId(newVid);
       setIsVideoMode(true);
     } else {
-      if (audioRef.current) { audioRef.current.play().catch(()=>{}); setIsPlaying(true); }
+      if (audioRef.current) { 
+         const playPromise = audioRef.current.play();
+         if (playPromise !== undefined) playPromise.catch(()=>{});
+         setIsPlaying(true); 
+      }
     }
     setIsVideoLoading(false);
   };
@@ -716,7 +735,10 @@ export default function MiniPlayer() {
     if (audioRef.current && audioUrl) {
       audioRef.current.volume = volume / 100;
       audioRef.current.loop = repeatMode === 2;
-      if (isPlaying && !isVideoMode) { const playPromise = audioRef.current.play(); if (playPromise !== undefined) playPromise.catch(() => {}); }
+      if (isPlaying && !isVideoMode) { 
+          const playPromise = audioRef.current.play(); 
+          if (playPromise !== undefined) playPromise.catch(() => {}); 
+      }
       else audioRef.current.pause();
     }
   },[isPlaying, audioUrl, volume, repeatMode, isVideoMode]);
@@ -763,7 +785,7 @@ export default function MiniPlayer() {
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
-  }, [isScrolledPastMain]);
+  },[isScrolledPastMain]);
 
   useEffect(() => {
     if (isSeekingRef.current) return; 
@@ -778,7 +800,7 @@ export default function MiniPlayer() {
       const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + (element.clientHeight / 2);
       container.scrollTo({ top: scrollPos, behavior: 'smooth' });
     }
-  },[activeLyricIndex, isLyricsFullScreen]);
+  }, [activeLyricIndex, isLyricsFullScreen]);
 
   const handleLyricClick = (time: number) => {
     if (isVideoMode && videoIframeRef.current?.contentWindow) {
@@ -848,11 +870,11 @@ export default function MiniPlayer() {
 
   const playNext = () => {
     if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
-    if (repeatMode === 2 && audioRef.current) { audioRef.current.currentTime = 0; audioRef.current.play().catch(()=>{}); return; }
+    if (repeatMode === 2 && audioRef.current) { audioRef.current.currentTime = 0; const p = audioRef.current.play(); if (p!==undefined) p.catch(()=>{}); return; }
     if (isShuffle && upcomingQueue.length > 0) {
       const randomIdx = Math.floor(Math.random() * upcomingQueue.length);
       const nextSong = upcomingQueue[randomIdx];
-      setUpcomingQueue(prev => prev.filter((_, i) => i !== randomIdx));
+      setUpcomingQueue(prev => prev.filter((_: any, i: number) => i !== randomIdx));
       setCurrentSong(nextSong); setIsPlaying(true); return;
     }
     if (upcomingQueue.length > 0) { 
@@ -901,7 +923,7 @@ export default function MiniPlayer() {
           { src: displayImage, sizes: '256x256', type: 'image/jpeg' },
           { src: displayImage, sizes: '384x384', type: 'image/jpeg' },
           { src: displayImage, sizes: '512x512', type: 'image/jpeg' }
-        ] : []
+        ] :[]
       });
     }
   }, [currentSong, displayTitle, displayArtists, displayImage, playContext]);
@@ -913,7 +935,8 @@ export default function MiniPlayer() {
         if (isVideoModeRef.current && videoIframeRef.current?.contentWindow) {
           videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_PLAY' }, '*');
         } else {
-          audioRef.current?.play().catch(()=>{});
+          const p = audioRef.current?.play();
+          if (p!==undefined) p.catch(()=>{});
         }
       });
 
@@ -963,31 +986,31 @@ export default function MiniPlayer() {
     if (match) albumRoute = `/album/${match[1]}`;
   }
 
-  // LYRICS RENDERING (Crisp text without blur)
+  // Crisp full-screen lyrics rendering without blur
   const RenderedLyrics = useMemo(() => {
     if (!isLyricsEnabled) return null;
-    return lyrics.map((line, idx) => {
+    return lyrics.map((line: any, idx: number) => {
       const isActive = idx === activeLyricIndex;
       const isPast = idx < activeLyricIndex;
       
       const activeClasses = isLyricsFullScreen 
-        ? "text-white text-[36px] font-black drop-shadow-2xl leading-tight opacity-100" 
-        : "text-white text-[28px] font-black drop-shadow-xl leading-tight opacity-100";
+        ? "text-white text-[36px] font-black drop-shadow-2xl leading-tight opacity-100 translate-y-0" 
+        : "text-white text-[28px] font-black drop-shadow-xl leading-tight opacity-100 translate-y-0";
         
       const pastClasses = isLyricsFullScreen 
-        ? "text-white/50 text-[28px] font-bold hover:text-white/80 leading-tight opacity-50" 
-        : "text-white/50 text-[24px] font-bold hover:text-white/80 leading-tight opacity-50";
+        ? "text-white/50 text-[28px] font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2" 
+        : "text-white/50 text-[24px] font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2";
         
       const futureClasses = isLyricsFullScreen 
-        ? "text-white/30 text-[28px] font-bold hover:text-white/50 leading-tight opacity-30" 
-        : "text-white/30 text-[24px] font-bold hover:text-white/50 leading-tight opacity-30";
+        ? "text-white/30 text-[28px] font-bold hover:text-white/50 leading-tight opacity-30 translate-y-4" 
+        : "text-white/30 text-[24px] font-bold hover:text-white/50 leading-tight opacity-30 translate-y-3";
 
       return (
         <p 
           key={idx} 
           ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} 
           onClick={() => handleLyricClick(line.time)} 
-          className={`cursor-pointer transition-all duration-500 ease-out origin-left no-select-text ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`}
+          className={`cursor-pointer transition-all duration-500 ease-out origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`}
         >
           {line.words || '♪'}
         </p>
@@ -1019,7 +1042,7 @@ export default function MiniPlayer() {
   }, [uniqueArtists]);
 
   const RenderedQueue = useMemo(() => {
-    return upcomingQueue.map((track, index) => (
+    return upcomingQueue.map((track: any, index: number) => (
       <div 
         key={index} 
         draggable
@@ -1030,8 +1053,8 @@ export default function MiniPlayer() {
         onDragEnd={handleSort}
         onClick={() => {
             setCurrentSong(track);
-            const idx = upcomingQueue.findIndex(t => t.id === track.id);
-            setUpcomingQueue(prev => prev.slice(idx + 1));
+            const idx = upcomingQueue.findIndex((t: any) => t.id === track.id);
+            setUpcomingQueue((prev: any) => prev.slice(idx + 1));
             setIsPlaying(true);
         }}
         style={{
@@ -1060,7 +1083,8 @@ export default function MiniPlayer() {
         </div>
       </div>
     ));
-  },[upcomingQueue, draggedIndex, dropTargetIndex, setCurrentSong, setUpcomingQueue, setIsPlaying]);
+  }, [upcomingQueue, draggedIndex, dropTargetIndex]);
+
 
   if (!currentSong) return null;
 
@@ -1080,7 +1104,7 @@ export default function MiniPlayer() {
         .no-select { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; pointer-events: none; }
         .no-select-text { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
         
-        /* NEW LYRIC ENTRY ANIMATION */
+        /* NEW LYRIC ENTRY ANIMATION (Spotify Style Fade & Slide Up) */
         @keyframes lyric-enter {
           from { opacity: 0; transform: translateY(12px) scale(0.98); }
           to { opacity: 1; transform: translateY(0) scale(1); }
@@ -1169,13 +1193,13 @@ export default function MiniPlayer() {
 
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
-              {/* SPOTIFY-STYLE MINI LYRIC ANIMATION (line-clamp-2, slide-up-fade) */}
-              <div className={`transition-all duration-500 overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-2 opacity-100'}`}>
+              {/* SPOTIFY-STYLE MINI LYRIC ANIMATION (line-clamp-3, slide-up-fade) */}
+              <div className={`transition-all duration-500 overflow-hidden w-full ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-2 opacity-100'}`}>
                 {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && !isVideoMode && (
-                  <div className="w-full flex items-end min-h-[30px]">
+                  <div className="w-full flex items-end min-h-[44px]">
                     <span 
-                       key={activeLyricIndex} 
-                       className="text-white/95 text-[14px] md:text-[15px] font-bold text-left drop-shadow-md line-clamp-2 leading-tight animate-lyric-enter w-full pr-2 no-select-text"
+                       key={`lyric-${activeLyricIndex}`} 
+                       className="text-white/95 text-[14px] md:text-[15px] font-bold text-left drop-shadow-md line-clamp-3 leading-snug animate-lyric-enter w-full pr-2 no-select-text"
                     >
                       {lyrics[activeLyricIndex].words || "♪"}
                     </span>
@@ -1353,7 +1377,7 @@ export default function MiniPlayer() {
           </div>
         </div>
 
-        {/* SETTINGS MENU w/ ADVANCED SHARE */}
+        {/* SETTINGS MENU w/ SHARE */}
         <div className={`absolute inset-0 z-[100000] bg-black/60 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto ${showSettingsMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowSettingsMenu(false)}>
           <div className={`absolute bottom-0 left-0 w-full bg-[#121212] rounded-t-[28px] transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] shadow-2xl border-t border-white/10 ${showSettingsMenu ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}>
              <div className="px-6 pt-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] flex flex-col gap-7">

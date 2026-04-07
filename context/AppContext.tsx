@@ -4,15 +4,19 @@ import { createContext, useContext, useState, ReactNode, useEffect } from "react
 type AppContextType = {
   language: string;
   setLanguage: (lang: string) => void;
+  
   currentSong: any;
   setCurrentSong: (song: any) => void;
+  
   isPlaying: boolean;
   setIsPlaying: (play: boolean) => void;
   
   queue: any[];
   setQueue: (queue: any[]) => void;
+  
   upcomingQueue: any[];
   setUpcomingQueue: React.Dispatch<React.SetStateAction<any[]>>;
+  
   historyQueue: any[];
   setHistoryQueue: React.Dispatch<React.SetStateAction<any[]>>;
   
@@ -21,6 +25,7 @@ type AppContextType = {
 
   likedSongs: any[];
   toggleLikeSong: (song: any) => void;
+  
   likedPlaylists: any[];
   toggleLikePlaylist: (playlist: any) => void;
 };
@@ -28,20 +33,20 @@ type AppContextType = {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguage] = useState("hindi");
+  const[language, setLanguage] = useState("hindi");
   const [currentSong, setCurrentSong] = useState<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   
-  const [queue, setQueue] = useState<any[]>([]);
+  const[queue, setQueue] = useState<any[]>([]);
   const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
   const [historyQueue, setHistoryQueue] = useState<any[]>([]);
   
-  const [playContext, setPlayContext] = useState({ type: "Track", name: "Single Track" });
+  const[playContext, setPlayContext] = useState({ type: "Track", name: "Single Track" });
 
-  const [likedSongs, setLikedSongs] = useState<any[]>([]);
+  const[likedSongs, setLikedSongs] = useState<any[]>([]);
   const [likedPlaylists, setLikedPlaylists] = useState<any[]>([]);
 
-  // Restore session data (History 20 Items, Liked Items)
+  // Safely restore session data only on client side to avoid Next.js deployment errors
   useEffect(() => {
     try {
        const recent = JSON.parse(localStorage.getItem('recent_songs') || '[]');

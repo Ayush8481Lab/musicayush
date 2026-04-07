@@ -4,7 +4,6 @@ import { Search as SearchIcon, Loader2, Music2, Disc, ListMusic, Mic2, X } from 
 import { useAppContext } from "../../context/AppContext";
 import { useRouter } from "next/navigation";
 
-// Safe Image Extractor
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/500x500?text=Music";
   if (typeof img === "string") return img.replace("50x50", "500x500").replace("150x150", "500x500"); 
@@ -12,13 +11,11 @@ const getImageUrl = (img: any) => {
   return "https://via.placeholder.com/500x500?text=Music";
 };
 
-// HTML Entity Decoder
 const decodeEntities = (text: string) => {
   if (!text) return "";
   return text.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 };
 
-// Subtitle Extractor
 const getSubtitle = (item: any, type: string) => {
   if (type === "songs" || item.type === "song") {
     if (item.artists?.primary && Array.isArray(item.artists.primary)) {
@@ -36,7 +33,6 @@ const getSubtitle = (item: any, type: string) => {
   return item.subtitle || item.description || "";
 };
 
-// Smart Scoring Engine for Best Matches
 const getMatchScore = (title: string, query: string) => {
   if (!title || !query) return 0;
   const t = title.toLowerCase();
@@ -47,7 +43,6 @@ const getMatchScore = (title: string, query: string) => {
   return 0;
 };
 
-// Premium Card Component
 const SearchCard = forwardRef<HTMLDivElement, any>(({ item, tabType, onClick, isGrid = false }, ref) => {
   const type = item.type || tabType;
   const title = decodeEntities(item.title || item.name || "Unknown");
@@ -100,7 +95,6 @@ const SearchCard = forwardRef<HTMLDivElement, any>(({ item, tabType, onClick, is
 });
 SearchCard.displayName = "SearchCard";
 
-// Horizontal Infinite Carousel Component
 const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore, onItemClick }: any) => {
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -115,14 +109,12 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
     if (node) observerRef.current.observe(node);
   },[loadingMore, hasMore, loadMore, type]);
 
-  // Save Live Horizontal Scroll
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const scrolls = JSON.parse(sessionStorage.getItem("search_scrollX") || "{}");
     scrolls[type] = (e.target as HTMLDivElement).scrollLeft;
     sessionStorage.setItem("search_scrollX", JSON.stringify(scrolls));
   };
 
-  // Restore Horizontal Scroll Flawlessly
   useEffect(() => {
     const scrolls = JSON.parse(sessionStorage.getItem("search_scrollX") || "{}");
     if (scrolls[type]) {
@@ -134,7 +126,7 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
       requestAnimationFrame(restoreScroll);
       setTimeout(restoreScroll, 100);
     }
-  }, [type]); // NO items.length dependency to prevent resetting!
+  }, [type]);
 
   return (
     <div className="mb-6 contain-content">
@@ -168,14 +160,14 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
 };
 
 export default function SearchPage() {
-  const { setCurrentSong, setIsPlaying } = useAppContext();
+  const { setCurrentSong, setIsPlaying, setPlayContext, setQueue } = useAppContext();
   const router = useRouter();
   const CACHE_KEY = "search_page_cache_ultimate";
 
   const[isRestored, setIsRestored] = useState(false);
   const [query, setQuery] = useState("");
   const[debouncedQuery, setDebouncedQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("all");
+  const[activeTab, setActiveTab] = useState("all");
   
   const [allData, setAllData] = useState<any>({ topMatches:[], songs: [], albums:[], playlists:[], artists:[] });
   const[allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
@@ -184,7 +176,7 @@ export default function SearchPage() {
   
   const [results, setResults] = useState<any[]>([]);
   const[page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true); // Default to true!
+  const [hasMore, setHasMore] = useState(true);
   
   const [loading, setLoading] = useState(false);
   const[loadingMore, setLoadingMore] = useState(false);
@@ -200,7 +192,6 @@ export default function SearchPage() {
     { id: "artists", label: "Artists", icon: Mic2 }
   ];
 
-  // 1. Restore State from Cache
   useEffect(() => {
     const cached = sessionStorage.getItem(CACHE_KEY);
     if (cached) {
@@ -221,7 +212,6 @@ export default function SearchPage() {
     setIsRestored(true);
   },[]);
 
-  // 2. Restore Vertical Scroll
   useEffect(() => {
     if (!isRestored) return;
     const y = sessionStorage.getItem(`search_scrollY_${activeTab}`);
@@ -233,7 +223,6 @@ export default function SearchPage() {
     }
   },[activeTab, isRestored]);
 
-  // 3. Live Window Scroll Tracker (Ensures Browser Back button works)
   useEffect(() => {
     let timeout: any;
     const handleWinScroll = () => {
@@ -247,23 +236,20 @@ export default function SearchPage() {
       window.removeEventListener("scroll", handleWinScroll);
       if (timeout) clearTimeout(timeout);
     };
-  }, [activeTab]);
+  },[activeTab]);
 
-  // Save Cache Automatically
   useEffect(() => {
     if (!isRestored) return;
     const stateToCache = { query, debouncedQuery, activeTab, allData, allPages, allHasMore, results, page, hasMore, lastFetched: lastFetched.current };
     sessionStorage.setItem(CACHE_KEY, JSON.stringify(stateToCache));
   },[query, debouncedQuery, activeTab, allData, allPages, allHasMore, results, page, hasMore, isRestored]);
 
-  // Debouncer
   useEffect(() => {
     if (!isRestored) return;
     const timer = setTimeout(() => setDebouncedQuery(query), 600);
     return () => clearTimeout(timer);
   },[query, isRestored]);
 
-  // Main Vertical API Fetch Logic
   useEffect(() => {
     if (!isRestored) return;
     if (!debouncedQuery.trim()) {
@@ -275,14 +261,12 @@ export default function SearchPage() {
 
     const isNewQueryOrTab = debouncedQuery !== lastFetched.current.query || activeTab !== lastFetched.current.tab;
     
-    // Crucial Reset for Tab Swaps
     if (isNewQueryOrTab && page !== 1) {
       setPage(1); 
       setHasMore(true);
       return; 
     }
 
-    // Prevent Wasted API Calls on Back Navigation
     if (!isNewQueryOrTab && page === lastFetched.current.page) return;
 
     const fetchData = async () => {
@@ -323,15 +307,13 @@ export default function SearchPage() {
           setAllPages({ songs: 1, albums: 1, playlists: 1, artists: 1 });
           setAllHasMore({ songs: true, albums: true, playlists: true, artists: true });
           
-          setHasMore(false); // Valid for "All" tab ONLY
+          setHasMore(false);
         } else {
           const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${activeTab}?query=${encodeURIComponent(debouncedQuery)}&page=${page}`);
           const json = await res.json();
           const newData = json.data?.results || json.data ||[];
 
           setResults(prev => (isNewQueryOrTab || page === 1) ? newData : [...prev, ...newData]);
-          
-          // CRITICAL BUG FIX: Ensure hasMore becomes TRUE if we got results, fixing the "End of Results" bug
           setHasMore(newData.length > 0);
         }
         
@@ -345,7 +327,6 @@ export default function SearchPage() {
     fetchData();
   },[debouncedQuery, activeTab, page, isRestored]);
 
-  // Horizontal Load More Logic ("All" Tab)
   const loadMoreHorizontal = useCallback(async (type: string) => {
     if (horizontalLoading[type] || !allHasMore[type]) return;
     
@@ -359,21 +340,19 @@ export default function SearchPage() {
       if (newData.length === 0) {
         setAllHasMore((prev: any) => ({ ...prev, [type]: false }));
       } else {
-        setAllData((prev: any) => ({ ...prev,[type]: [...prev[type], ...newData] }));
-        setAllPages((prev: any) => ({ ...prev, [type]: nextPage }));
+        setAllData((prev: any) => ({ ...prev,[type]:[...prev[type], ...newData] }));
+        setAllPages((prev: any) => ({ ...prev,[type]: nextPage }));
       }
     } catch (e) {}
     
     setHorizontalLoading((prev: any) => ({ ...prev, [type]: false }));
   },[debouncedQuery, allPages, allHasMore, horizontalLoading]);
 
-  // Vertical Infinite Scroll Logic (Dedicated Tabs)
   const lastVerticalElementRef = useCallback((node: HTMLDivElement | null) => {
     if (loading || loadingMore || !hasMore || activeTab === "all") return;
     if (observerRef.current) observerRef.current.disconnect();
 
     observerRef.current = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
-      // Increased root margin so it fetches seamlessly before you hit the bottom
       if (entries[0].isIntersecting && hasMore) {
         setPage(prev => prev + 1); 
       }
@@ -382,20 +361,17 @@ export default function SearchPage() {
     if (node) observerRef.current.observe(node);
   },[loading, loadingMore, hasMore, activeTab]);
 
-  // Navigate & Save Scrolls
   const handleItemClick = (item: any, passedType?: string) => {
     const type = item.type || passedType || activeTab;
     let link = item.url || item.perma_url || item.action || "";
     if (link && !link.startsWith("http")) link = `https://www.jiosaavn.com${link}`;
     
     let path = link;
-    try {
-      path = new URL(link).pathname;
-    } catch (e) {
-      path = link.replace("https://www.jiosaavn.com", "");
-    }
+    try { path = new URL(link).pathname; } catch (e) { path = link.replace("https://www.jiosaavn.com", ""); }
 
     if (type === "songs" || type === "song") {
+      setPlayContext({ type: "Search", name: "Search Results" });
+      setQueue([item]);
       setCurrentSong(item);
       setIsPlaying(true);
     } else if (type === "albums" || type === "album") {
@@ -407,7 +383,6 @@ export default function SearchPage() {
     }
   };
 
-  // Hydration fallback
   if (!isRestored) return <div className="min-h-screen bg-[#121212]" />;
 
   return (
@@ -416,7 +391,6 @@ export default function SearchPage() {
         <h1 className="text-3xl font-black tracking-tighter text-white">Search</h1>
       </div>
 
-      {/* Sticky Header */}
       <div className="sticky top-0 z-40 bg-[#121212]/90 backdrop-blur-2xl pt-2 pb-3 px-4 border-b border-white/5">
         <div className="relative flex items-center w-full h-12 rounded-xl bg-white/5 border border-white/10 focus-within:border-white/30 shadow-lg transition-colors">
           <div className="grid place-items-center h-full w-12 text-neutral-400">
@@ -436,7 +410,6 @@ export default function SearchPage() {
           )}
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-2 mt-4 overflow-x-auto hide-scrollbar pb-1">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
@@ -456,7 +429,6 @@ export default function SearchPage() {
         </div>
       </div>
 
-      {/* Content Area */}
       <div className="mt-4">
         {loading ? (
           <div className="flex justify-center mt-20"><Loader2 className="animate-spin text-neutral-400" size={32} /></div>

@@ -9,7 +9,7 @@ export default function PlaySongEndpoint() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
-  const { setCurrentSong, setIsPlaying } = useAppContext();
+  const { setCurrentSong, setIsPlaying, setPlayContext, setQueue } = useAppContext();
 
   useEffect(() => {
     const fetchAndPlay = async () => {
@@ -21,7 +21,6 @@ export default function PlaySongEndpoint() {
         return;
       }
 
-      // Hack to extract token and signature correctly whether they were correctly formatted as Query Params OR raw appended to the url path
       let videoId = searchParams?.get("token");
       let spotifyId = searchParams?.get("signature");
 
@@ -47,28 +46,26 @@ export default function PlaySongEndpoint() {
         if (json.success && json.data && json.data.length > 0) {
           const song = json.data[0];
           
-          // Inject straight into the Global Context - Miniplayer logic was built to skip external API calls if these exist!
-          if (videoId) {
-            song.prefetchedYtId = videoId;
-          }
+          if (videoId) song.prefetchedYtId = videoId;
           if (spotifyId) {
             song.spotifyId = spotifyId;
             song.spotifyUrl = `https://open.spotify.com/track/${spotifyId}`;
           }
 
+          setPlayContext({ type: "External Link", name: "Shared Track" });
+          setQueue([song]); // Sets queue to exactly this song (will prompt Recs automatically)
           setCurrentSong(song);
           setIsPlaying(true);
         }
       } catch (err) {
-        console.error("Error fetching song via deep link:", err);
+        console.error("Deep Link Error:", err);
       } finally {
-        // Redirect completely invisibly
         router.push("/");
       }
     };
 
     fetchAndPlay();
-  },[params, searchParams, setCurrentSong, setIsPlaying, router]);
+  },[params, searchParams, setCurrentSong, setIsPlaying, router, setPlayContext, setQueue]);
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-[#121212]">

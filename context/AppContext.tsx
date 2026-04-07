@@ -5,6 +5,7 @@ import React, { createContext, useContext, useState, ReactNode, useEffect } from
 const extractArtistsText = (data: any) => {
   if (!data) return "Unknown Artist";
   if (typeof data === "string") return data;
+  if (typeof data.artists === "string") return data.artists; // Fix for Recommendation API
   let names: string[] =[];
   if (data?.artists?.primary && Array.isArray(data.artists.primary)) names = data.artists.primary.map((a: any) => a.name);
   else if (Array.isArray(data?.artists)) names = data.artists.map((a: any) => a.name || a);
@@ -47,12 +48,12 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState("hindi");
-  const[currentSong, setCurrentSong] = useState<any>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentSong, setCurrentSong] = useState<any>(null);
+  const[isPlaying, setIsPlaying] = useState(false);
   
   const [queue, setQueue] = useState<any[]>([]);
-  const[upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
-  const [historyQueue, setHistoryQueue] = useState<any[]>([]);
+  const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  const[historyQueue, setHistoryQueue] = useState<any[]>([]);
   
   const [playContext, setPlayContext] = useState({ type: "Track", name: "Single Track" });
 
@@ -72,10 +73,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch(e) {}
   },[]);
 
+  // Automatically deduplicate queue whenever it updates
+  useEffect(() => {
+    setUpcomingQueue(prev => {
+      return prev.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+    });
+  }, [upcomingQueue.length]);
+
   const toggleLikeSong = (song: any) => {
     if (!song || !song.id) return;
 
-    // Normalize song to fix [object Object] bug before saving
     const artistStr = extractArtistsText(song);
     const normalizedSong = { 
       ...song, 
@@ -96,7 +103,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!playlist || !playlist.id) return;
     setLikedPlaylists(prev => {
       const exists = prev.find(p => p && p.id === playlist.id);
-      const newList = exists ? prev.filter(p => p && p.id !== playlist.id) : [playlist, ...prev];
+      const newList = exists ? prev.filter(p => p && p.id !== playlist.id) :[playlist, ...prev];
       localStorage.setItem('liked_playlists', JSON.stringify(newList));
       return newList;
     });

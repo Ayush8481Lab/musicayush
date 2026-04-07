@@ -1,3 +1,4 @@
+
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
@@ -60,7 +61,7 @@ const getArtists = (data: any) => {
 const PingPongMarquee = ({ text, isPlaying, isSub }: { text: string, isPlaying?: boolean, isSub?: boolean }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
-  const[overflowWidth, setOverflowWidth] = useState(0);
+  const [overflowWidth, setOverflowWidth] = useState(0);
 
   useEffect(() => {
     const checkOverflow = () => {
@@ -135,17 +136,15 @@ function AlbumContent() {
     link = `https://www.jiosaavn.com/album/${slugPath}`;
   }
   
-  // Bring in our updated Global Context
   const { currentSong, setCurrentSong, setIsPlaying, setQueue, setPlayContext, likedPlaylists, toggleLikePlaylist } = useAppContext() as any;
   
   const [album, setAlbum] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const[loading, setLoading] = useState(true);
   
   const [headerOpacity, setHeaderOpacity] = useState(0);
   const [showStickyPlay, setShowStickyPlay] = useState(false);
 
-  // Check if this album exists in our liked items
-  const isAlbumLiked = album ? likedPlaylists.some((p: any) => p.id === album.id || p.title === album.title) : false;
+  const isAlbumLiked = album && album.id ? likedPlaylists.some((p: any) => p && p.id === album.id) : false;
 
   useEffect(() => {
     let ticking = false;
@@ -185,7 +184,7 @@ function AlbumContent() {
   const handlePlaySong = useCallback((song: any) => {
     if (album) {
       setPlayContext({ type: "Album", name: album.name || album.title });
-      setQueue(album.songs); // Push entire album into the queue!
+      setQueue(album.songs); 
     }
     setCurrentSong(song);
     setIsPlaying(true);
@@ -203,7 +202,7 @@ function AlbumContent() {
     setQueue(shuffled);
     setCurrentSong(shuffled[0]);
     setIsPlaying(true);
-  },[album, setQueue, setPlayContext, setCurrentSong, setIsPlaying]);
+  }, [album, setQueue, setPlayContext, setCurrentSong, setIsPlaying]);
 
   const handleShare = useCallback(async () => {
     const shareData = {
@@ -216,7 +215,7 @@ function AlbumContent() {
       navigator.clipboard.writeText(window.location.href);
       alert("Link copied!");
     }
-  },[album?.name, album?.title]);
+  }, [album?.name, album?.title]);
 
   const currentSongId = currentSong?.id;
   const renderedSongs = useMemo(() => {

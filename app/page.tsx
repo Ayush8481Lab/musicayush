@@ -4,7 +4,6 @@ import { useAppContext } from "../context/AppContext";
 import { Music2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-// Safe image extractor
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/500x500?text=Music";
   if (typeof img === "string") return img.replace("150x150", "500x500").replace("50x50", "500x500");
@@ -12,7 +11,6 @@ const getImageUrl = (img: any) => {
   return "https://via.placeholder.com/500x500?text=Music";
 };
 
-// HTML Entity Decoder to fix &quot;, &#039;, etc.
 const decodeEntities = (text: string) => {
   if (!text) return "";
   return text
@@ -23,12 +21,10 @@ const decodeEntities = (text: string) => {
     .replace(/&gt;/g, ">");
 };
 
-// Bulletproof Subtitle Extractor
 const getSubtitle = (item: any, hideSubtitle: boolean) => {
   if (hideSubtitle) return "";
   let sub = "";
 
-  // If it's an album, strictly extract the Artist Name
   if (item.type === "album") {
     const primary = item.more_info?.artistMap?.primary_artists;
     const all = item.more_info?.artistMap?.artists;
@@ -39,7 +35,6 @@ const getSubtitle = (item: any, hideSubtitle: boolean) => {
     }
   }
 
-  // Fallbacks if not an album or if album artist missing
   if (!sub) sub = item.subtitle || item.header_desc || item.description || "";
   if (!sub && item.more_info) {
     if (item.more_info.singers) sub = item.more_info.singers;
@@ -50,15 +45,6 @@ const getSubtitle = (item: any, hideSubtitle: boolean) => {
   return sub || (item.type ? item.type.charAt(0).toUpperCase() + item.type.slice(1) : "");
 };
 
-// Remove duplicates based on ID
-const mergeAndDedupe = (arr1: any[], arr2: any[]) => {
-  const map = new Map();[...(arr1 || []), ...(arr2 ||[])].forEach(item => {
-    if (item && item.id && !map.has(item.id)) map.set(item.id, item);
-  });
-  return Array.from(map.values());
-};
-
-// Premium Card Component with Smart Math-based Marquee
 const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
   const title = decodeEntities(item.title || item.name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, hideSubtitle));
@@ -108,9 +94,7 @@ const PremiumCard = ({ item, isCircular, hideSubtitle, onClick }: any) => {
   );
 };
 
-// Async Image Card (Highly Optimized Observer - No Subtitles)
 const AsyncImageCard = ({ item, type, onClick }: any) => {
-  // Try to use image_link directly from the new API to avoid unneeded fetches
   const[imgUrl, setImgUrl] = useState<string | null>(
     (item.image_link || item.image) ? getImageUrl(item.image_link || item.image) : null
   );
@@ -118,7 +102,6 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
   const fetched = useRef(false);
 
   useEffect(() => {
-    // Skip intersection observer if we already have the image directly from API
     if (imgUrl) return;
 
     const observer = new IntersectionObserver((entries) => {
@@ -193,7 +176,6 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
   );
 };
 
-// Reusable Carousel Wrappers with reduced bottom margin
 const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   return (
@@ -223,13 +205,13 @@ const AsyncCarousel = ({ title, items, type, onItemClick }: any) => {
 };
 
 export default function Home() {
-  const { language, setCurrentSong, setIsPlaying } = useAppContext();
+  const { language, setCurrentSong, setIsPlaying, setPlayContext, setQueue } = useAppContext();
   const[loading, setLoading] = useState(true);
   const router = useRouter();
 
   const [trending, setTrending] = useState<any[]>([]);
   const[newReleases, setNewReleases] = useState<any[]>([]);
-  const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
+  const[featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
   const[otherPromos, setOtherPromos] = useState<any[]>([]);
   const[topArtists, setTopArtists] = useState<any[]>([]);
   const [charts, setCharts] = useState<any[]>([]);
@@ -250,7 +232,6 @@ export default function Home() {
         const res = await fetch(`https://ayushpr.vercel.app/home?ln=${language}`);
         const data = await res.json();
 
-        // Helper to filter out playlists containing 'Jio'
         const filterJioPlaylists = (items: any[]) => {
           return items.filter(item => {
             if (item.type === "playlist" && item.title && item.title.toLowerCase().includes("jio")) {
@@ -260,7 +241,6 @@ export default function Home() {
           });
         };
 
-        // Helper to fallback to item type if subtitle is empty
         const applySubtitleFallback = (items: any[]) => {
           return items.map(item => {
             if (!item.subtitle && item.type) {
@@ -270,11 +250,8 @@ export default function Home() {
           });
         };
 
-        // Apply formatting directly to trending and new releases
         setTrending(applySubtitleFallback(data.trending ||[]));
         setNewReleases(applySubtitleFallback(data.new_releases ||[]));
-
-        // Filter all sections that render playlists
         setFeaturedPlaylists(filterJioPlaylists(data.featured_playlists ||[]));
         setCharts(filterJioPlaylists(data.top_charts ||[]));
         setRecoPlaylists(filterJioPlaylists(data.recommended_playlists ||[]));
@@ -304,21 +281,18 @@ export default function Home() {
     let link = item.perma_url || item.url || (item.action ? `https://www.jiosaavn.com${item.action}` : "");
     const artistId = item.artistid || (type === "artist" ? item.id : null);
 
-    // Dynamic clean-up for new routing logic
     let targetPath = link;
     if (link.startsWith("http")) {
       try {
-        targetPath = new URL(link).pathname; // Gets /album/... or /featured/... directly
+        targetPath = new URL(link).pathname; 
       } catch (e) {
         targetPath = link;
       }
     } else if (link.startsWith("/")) {
-      targetPath = link.split("?")[0]; // removes any trailing queries
+      targetPath = link.split("?")[0]; 
     }
 
-    // --- FIX: Map and normalize extracted artists to prevent 'Unknown Artist' in MiniPlayer ---
     let extractedArtists = item.more_info?.singers || item.primaryArtists || item.singers;
-    
     if (!extractedArtists && item.more_info?.artistMap?.primary_artists && Array.isArray(item.more_info.artistMap.primary_artists)) {
       extractedArtists = item.more_info.artistMap.primary_artists.map((a: any) => a.name).join(", ");
     }
@@ -328,9 +302,7 @@ export default function Home() {
     if (!extractedArtists && item.subtitle && item.subtitle.toLowerCase() !== "song") {
       extractedArtists = item.subtitle;
     }
-    if (!extractedArtists) {
-      extractedArtists = "Unknown Artist";
-    }
+    if (!extractedArtists) extractedArtists = "Unknown Artist";
 
     const normalizedSongItem = {
       ...item,
@@ -338,9 +310,10 @@ export default function Home() {
       singers: item.singers || extractedArtists,
       primaryArtists: item.primaryArtists || extractedArtists
     };
-    // ----------------------------------------------------------------------------------------
 
     if (type === "song") {
+      setPlayContext({ type: "Home", name: "Home Recommendations" });
+      setQueue([normalizedSongItem]); 
       setCurrentSong(normalizedSongItem);
       setIsPlaying(true);
     } else if (type === "album" || link.includes("/album/")) {
@@ -350,7 +323,8 @@ export default function Home() {
     } else if (artistId || link.includes("/artist/")) {
       router.push(`/artist?id=${artistId || item.id}`);
     } else {
-      // Fallback
+      setPlayContext({ type: "Home", name: "Home Recommendations" });
+      setQueue([normalizedSongItem]);
       setCurrentSong(normalizedSongItem);
       setIsPlaying(true);
     }

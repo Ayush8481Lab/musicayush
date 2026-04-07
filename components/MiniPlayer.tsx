@@ -124,40 +124,40 @@ export default function MiniPlayer() {
     playContext, likedSongs, toggleLikeSong 
   } = useAppContext();
   
-  const [audioUrl, setAudioUrl] = useState("");
+  const[audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const[progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
-  const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
+  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const [isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   
   const[isUiHidden, setIsUiHidden] = useState(false); 
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState(0); 
 
-  const[showQueue, setShowQueue] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
   
   const currentTrackRef = useRef<any>(null);
   const maxListenRef = useRef<number>(0);
   
-  const[draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
   const queueContainerRef = useRef<HTMLDivElement>(null);
 
   const rapidKeyIdxRef = useRef(0);
-  const[spotifyId, setSpotifyId] = useState<string | null>(null);
+  const [spotifyId, setSpotifyId] = useState<string | null>(null);
   const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
-  const [lyrics, setLyrics] = useState<any[]>([]);
+  const[lyrics, setLyrics] = useState<any[]>([]);
   const [syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const[isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
+  const [isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
   
-  const [canvasData, setCanvasData] = useState<any>(null);
+  const[canvasData, setCanvasData] = useState<any>(null);
   const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
@@ -170,36 +170,34 @@ export default function MiniPlayer() {
   const isVideoModeRef = useRef<boolean>(false);
   const syncPositionRef = useRef<() => void>(() => {});
   
-  const [swipeX, setSwipeX] = useState(0);
+  const[swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const isSeekingRef = useRef(false);
 
-  const [songDetails, setSongDetails] = useState<any>(null);
+  const[songDetails, setSongDetails] = useState<any>(null);
 
   const [isVideoMode, setIsVideoMode] = useState(false);
-  const[ytVideoId, setYtVideoId] = useState<string | null>(null);
+  const [ytVideoId, setYtVideoId] = useState<string | null>(null);
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const videoStartTimeRef = useRef<number>(0);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Recommendations Fetch State
   const fetchingRecsRef = useRef(false);
   const [isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
 
-  // SETTINGS
   const [isSessionRestored, setIsSessionRestored] = useState(false);
-  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [selectedQuality, setSelectedQuality] = useState("320");
   const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
-  const [isLyricsEnabled, setIsLyricsEnabled] = useState(true);
+  const[isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const restoreTimeRef = useRef<number | null>(null);
 
   const isCanvasEnabledRef = useRef(true);
   const isLyricsEnabledRef = useRef(true);
 
-  const isSongLiked = likedSongs.some(s => s.id === currentSong?.id);
+  const isSongLiked = likedSongs.some(s => s && s.id === currentSong?.id);
   const handleLikeClick = (e: any) => { e.stopPropagation(); toggleLikeSong(currentSong); };
 
   useEffect(() => {
@@ -228,13 +226,13 @@ export default function MiniPlayer() {
           setIsSessionRestored(true);
        }
     }
-  },[currentSong, isSessionRestored, setCurrentSong, setUpcomingQueue]);
+  }, [currentSong, isSessionRestored, setCurrentSong]);
 
   useEffect(() => { isCanvasEnabledRef.current = isCanvasEnabled; }, [isCanvasEnabled]);
   useEffect(() => { 
     isLyricsEnabledRef.current = isLyricsEnabled; 
     if (!isLyricsEnabled) setIsLyricsFullScreen(false);
-  }, [isLyricsEnabled]);
+  },[isLyricsEnabled]);
 
   useEffect(() => {
     if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong));
@@ -300,7 +298,7 @@ export default function MiniPlayer() {
     return null;
   };
 
-  // RECOMMENDATION ENGINE (5 RETRIES API)
+  // SMART RECOMMENDATION ENGINE (Infinite & Memory Based)
   useEffect(() => {
     let isSubscribed = true;
     
@@ -333,7 +331,7 @@ export default function MiniPlayer() {
           name: r.Title,
           artists: r.Artists,
           image: r.Banner,
-          downloadUrl: [{ url: r.Stream, quality: "320kbps" }],
+          downloadUrl:[{ url: r.Stream, quality: "320kbps" }],
           url: r["Perma URL"],
           spotifyUrl: r.Spotify,
           isRecommendation: true
@@ -344,7 +342,7 @@ export default function MiniPlayer() {
           existingIds.add(currentSong.id);
           historyQueue.forEach(h => existingIds.add(h.id));
           const newSongs = formatted.filter(s => !existingIds.has(s.id));
-          return [...prev, ...newSongs];
+          return[...prev, ...newSongs];
         });
       }
 
@@ -353,24 +351,43 @@ export default function MiniPlayer() {
     };
 
     const isAutoPlayContext =['Home', 'Search', 'Library', 'External Link', 'Recommendation'].includes(playContext?.type);
-    if ((isAutoPlayContext || upcomingQueue.length === 0) && upcomingQueue.length < 3 && ytVideoId) {
-      fetchRecs(ytVideoId);
+    
+    // Only fetch if queue is running out (under 3 left)
+    if (isAutoPlayContext && upcomingQueue.length <= 3 && !fetchingRecsRef.current) {
+      let seedVid = ytVideoId || currentSong?.prefetchedYtId;
+
+      // Smart Logic: Find the best track from the last 7 played based on Max Listen Percent
+      try {
+        const top30 = JSON.parse(localStorage.getItem('top_30_songs') || '[]');
+        let bestPercent = 30; // Min threshold to consider it a "loved" track
+        for (const hSong of historyQueue.slice(0, 7)) {
+          const tSong = top30.find((t: any) => t.id === hSong.id);
+          if (tSong && tSong.maxListenPercent > bestPercent && hSong.prefetchedYtId) {
+            bestPercent = tSong.maxListenPercent;
+            seedVid = hSong.prefetchedYtId;
+          }
+        }
+      } catch (e) {}
+
+      if (seedVid) fetchRecs(seedVid);
     }
 
     return () => { isSubscribed = false; };
-  }, [upcomingQueue.length, ytVideoId, playContext?.type, currentSong, historyQueue, setUpcomingQueue]);
+  },[upcomingQueue.length, ytVideoId, playContext?.type, historyQueue]);
 
-
-  // MAIN DEPENDENCY HOOK - When Song Changes
+  // MAIN TRACK CHANGE HOOK
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true; 
     
-    // Update History (Limit to 20 songs)
     if (currentTrackRef.current && currentTrackRef.current.id !== currentSong.id) {
       updateTop30Cache(currentTrackRef.current, maxListenRef.current);
+      
+      // Save ytVideoId so history items can be used as accurate Recommendation Seeds later!
+      const trackToSave = { ...currentTrackRef.current, prefetchedYtId: ytVideoId || currentTrackRef.current.prefetchedYtId };
+
       setHistoryQueue(prev => {
-        const newHist = [currentTrackRef.current, ...prev].filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+        const newHist = [trackToSave, ...prev].filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
         const sliced = newHist.slice(0, 20); 
         localStorage.setItem('recent_songs', JSON.stringify(sliced));
         return sliced;
@@ -413,7 +430,6 @@ export default function MiniPlayer() {
 
     if (!isCanvasEnabledRef.current && !isLyricsEnabledRef.current) return;
 
-    // Spotify RapidAPI fetcher - SKIPPED if Spotify URL is provided by Recommendation API
     const fetchSpotifyMatch = async () => {
       const cacheKey = `spotify_match_${currentSong.id}`;
       const cachedUrl = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
@@ -464,19 +480,20 @@ export default function MiniPlayer() {
     fetchSpotifyMatch();
 
     return () => { isCurrent = false; };
-  }, [currentSong, isVideoMode, setIsPlaying, setHistoryQueue, updateTop30Cache]);
+  }, [currentSong]);
 
-  // Queue Builder from Global Queue
+  // SMART QUEUE SYNC - Prevents destroying the queue when a Recommendation plays
   useEffect(() => {
     if (queue && queue.length > 0) {
       const idx = queue.findIndex((s: any) => s.id === currentSong?.id);
       if (idx !== -1) {
         setUpcomingQueue(queue.slice(idx + 1));
-      } else {
+      } else if (!currentSong?.isRecommendation) {
+        // Only empty the upcoming queue if it's a completely new, non-recommendation track
         setUpcomingQueue(queue.slice(1));
       }
     }
-  }, [queue, currentSong?.id, setUpcomingQueue]); 
+  }, [queue, currentSong?.id]); 
 
   useEffect(() => {
     if (!currentSong) return;
@@ -491,7 +508,7 @@ export default function MiniPlayer() {
 
         if (!isCurrent) return; 
 
-        let urls: any[] =[];
+        let urls: any[] = [];
         if (json.data?.[0]?.downloadUrl) {
           urls = json.data[0].downloadUrl;
           setSongDetails((prev: any) => prev?.id === json.data[0].id ? prev : json.data[0]); 
@@ -539,7 +556,7 @@ export default function MiniPlayer() {
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
-  },[isVideoMode, duration, upcomingQueue, setIsPlaying]);
+  }, [isVideoMode, duration, upcomingQueue]);
 
   const handlePlayPauseToggle = (e?: any) => {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -642,7 +659,7 @@ export default function MiniPlayer() {
         setDominantColor(count > 0 ? `rgb(${Math.floor(r/count)}, ${Math.floor(g/count)}, ${Math.floor(b/count)})` : "rgb(83, 83, 83)");
       } catch (e) { setDominantColor("rgb(30, 30, 30)"); }
     };
-  }, [displayImage]);
+  },[displayImage]);
 
   useEffect(() => {
     if (audioRef.current && audioUrl) {
@@ -666,7 +683,7 @@ export default function MiniPlayer() {
     if ('mediaSession' in navigator && audioRef.current && duration > 0) {
       try { navigator.mediaSession.setPositionState({ duration, playbackRate: 1, position: audioRef.current.currentTime }); } catch(e) {}
     }
-  },[duration]);
+  }, [duration]);
 
   const handleTimeUpdate = () => {
     if (audioRef.current && !isVideoMode) {
@@ -695,7 +712,7 @@ export default function MiniPlayer() {
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
-  }, [isScrolledPastMain]);
+  },[isScrolledPastMain]);
 
   useEffect(() => {
     if (isSeekingRef.current) return; 
@@ -877,7 +894,7 @@ export default function MiniPlayer() {
         }
       });
     }
-  },[setIsPlaying]);
+  }, [setIsPlaying]);
 
   const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -974,7 +991,7 @@ export default function MiniPlayer() {
         </div>
       </div>
     ));
-  },[upcomingQueue, draggedIndex, dropTargetIndex, setCurrentSong, setUpcomingQueue, setIsPlaying]);
+  }, [upcomingQueue, draggedIndex, dropTargetIndex]);
 
 
   if (!currentSong) return null;

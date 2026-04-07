@@ -275,8 +275,7 @@ export default function Home() {
 
     fetchAllData();
   }, [language]);
-
-  const handleItemClick = (item: any) => {
+const handleItemClick = (item: any) => {
     const type = item.type;
     let link = item.perma_url || item.url || (item.action ? `https://www.jiosaavn.com${item.action}` : "");
     const artistId = item.artistid || (type === "artist" ? item.id : null);
@@ -311,6 +310,8 @@ export default function Home() {
       primaryArtists: item.primaryArtists || extractedArtists
     };
 
+    const { setPlayContext, setQueue, setCurrentSong, setIsPlaying } = useAppContext() as any;
+
     if (type === "song") {
       setPlayContext({ type: "Home", name: "Home Recommendations" });
       setQueue([normalizedSongItem]); 
@@ -329,19 +330,8 @@ export default function Home() {
       setIsPlaying(true);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center bg-[#121212] text-white">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-pulse opacity-40">
-           {[...Array(8)].map((_, i) => (
-             <div key={i} className="w-36 h-36 bg-white/10 rounded-2xl"></div>
-           ))}
-        </div>
-      </div>
-    );
-  }
-
+  
+      
   return (
     <main className="pt-12 pb-28 min-h-screen bg-gradient-to-b from-[#121212] to-[#000000]">
       <div className="px-4 mb-8 flex items-center justify-between">

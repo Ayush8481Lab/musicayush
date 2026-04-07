@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic'; // Disables all caching globally for this route
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const vid = searchParams.get('vid');
@@ -9,9 +11,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Fetches on the SERVER side, hiding your API endpoint from the client network tab
     const res = await fetch(`https://ayushmind.vercel.app/api/rec?vid=${vid}`, {
-      next: { revalidate: 3600 } // Cache results for 1 hour for extreme speed
+      cache: 'no-store' // Strictly no caching
     });
     
     if (!res.ok) throw new Error("Failed to fetch");

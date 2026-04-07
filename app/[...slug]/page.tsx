@@ -1,3 +1,4 @@
+
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
@@ -73,7 +74,7 @@ const PingPongMarquee = ({ text, isPlaying, isSub }: { text: string, isPlaying?:
     checkOverflow();
     window.addEventListener("resize", checkOverflow);
     return () => window.removeEventListener("resize", checkOverflow);
-  },[text]);
+  }, [text]);
 
   let textColor = "text-white group-hover:text-white";
   if (isPlaying && !isSub) textColor = "text-[#1ed760]";
@@ -139,17 +140,17 @@ function PlaylistContent() {
   const { currentSong, setCurrentSong, setIsPlaying, setQueue, setPlayContext, likedPlaylists, toggleLikePlaylist } = useAppContext() as any;
   
   const [playlist, setPlaylist] = useState<any>(null);
-  const [page, setPage] = useState(1);
+  const[page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const[loadingMore, setLoadingMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const[hasMore, setHasMore] = useState(true);
   
-  const[headerOpacity, setHeaderOpacity] = useState(0);
-  const[showStickyPlay, setShowStickyPlay] = useState(false);
+  const [headerOpacity, setHeaderOpacity] = useState(0);
+  const [showStickyPlay, setShowStickyPlay] = useState(false);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  const isPlaylistLiked = playlist ? likedPlaylists.some((p: any) => p.id === playlist.id || p.title === playlist.title) : false;
+  const isPlaylistLiked = playlist && playlist.id ? likedPlaylists.some((p: any) => p && p.id === playlist.id) : false;
 
   useEffect(() => {
     let ticking = false;
@@ -188,7 +189,7 @@ function PlaylistContent() {
             if (!prev) return newData;
             const existingIds = new Set(prev.songs.map((s: any) => s.id));
             const newSongs = newData.songs?.filter((s: any) => !existingIds.has(s.id)) ||[];
-            return { ...prev, songs:[...prev.songs, ...newSongs] };
+            return { ...prev, songs: [...prev.songs, ...newSongs] };
           });
           setHasMore(newData.songs && newData.songs.length > 0);
         }
@@ -200,7 +201,7 @@ function PlaylistContent() {
       }
     };
     fetchPlaylist();
-  }, [link, page]);
+  },[link, page]);
 
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (loading || loadingMore || !hasMore) return;
@@ -209,7 +210,7 @@ function PlaylistContent() {
       if (entries[0].isIntersecting && hasMore) setPage(prev => prev + 1);
     }, { rootMargin: "400px" });
     if (node) observerRef.current.observe(node);
-  },[loading, loadingMore, hasMore]);
+  }, [loading, loadingMore, hasMore]);
 
   const handlePlaySong = useCallback((song: any) => {
     if (playlist) {
@@ -218,12 +219,12 @@ function PlaylistContent() {
     }
     setCurrentSong(song);
     setIsPlaying(true);
-  },[setCurrentSong, setIsPlaying, setQueue, setPlayContext, playlist]);
+  }, [setCurrentSong, setIsPlaying, setQueue, setPlayContext, playlist]);
 
   const handlePlayPlaylist = useCallback(() => {
     if (!playlist?.songs?.length) return;
     handlePlaySong(playlist.songs[0]);
-  },[playlist?.songs, handlePlaySong]);
+  }, [playlist?.songs, handlePlaySong]);
 
   const handleShuffle = useCallback(() => {
     if (!playlist?.songs?.length) return;
@@ -232,7 +233,7 @@ function PlaylistContent() {
     setQueue(shuffled);
     setCurrentSong(shuffled[0]);
     setIsPlaying(true);
-  }, [playlist, setQueue, setPlayContext, setCurrentSong, setIsPlaying]);
+  },[playlist, setQueue, setPlayContext, setCurrentSong, setIsPlaying]);
 
   const handleShare = useCallback(async () => {
     const shareData = {
@@ -245,7 +246,7 @@ function PlaylistContent() {
       navigator.clipboard.writeText(window.location.href);
       alert("Link copied!");
     }
-  },[playlist?.name, playlist?.title]);
+  }, [playlist?.name, playlist?.title]);
 
   const currentSongId = currentSong?.id;
   const renderedSongs = useMemo(() => {

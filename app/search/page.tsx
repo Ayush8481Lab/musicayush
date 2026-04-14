@@ -380,7 +380,7 @@ export default function SearchPage() {
           // --- PRO API SEARCH FETCH ---
           const auth = await getAuthData();
           if (auth && auth.accessToken) {
-            const url = `https://ak47ayush.vercel.app/search?q=${encodeURIComponent(debouncedQuery)}&CID=${auth.clientId}&token=${auth.accessToken}&limit=20`;
+            const url = `https://ak47ayush.vercel.app/search?q=${encodeURIComponent(debouncedQuery)}&CID=${auth.clientId}&token=${auth.accessToken}&limit=50`;
             const res = await fetch(url);
             
             if (!res.ok) throw new Error("Pro Search API failed");

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback, forwardRef } from "react";
-import { Search as SearchIcon, Loader2, Music2, Disc, ListMusic, Mic2, X, Sparkles } from "lucide-react";
+import { Search as SearchIcon, Loader2, Music2, Disc, ListMusic, Mic2, X } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 import { useRouter } from "next/navigation";
 
@@ -56,10 +56,15 @@ const getImageUrl = (img: any) => {
   return "https://via.placeholder.com/500x500?text=Music";
 };
 
-// HTML Entity Decoder
-const decodeEntities = (text: string) => {
+// Advanced HTML Entity Decoder
+const decodeEntities = (text: any) => {
   if (!text) return "";
-  return text.replace(/"/g, '"').replace(/'/g, "'").replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
+  return String(text)
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 };
 
 // Subtitle Extractor
@@ -215,15 +220,15 @@ export default function SearchPage() {
   const router = useRouter();
   const CACHE_KEY = "search_page_cache_ultimate";
 
-  const[isRestored, setIsRestored] = useState(false);
+  const [isRestored, setIsRestored] = useState(false);
   const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const[debouncedQuery, setDebouncedQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
 
-  const [allData, setAllData] = useState<any>({ topMatches: [], songs: [], albums: [], playlists: [], artists: [] });
-  const[allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
-  const [allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
-  const[horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
+  const[allData, setAllData] = useState<any>({ topMatches: [], songs: [], albums:[], playlists: [], artists: [] });
+  const [allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
+  const[allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
+  const [horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
 
   const [results, setResults] = useState<any[]>([]);
   const [page, setPage] = useState(1);
@@ -235,10 +240,10 @@ export default function SearchPage() {
   const lastFetched = useRef({ query: "", tab: "all", page: 1 });
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  // Added 'Pro' Tab Here
+  // Tabs structure with Pro icon safely removed
   const tabs =[
     { id: "all", label: "All" },
-    { id: "pro", label: "Pro", icon: Sparkles },
+    { id: "pro", label: "Pro" }, 
     { id: "songs", label: "Songs", icon: Music2 },
     { id: "albums", label: "Albums", icon: Disc },
     { id: "playlists", label: "Playlists", icon: ListMusic },
@@ -328,23 +333,28 @@ export default function SearchPage() {
     if (!isNewQueryOrTab && page === lastFetched.current.page) return;
 
     const fetchData = async () => {
+      // Vital fix: Flush stale search results immediately to prevent accidental wrong-tab clicks 
+      if (isNewQueryOrTab && activeTab !== "all") {
+        setResults([]);
+      }
+
       if (page === 1) setLoading(true);
       else setLoadingMore(true);
 
       try {
         if (activeTab === "all") {
-          const [sRes, aRes, pRes, arRes] = await Promise.all([
+          const[sRes, aRes, pRes, arRes] = await Promise.all([
             fetch(`https://ayushm-psi.vercel.app/api/search/songs?query=${encodeURIComponent(debouncedQuery)}&page=1`),
             fetch(`https://ayushm-psi.vercel.app/api/search/albums?query=${encodeURIComponent(debouncedQuery)}&page=1`),
             fetch(`https://ayushm-psi.vercel.app/api/search/playlists?query=${encodeURIComponent(debouncedQuery)}&page=1`),
             fetch(`https://ayushm-psi.vercel.app/api/search/artists?query=${encodeURIComponent(debouncedQuery)}&page=1`)
           ]);
 
-          const [sJson, aJson, pJson, arJson] = await Promise.all([sRes.json(), aRes.json(), pRes.json(), arRes.json()]);
+          const[sJson, aJson, pJson, arJson] = await Promise.all([sRes.json(), aRes.json(), pRes.json(), arRes.json()]);
 
           const songs = sJson.data?.results || sJson.data ||[];
           const albums = aJson.data?.results || aJson.data ||[];
-          const playlists = pJson.data?.results || pJson.data || [];
+          const playlists = pJson.data?.results || pJson.data ||[];
           const artists = arJson.data?.results || arJson.data ||[];
 
           const combined =[
@@ -372,19 +382,27 @@ export default function SearchPage() {
           if (auth && auth.accessToken) {
             const url = `https://ak47ayush.vercel.app/search?q=${encodeURIComponent(debouncedQuery)}&CID=${auth.clientId}&token=${auth.accessToken}&limit=20`;
             const res = await fetch(url);
+            
+            if (!res.ok) throw new Error("Pro Search API failed");
+            
             const data = await res.json();
             
-            const newData = (data.results ||[]).map((item: any) => ({
+            // Highly protective robust array extraction
+            const rawResults = Array.isArray(data) ? data : (data.results ||[]);
+
+            const newData = rawResults.map((item: any) => ({
               ...item,
-              type: "pro",
-              title: item.song_name,
-              name: item.song_name,
-              artist: item.artist,
-              url: item.spotify_url
+              type: "pro", // Strictly force type to Pro
+              id: item.spotify_url || Date.now().toString(),
+              title: item.song_name || "Unknown Track",
+              name: item.song_name || "Unknown Track",
+              artist: item.artist || "Unknown Artist",
+              image: item.image || "https://via.placeholder.com/500x500?text=Pro",
+              url: item.spotify_url || ""
             }));
             
-            setResults(prev => (isNewQueryOrTab || page === 1) ? newData : [...prev, ...newData]);
-            setHasMore(false); // Defaulting pro to disable pagination due to limit string logic
+            setResults(prev => (isNewQueryOrTab || page === 1) ? newData :[...prev, ...newData]);
+            setHasMore(false); // Pro search disabling pagination string limit natively 
           } else {
              setResults([]);
              setHasMore(false);
@@ -392,16 +410,16 @@ export default function SearchPage() {
         } else {
           const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${activeTab}?query=${encodeURIComponent(debouncedQuery)}&page=${page}`);
           const json = await res.json();
-          const newData = json.data?.results || json.data || [];
+          const newData = json.data?.results || json.data ||[];
 
           setResults(prev => (isNewQueryOrTab || page === 1) ? newData :[...prev, ...newData]);
-
           setHasMore(newData.length > 0);
         }
 
         lastFetched.current = { query: debouncedQuery, tab: activeTab, page };
-      } catch (err) {}
-      finally {
+      } catch (err) {
+        console.error("Search fetch error:", err);
+      } finally {
         setLoading(false); setLoadingMore(false);
       }
     };
@@ -452,25 +470,40 @@ export default function SearchPage() {
     // --- PRO API CLICK HANDLER ---
     if (type === "pro") {
       try {
-        const querySong = item.song_name || item.title || "";
+        const querySong = item.song_name || item.title || item.name || "";
         const queryArtist = item.artist || item.artists || "";
         const proApiUrl = `https://serverayush.vercel.app/api/search?q=${encodeURIComponent(querySong)}&artist=${encodeURIComponent(queryArtist)}`;
         
         const res = await fetch(proApiUrl);
+        if (!res.ok) throw new Error("Failed to fetch stream links");
+        
         const proData = await res.json();
 
-        // Mapping to standard properties app expects
+        // Safety Validation
+        if (!proData || !proData.StreamLinks || proData.StreamLinks.length === 0) {
+           console.error("Pro API returned empty or invalid stream data.");
+           return;
+        }
+
+        // Deep mapping both URL and Link so the player doesn't crash regardless of what parameter it requires internally
+        const mappedDownloadUrl = proData.StreamLinks.map((l: any) => ({ 
+          quality: l.quality, 
+          url: l.url, 
+          link: l.url 
+        }));
+
+        // Masking the data identically to JioSaavn format so AppContext plays it seamlessly
         const songObj = {
           ...proData,
-          id: proData.PermaUrl || item.spotify_url || Date.now().toString(),
+          id: proData.PermaUrl || item.id || Date.now().toString(),
           title: proData.Title || item.title,
-          name: proData.Title || item.title,
+          name: proData.Title || item.name,
           image: proData.Bannerlink || item.image,
           artists: proData.Artists || item.artist,
           primaryArtists: proData.Artists || item.artist,
-          url: proData.PermaUrl || item.spotify_url,
-          downloadUrl: proData.StreamLinks ||[],
-          type: "song"
+          url: proData.PermaUrl || item.url,
+          downloadUrl: mappedDownloadUrl,
+          type: "song" 
         };
 
         setPlayContext({ type: "Search", name: "Pro Search Results" });

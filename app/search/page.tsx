@@ -1,14 +1,57 @@
-
 "use client";
 import React, { useState, useEffect, useRef, useCallback, forwardRef } from "react";
-import { Search as SearchIcon, Loader2, Music2, Disc, ListMusic, Mic2, X } from "lucide-react";
+import { Search as SearchIcon, Loader2, Music2, Disc, ListMusic, Mic2, X, Sparkles } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 import { useRouter } from "next/navigation";
+
+// --- PRO AUTH & CACHE ENGINE ---
+const AUTH_STORAGE_KEY = 'spotify_app_auth';
+let ongoingAuthPromise: Promise<any> | null = null;
+
+const getCachedAuth = () => {
+  try {
+    const cached = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (cached) {
+      const authData = JSON.parse(cached);
+      // Check if token is still valid (Add a 10-sec buffer)
+      if (Date.now() < (authData.accessTokenExpirationTimestampMs - 10000)) {
+        return authData;
+      }
+    }
+  } catch (e) {
+    console.error("Error reading cache:", e);
+  }
+  return null;
+};
+
+const fetchNewAuthToken = async () => {
+  if (ongoingAuthPromise) return ongoingAuthPromise;
+  ongoingAuthPromise = (async () => {
+    try {
+      const response = await fetch('https://serverayush.vercel.app/api/auth');
+      const data = await response.json();
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
+      return data;
+    } catch (error) {
+      console.error("Auth Failed:", error);
+      return null;
+    } finally {
+      ongoingAuthPromise = null;
+    }
+  })();
+  return ongoingAuthPromise;
+};
+
+const getAuthData = async () => {
+  const cachedAuth = getCachedAuth();
+  if (cachedAuth) return cachedAuth;
+  return await fetchNewAuthToken();
+};
 
 // Safe Image Extractor
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/500x500?text=Music";
-  if (typeof img === "string") return img.replace("50x50", "500x500").replace("150x150", "500x500"); 
+  if (typeof img === "string") return img.replace("50x50", "500x500").replace("150x150", "500x500");
   if (Array.isArray(img)) return img[img.length - 1]?.url || img[0]?.url;
   return "https://via.placeholder.com/500x500?text=Music";
 };
@@ -16,11 +59,12 @@ const getImageUrl = (img: any) => {
 // HTML Entity Decoder
 const decodeEntities = (text: string) => {
   if (!text) return "";
-  return text.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  return text.replace(/"/g, '"').replace(/'/g, "'").replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
 };
 
 // Subtitle Extractor
 const getSubtitle = (item: any, type: string) => {
+  if (type === "pro") return item.artist || item.artists || "Pro Track";
   if (type === "songs" || item.type === "song") {
     if (item.artists?.primary && Array.isArray(item.artists.primary)) {
       return item.artists.primary.map((a: any) => a.name).join(", ");
@@ -51,7 +95,7 @@ const getMatchScore = (title: string, query: string) => {
 // Premium Card Component
 const SearchCard = forwardRef<HTMLDivElement, any>(({ item, tabType, onClick, isGrid = false }, ref) => {
   const type = item.type || tabType;
-  const title = decodeEntities(item.title || item.name || "Unknown");
+  const title = decodeEntities(item.title || item.name || item.song_name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, type));
   const isCircular = type === "artists" || type === "artist";
 
@@ -62,21 +106,21 @@ const SearchCard = forwardRef<HTMLDivElement, any>(({ item, tabType, onClick, is
   const subSpeed = `${Math.max(4, subtitle.length * 0.25)}s`;
 
   return (
-    <div 
+    <div
       ref={ref}
-      onClick={() => onClick(item, type)} 
+      onClick={() => onClick(item, type)}
       className={`cursor-pointer group active:scale-95 transition-transform duration-200 ${isGrid ? "w-full" : "flex-shrink-0 snap-start w-36"}`}
     >
       <div className={`relative overflow-hidden shadow-md bg-white/5 border border-white/5 mb-2 flex items-center justify-center ${isCircular ? "rounded-full aspect-square" : "rounded-xl aspect-[1/1]"}`}>
-        <img 
-          src={getImageUrl(item.image)} 
-          alt={title} 
-          loading="lazy" 
+        <img
+          src={getImageUrl(item.image)}
+          alt={title}
+          loading="lazy"
           onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/500x500?text=Music"; }}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out" 
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
         />
       </div>
-      
+
       <div className="w-full overflow-hidden whitespace-nowrap text-center">
         <span
           className={`inline-block text-[14px] font-extrabold text-white tracking-wide ${isLongTitle ? "animate-ping-pong" : ""}`}
@@ -106,9 +150,9 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
-    if (loadingMore || !hasMore) return; 
+    if (loadingMore || !hasMore) return;
     if (observerRef.current) observerRef.current.disconnect();
-    
+
     observerRef.current = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
       if (entries[0].isIntersecting) loadMore(type);
     }, { rootMargin: "400px", threshold: 0 });
@@ -138,7 +182,7 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
   return (
     <div className="mb-6 contain-content">
       <h2 className="text-[20px] font-bold mb-3 px-4 tracking-tight text-white">{title}</h2>
-      <div 
+      <div
         id={`carousel-${type}`}
         onScroll={handleScroll}
         className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-2"
@@ -146,13 +190,13 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
         {items.map((item: any, i: number) => {
           const isLast = i === items.length - 1;
           return (
-            <SearchCard 
-              ref={isLast ? lastElementRef : null} 
-              key={`${type}-${i}`} 
-              item={item} 
-              tabType={type} 
-              onClick={onItemClick} 
-              isGrid={false} 
+            <SearchCard
+              ref={isLast ? lastElementRef : null}
+              key={`${type}-${i}`}
+              item={item}
+              tabType={type}
+              onClick={onItemClick}
+              isGrid={false}
             />
           );
         })}
@@ -173,31 +217,38 @@ export default function SearchPage() {
 
   const[isRestored, setIsRestored] = useState(false);
   const [query, setQuery] = useState("");
-  const[debouncedQuery, setDebouncedQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
-  
-  const[allData, setAllData] = useState<any>({ topMatches:[], songs: [], albums:[], playlists:[], artists:[] });
+
+  const [allData, setAllData] = useState<any>({ topMatches: [], songs: [], albums: [], playlists: [], artists: [] });
   const[allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
-  const[allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
+  const [allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
   const[horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
-  
+
   const [results, setResults] = useState<any[]>([]);
-  const[page, setPage] = useState(1);
-  const[hasMore, setHasMore] = useState(true);
-  
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+
   const [loading, setLoading] = useState(false);
-  const[loadingMore, setLoadingMore] = useState(false);
-  
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const lastFetched = useRef({ query: "", tab: "all", page: 1 });
   const observerRef = useRef<IntersectionObserver | null>(null);
 
+  // Added 'Pro' Tab Here
   const tabs =[
-    { id: "all", label: "All" }, 
+    { id: "all", label: "All" },
+    { id: "pro", label: "Pro", icon: Sparkles },
     { id: "songs", label: "Songs", icon: Music2 },
     { id: "albums", label: "Albums", icon: Disc },
     { id: "playlists", label: "Playlists", icon: ListMusic },
     { id: "artists", label: "Artists", icon: Mic2 }
   ];
+
+  // Initiate early token auth for Pro tab in background
+  useEffect(() => {
+    getAuthData();
+  },[]);
 
   useEffect(() => {
     const cached = sessionStorage.getItem(CACHE_KEY);
@@ -207,7 +258,7 @@ export default function SearchPage() {
         setQuery(parsed.query || "");
         setDebouncedQuery(parsed.debouncedQuery || "");
         setActiveTab(parsed.activeTab || "all");
-        setAllData(parsed.allData || { topMatches:[], songs:[], albums:[], playlists:[], artists:[] });
+        setAllData(parsed.allData || { topMatches: [], songs: [], albums: [], playlists: [], artists:[] });
         setAllPages(parsed.allPages || { songs: 1, albums: 1, playlists: 1, artists: 1 });
         setAllHasMore(parsed.allHasMore || { songs: true, albums: true, playlists: true, artists: true });
         setResults(parsed.results ||[]);
@@ -228,7 +279,7 @@ export default function SearchPage() {
       requestAnimationFrame(restore);
       setTimeout(restore, 100);
     }
-  },[activeTab, isRestored]);
+  }, [activeTab, isRestored]);
 
   useEffect(() => {
     let timeout: any;
@@ -255,23 +306,23 @@ export default function SearchPage() {
     if (!isRestored) return;
     const timer = setTimeout(() => setDebouncedQuery(query), 600);
     return () => clearTimeout(timer);
-  },[query, isRestored]);
+  }, [query, isRestored]);
 
   useEffect(() => {
     if (!isRestored) return;
     if (!debouncedQuery.trim()) {
-      setAllData({ topMatches:[], songs: [], albums:[], playlists: [], artists:[] });
+      setAllData({ topMatches: [], songs: [], albums: [], playlists: [], artists:[] });
       setResults([]); setHasMore(true);
       lastFetched.current = { query: "", tab: activeTab, page: 1 };
       return;
     }
 
     const isNewQueryOrTab = debouncedQuery !== lastFetched.current.query || activeTab !== lastFetched.current.tab;
-    
+
     if (isNewQueryOrTab && page !== 1) {
-      setPage(1); 
+      setPage(1);
       setHasMore(true);
-      return; 
+      return;
     }
 
     if (!isNewQueryOrTab && page === lastFetched.current.page) return;
@@ -282,18 +333,18 @@ export default function SearchPage() {
 
       try {
         if (activeTab === "all") {
-          const[sRes, aRes, pRes, arRes] = await Promise.all([
+          const [sRes, aRes, pRes, arRes] = await Promise.all([
             fetch(`https://ayushm-psi.vercel.app/api/search/songs?query=${encodeURIComponent(debouncedQuery)}&page=1`),
             fetch(`https://ayushm-psi.vercel.app/api/search/albums?query=${encodeURIComponent(debouncedQuery)}&page=1`),
             fetch(`https://ayushm-psi.vercel.app/api/search/playlists?query=${encodeURIComponent(debouncedQuery)}&page=1`),
             fetch(`https://ayushm-psi.vercel.app/api/search/artists?query=${encodeURIComponent(debouncedQuery)}&page=1`)
           ]);
 
-          const[sJson, aJson, pJson, arJson] = await Promise.all([sRes.json(), aRes.json(), pRes.json(), arRes.json()]);
+          const [sJson, aJson, pJson, arJson] = await Promise.all([sRes.json(), aRes.json(), pRes.json(), arRes.json()]);
 
           const songs = sJson.data?.results || sJson.data ||[];
           const albums = aJson.data?.results || aJson.data ||[];
-          const playlists = pJson.data?.results || pJson.data ||[];
+          const playlists = pJson.data?.results || pJson.data || [];
           const artists = arJson.data?.results || arJson.data ||[];
 
           const combined =[
@@ -313,32 +364,56 @@ export default function SearchPage() {
           setAllData({ topMatches: sortedMatches.length > 0 ? sortedMatches : combined.slice(0, 8), songs, albums, playlists, artists });
           setAllPages({ songs: 1, albums: 1, playlists: 1, artists: 1 });
           setAllHasMore({ songs: true, albums: true, playlists: true, artists: true });
-          
+
           setHasMore(false);
+        } else if (activeTab === "pro") {
+          // --- PRO API SEARCH FETCH ---
+          const auth = await getAuthData();
+          if (auth && auth.accessToken) {
+            const url = `https://ak47ayush.vercel.app/search?q=${encodeURIComponent(debouncedQuery)}&CID=${auth.clientId}&token=${auth.accessToken}&limit=20`;
+            const res = await fetch(url);
+            const data = await res.json();
+            
+            const newData = (data.results ||[]).map((item: any) => ({
+              ...item,
+              type: "pro",
+              title: item.song_name,
+              name: item.song_name,
+              artist: item.artist,
+              url: item.spotify_url
+            }));
+            
+            setResults(prev => (isNewQueryOrTab || page === 1) ? newData : [...prev, ...newData]);
+            setHasMore(false); // Defaulting pro to disable pagination due to limit string logic
+          } else {
+             setResults([]);
+             setHasMore(false);
+          }
         } else {
           const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${activeTab}?query=${encodeURIComponent(debouncedQuery)}&page=${page}`);
           const json = await res.json();
-          const newData = json.data?.results || json.data ||[];
+          const newData = json.data?.results || json.data || [];
 
-          setResults(prev => (isNewQueryOrTab || page === 1) ? newData : [...prev, ...newData]);
-          
+          setResults(prev => (isNewQueryOrTab || page === 1) ? newData :[...prev, ...newData]);
+
           setHasMore(newData.length > 0);
         }
-        
+
         lastFetched.current = { query: debouncedQuery, tab: activeTab, page };
-      } catch (err) {} 
+      } catch (err) {}
       finally {
         setLoading(false); setLoadingMore(false);
       }
     };
 
     fetchData();
-  },[debouncedQuery, activeTab, page, isRestored]);
+
+  }, [debouncedQuery, activeTab, page, isRestored]);
 
   const loadMoreHorizontal = useCallback(async (type: string) => {
     if (horizontalLoading[type] || !allHasMore[type]) return;
-    
-    setHorizontalLoading((prev: any) => ({ ...prev,[type]: true }));
+
+    setHorizontalLoading((prev: any) => ({ ...prev, [type]: true }));
     try {
       const nextPage = allPages[type] + 1;
       const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${type}?query=${encodeURIComponent(debouncedQuery)}&page=${nextPage}`);
@@ -346,34 +421,72 @@ export default function SearchPage() {
       const newData = json.data?.results || json.data ||[];
 
       if (newData.length === 0) {
-        setAllHasMore((prev: any) => ({ ...prev, [type]: false }));
+        setAllHasMore((prev: any) => ({ ...prev,[type]: false }));
       } else {
         setAllData((prev: any) => ({ ...prev,[type]: [...prev[type], ...newData] }));
         setAllPages((prev: any) => ({ ...prev, [type]: nextPage }));
       }
     } catch (e) {}
-    
+
     setHorizontalLoading((prev: any) => ({ ...prev, [type]: false }));
+
   },[debouncedQuery, allPages, allHasMore, horizontalLoading]);
 
   const lastVerticalElementRef = useCallback((node: HTMLDivElement | null) => {
-    if (loading || loadingMore || !hasMore || activeTab === "all") return;
+    if (loading || loadingMore || !hasMore || activeTab === "all" || activeTab === "pro") return;
     if (observerRef.current) observerRef.current.disconnect();
 
     observerRef.current = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
       if (entries[0].isIntersecting && hasMore) {
-        setPage(prev => prev + 1); 
+        setPage(prev => prev + 1);
       }
     }, { rootMargin: "600px", threshold: 0 });
 
     if (node) observerRef.current.observe(node);
-  },[loading, loadingMore, hasMore, activeTab]);
 
-  const handleItemClick = (item: any, passedType?: string) => {
+  }, [loading, loadingMore, hasMore, activeTab]);
+
+  const handleItemClick = async (item: any, passedType?: string) => {
     const type = item.type || passedType || activeTab;
+    
+    // --- PRO API CLICK HANDLER ---
+    if (type === "pro") {
+      try {
+        const querySong = item.song_name || item.title || "";
+        const queryArtist = item.artist || item.artists || "";
+        const proApiUrl = `https://serverayush.vercel.app/api/search?q=${encodeURIComponent(querySong)}&artist=${encodeURIComponent(queryArtist)}`;
+        
+        const res = await fetch(proApiUrl);
+        const proData = await res.json();
+
+        // Mapping to standard properties app expects
+        const songObj = {
+          ...proData,
+          id: proData.PermaUrl || item.spotify_url || Date.now().toString(),
+          title: proData.Title || item.title,
+          name: proData.Title || item.title,
+          image: proData.Bannerlink || item.image,
+          artists: proData.Artists || item.artist,
+          primaryArtists: proData.Artists || item.artist,
+          url: proData.PermaUrl || item.spotify_url,
+          downloadUrl: proData.StreamLinks ||[],
+          type: "song"
+        };
+
+        setPlayContext({ type: "Search", name: "Pro Search Results" });
+        setQueue([songObj]);
+        setCurrentSong(songObj);
+        setIsPlaying(true);
+      } catch (err) {
+        console.error("Failed to load pro song:", err);
+      }
+      return;
+    }
+
+    // --- STANDARD CLICK HANDLERS ---
     let link = item.url || item.perma_url || item.action || "";
     if (link && !link.startsWith("http")) link = `https://www.jiosaavn.com${link}`;
-    
+
     let path = link;
     try {
       path = new URL(link).pathname;

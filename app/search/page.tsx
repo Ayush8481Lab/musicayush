@@ -223,19 +223,19 @@ export default function SearchPage() {
   const [isRestored, setIsRestored] = useState(false);
   const [query, setQuery] = useState("");
   const[debouncedQuery, setDebouncedQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("all");
+  const[activeTab, setActiveTab] = useState("all");
 
   const[allData, setAllData] = useState<any>({ topMatches: [], songs: [], albums:[], playlists: [], artists: [] });
-  const [allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
+  const[allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
   const[allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
-  const [horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
+  const[horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
 
   const [results, setResults] = useState<any[]>([]);
-  const [page, setPage] = useState(1);
+  const[page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
   const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const[loadingMore, setLoadingMore] = useState(false);
 
   const lastFetched = useRef({ query: "", tab: "all", page: 1 });
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -263,7 +263,7 @@ export default function SearchPage() {
         setQuery(parsed.query || "");
         setDebouncedQuery(parsed.debouncedQuery || "");
         setActiveTab(parsed.activeTab || "all");
-        setAllData(parsed.allData || { topMatches: [], songs: [], albums: [], playlists: [], artists:[] });
+        setAllData(parsed.allData || { topMatches: [], songs:[], albums: [], playlists: [], artists:[] });
         setAllPages(parsed.allPages || { songs: 1, albums: 1, playlists: 1, artists: 1 });
         setAllHasMore(parsed.allHasMore || { songs: true, albums: true, playlists: true, artists: true });
         setResults(parsed.results ||[]);
@@ -284,7 +284,7 @@ export default function SearchPage() {
       requestAnimationFrame(restore);
       setTimeout(restore, 100);
     }
-  }, [activeTab, isRestored]);
+  },[activeTab, isRestored]);
 
   useEffect(() => {
     let timeout: any;
@@ -311,12 +311,12 @@ export default function SearchPage() {
     if (!isRestored) return;
     const timer = setTimeout(() => setDebouncedQuery(query), 600);
     return () => clearTimeout(timer);
-  }, [query, isRestored]);
+  },[query, isRestored]);
 
   useEffect(() => {
     if (!isRestored) return;
     if (!debouncedQuery.trim()) {
-      setAllData({ topMatches: [], songs: [], albums: [], playlists: [], artists:[] });
+      setAllData({ topMatches: [], songs:[], albums: [], playlists: [], artists:[] });
       setResults([]); setHasMore(true);
       lastFetched.current = { query: "", tab: activeTab, page: 1 };
       return;
@@ -380,7 +380,9 @@ export default function SearchPage() {
           // --- PRO API SEARCH FETCH ---
           const auth = await getAuthData();
           if (auth && auth.accessToken) {
-            const url = `https://ak47ayush.vercel.app/search?q=${encodeURIComponent(debouncedQuery)}&CID=${auth.clientId}&token=${auth.accessToken}&limit=50`;
+            // Updated limit and offset logic for pagination
+            const offset = (page - 1) * 20 + 1;
+            const url = `https://ak47ayush.vercel.app/search?q=${encodeURIComponent(debouncedQuery)}&CID=${auth.clientId}&token=${auth.accessToken}&limit=20&offset=${offset}`;
             const res = await fetch(url);
             
             if (!res.ok) throw new Error("Pro Search API failed");
@@ -402,7 +404,7 @@ export default function SearchPage() {
             }));
             
             setResults(prev => (isNewQueryOrTab || page === 1) ? newData :[...prev, ...newData]);
-            setHasMore(false); // Pro search disabling pagination string limit natively 
+            setHasMore(newData.length > 0); // Re-enabled string native pagination for pro tab
           } else {
              setResults([]);
              setHasMore(false);
@@ -451,7 +453,9 @@ export default function SearchPage() {
   },[debouncedQuery, allPages, allHasMore, horizontalLoading]);
 
   const lastVerticalElementRef = useCallback((node: HTMLDivElement | null) => {
-    if (loading || loadingMore || !hasMore || activeTab === "all" || activeTab === "pro") return;
+    // Removed activeTab === "pro" check here to allow proper IntersectionObserver usage 
+    // to increment the page for infinite scroll functionality
+    if (loading || loadingMore || !hasMore || activeTab === "all") return;
     if (observerRef.current) observerRef.current.disconnect();
 
     observerRef.current = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {

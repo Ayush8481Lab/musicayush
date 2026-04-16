@@ -1,4 +1,3 @@
-
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -7,12 +6,56 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useAppContext } from "../context/AppContext";
-import { getAuthData } from "../search/page"; // Safely import your auth helper from Search
 import { 
   Play, Pause, SkipForward, SkipBack, Loader2, ChevronDown, 
   MoreHorizontal, Shuffle, Repeat, Heart, ListMusic, 
   MonitorPlay, Maximize2, Minimize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe, Settings2, Check, Share2, Download, Video
 } from "lucide-react";
+
+// --- PRO AUTH & CACHE ENGINE (Moved here to fix build errors) ---
+const AUTH_STORAGE_KEY = 'spotify_app_auth';
+let ongoingAuthPromise: Promise<any> | null = null;
+
+const getCachedAuth = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const cached = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (cached) {
+      const authData = JSON.parse(cached);
+      if (Date.now() < (authData.accessTokenExpirationTimestampMs - 10000)) return authData;
+    }
+  } catch (e) {
+    console.error("Error reading cache:", e);
+  }
+  return null;
+};
+
+const fetchNewAuthToken = async () => {
+  if (ongoingAuthPromise) return ongoingAuthPromise;
+  ongoingAuthPromise = (async () => {
+    try {
+      const response = await fetch('https://serverayush.vercel.app/api/auth');
+      const data = await response.json();
+      if (typeof window !== "undefined") {
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
+      }
+      return data;
+    } catch (error) {
+      console.error("Auth Failed:", error);
+      return null;
+    } finally {
+      ongoingAuthPromise = null;
+    }
+  })();
+  return ongoingAuthPromise;
+};
+
+const getAuthData = async () => {
+  const cachedAuth = getCachedAuth();
+  if (cachedAuth) return cachedAuth;
+  return await fetchNewAuthToken();
+};
+// ----------------------------------------------------------------
 
 const decodeEntities = (text: string) => {
   if (!text) return "";
@@ -131,7 +174,7 @@ export default function MiniPlayer() {
   const[progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const[duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(100);
+  const[volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
@@ -142,14 +185,14 @@ export default function MiniPlayer() {
   const currentTrackRef = useRef<any>(null);
   const maxListenRef = useRef<number>(0);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
   const queueContainerRef = useRef<HTMLDivElement>(null);
   const rapidKeyIdxRef = useRef(0);
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
   const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
-  const [lyrics, setLyrics] = useState<any[]>([]);
+  const[lyrics, setLyrics] = useState<any[]>([]);
   const[syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const [isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
@@ -172,7 +215,7 @@ export default function MiniPlayer() {
   const[songDetails, setSongDetails] = useState<any>(null);
 
   const[isVideoMode, setIsVideoMode] = useState(false);
-  const [ytVideoId, setYtVideoId] = useState<string | null>(null);
+  const[ytVideoId, setYtVideoId] = useState<string | null>(null);
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const iframeInitialTimeRef = useRef<number>(0); 
   const videoStartTimeRef = useRef<number>(0);    
@@ -182,7 +225,7 @@ export default function MiniPlayer() {
   const fetchingRecsRef = useRef(false);
   const [isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
   const[isSessionRestored, setIsSessionRestored] = useState(false);
-  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   const[selectedQuality, setSelectedQuality] = useState("320");
   const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
   const[isLyricsEnabled, setIsLyricsEnabled] = useState(true);
@@ -258,7 +301,7 @@ export default function MiniPlayer() {
     }
   },[currentSong, isSessionRestored, setCurrentSong, setUpcomingQueue]);
 
-  useEffect(() => { isCanvasEnabledRef.current = isCanvasEnabled; }, [isCanvasEnabled]);
+  useEffect(() => { isCanvasEnabledRef.current = isCanvasEnabled; },[isCanvasEnabled]);
   useEffect(() => { isLyricsEnabledRef.current = isLyricsEnabled; if (!isLyricsEnabled) setIsLyricsFullScreen(false); },[isLyricsEnabled]);
   useEffect(() => { if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong)); }, [currentSong]);
   useEffect(() => { if (upcomingQueue && upcomingQueue.length > 0) localStorage.setItem('last_session_queue', JSON.stringify(upcomingQueue)); }, [upcomingQueue]);
@@ -363,7 +406,7 @@ export default function MiniPlayer() {
       updateTop30Cache(currentTrackRef.current, maxListenRef.current);
       const trackToSave = { ...currentTrackRef.current, prefetchedYtId: ytVideoId || currentTrackRef.current.prefetchedYtId };
       setHistoryQueue(prev => {
-        const newHist = [trackToSave, ...prev].filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.id === v.id) === i);
+        const newHist =[trackToSave, ...prev].filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.id === v.id) === i);
         const sliced = newHist.slice(0, 20); localStorage.setItem('recent_songs', JSON.stringify(sliced)); return sliced;
       });
     }
@@ -457,7 +500,7 @@ export default function MiniPlayer() {
     
     spotifyTimer = setTimeout(() => { fetchSpotifyMatch(); }, 1500);
     return () => { isCurrent = false; clearTimeout(spotifyTimer); };
-  }, [currentSong]);
+  },[currentSong]);
 
   useEffect(() => {
     if (queue && queue.length > 0) {
@@ -503,7 +546,7 @@ export default function MiniPlayer() {
         const json = await res.json();
         if (!isCurrent) return; 
 
-        let urls: any[] = [];
+        let urls: any[] =[];
         if (json.data?.[0]?.downloadUrl) {
           urls = json.data[0].downloadUrl;
           setSongDetails((prev: any) => prev?.id === json.data[0].id ? prev : json.data[0]); 
@@ -783,7 +826,6 @@ export default function MiniPlayer() {
   const handleDownloadMusicInit = () => { setDlState({ type: "music", status: "options" }); setShowSettingsMenu(false); };
   
   const executeDownload = (url: string, filename: string) => {
-    // Standard approach to force download on client side
     const a = document.createElement("a");
     a.href = url; a.target = "_blank"; a.download = filename; 
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -802,11 +844,10 @@ export default function MiniPlayer() {
       const res = await fetch(`https://serverayush.vercel.app/api/cnd?id=${targetVid}&v=2`);
       const data = await res.json();
       
-      const mixed = data.VideoWithAudio || [];
+      const mixed = data.VideoWithAudio ||[];
       const separate = data.Video ||[];
       const audioFallback = data.Audio && data.Audio.length > 0 ? data.Audio[0] : (data.DefaultAudio?.[0]);
 
-      // Provide seamless combined videos, or separate if necessary
       const formatOptions =[
         ...mixed.map((v:any) => ({ ...v, label: `${v.quality} (Single File)`, isSplit: false })),
         ...separate.map((v:any) => ({ ...v, label: `${v.quality} (Needs Audio Merge)`, isSplit: true, audioRef: audioFallback }))
@@ -835,7 +876,7 @@ export default function MiniPlayer() {
         ? "text-white/50 text-[28px] font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2" 
         : "text-white/50 text-[24px] font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2";
         
-      // NEW: Spotify-style Black upcoming lyrics
+      // Spotify-style Black upcoming lyrics
       const futureClasses = isLyricsFullScreen 
         ? "text-black/80 text-[28px] font-black drop-shadow-md leading-tight opacity-70 translate-y-4" 
         : "text-black/80 text-[24px] font-black drop-shadow-md leading-tight opacity-70 translate-y-3";
@@ -844,7 +885,7 @@ export default function MiniPlayer() {
         <p key={idx} ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} onClick={() => handleLyricClick(line.time)} className={`cursor-pointer transition-all duration-500 ease-out origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`}>{line.words || '♪'}</p>
       )
     });
-  }, [lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled]);
+  },[lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled]);
 
   const RenderedArtists = useMemo(() => {
     return uniqueArtists.map((artist: any) => {
@@ -955,7 +996,7 @@ export default function MiniPlayer() {
 
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
-              {/* UPDATED: MINI LYRIC PREVIEW SHIFTED UP */}
+              {/* MINI LYRIC PREVIEW SHIFTED UP */}
               <div className={`transition-all duration-500 overflow-hidden w-full relative ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-4 -translate-y-2 opacity-100 min-h-[52px] flex items-end'}`}>
                 {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && !isVideoMode && (
                   <span key={`lyric-${activeLyricIndex}`} className="text-white/95 text-[16px] md:text-[18px] font-black text-left drop-shadow-lg line-clamp-3 leading-snug animate-lyric-enter w-full pr-2 no-select-text absolute bottom-0">

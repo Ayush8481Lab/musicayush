@@ -9,10 +9,10 @@ import { useAppContext } from "../context/AppContext";
 import { 
   Play, Pause, SkipForward, SkipBack, Loader2, ChevronDown, 
   MoreHorizontal, Shuffle, Repeat, Heart, ListMusic, 
-  MonitorPlay, Maximize2, Minimize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe, Settings2, Check, Share2, Download, Video, X
+  MonitorPlay, Maximize2, Minimize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe, Settings2, Check, Share2, Download, Video, X, Server
 } from "lucide-react";
 
-// --- PRO AUTH & CACHE ENGINE (Moved here to fix build errors) ---
+// --- PRO AUTH & CACHE ENGINE ---
 const AUTH_STORAGE_KEY = 'spotify_app_auth';
 let ongoingAuthPromise: Promise<any> | null = null;
 
@@ -36,9 +36,7 @@ const fetchNewAuthToken = async () => {
     try {
       const response = await fetch('https://serverayush.vercel.app/api/auth');
       const data = await response.json();
-      if (typeof window !== "undefined") {
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
-      }
+      if (typeof window !== "undefined") localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
       return data;
     } catch (error) {
       console.error("Auth Failed:", error);
@@ -55,7 +53,6 @@ const getAuthData = async () => {
   if (cachedAuth) return cachedAuth;
   return await fetchNewAuthToken();
 };
-// ----------------------------------------------------------------
 
 const decodeEntities = (text: string) => {
   if (!text) return "";
@@ -96,17 +93,11 @@ const formatTime = (time: number) => {
 const parseTimeTag = (tag: string) => {
   if (!tag) return 0;
   const parts = tag.split(':');
-  if (parts.length >= 2) { return parseInt(parts[0], 10) * 60 + parseFloat(parts[1]); }
+  if (parts.length >= 2) return parseInt(parts[0], 10) * 60 + parseFloat(parts[1]);
   return 0;
 };
 
-const RAPID_KEYS =[
-  "d1edce158amshec139440d20658ap1f2545jsnbb7da9add82f",
-  "6cf7f03014msh787c51a713c0264p15c20djsna1f9a9f6a378",
-  "13d48f6bb8msh459c11b91bdcc44p110f4ejsn099443894115",
-  "03fc23317fmsh0535ef9ec8c6f5bp1db59bjsn545991df9343",
-  "e54e3fbc4dmshfc16d4417b618fdp1a2fafjsn30c72d8cf3ab"
-];
+const RAPID_KEYS =["d1edce158amshec139440d20658ap1f2545jsnbb7da9add82f", "6cf7f03014msh787c51a713c0264p15c20djsna1f9a9f6a378", "13d48f6bb8msh459c11b91bdcc44p110f4ejsn099443894115", "03fc23317fmsh0535ef9ec8c6f5bp1db59bjsn545991df9343", "e54e3fbc4dmshfc16d4417b618fdp1a2fafjsn30c72d8cf3ab"];
 const RAPID_API_HOST = "spotify81.p.rapidapi.com";
 
 const performMatching = (apiData: any, targetTrack: string, targetArtist: string): any => {
@@ -125,7 +116,7 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
               else if (ra.includes(tArtist) || tArtist.includes(ra)) { score += 80; artistMatched = true; break; } 
           }
           if (!artistMatched) score = 0;
-      } else { score += 50; }
+      } else score += 50;
       if (score > 0) { 
           if (rTitle === tTitle) score += 100; 
           else if (rTitle.startsWith(tTitle) || tTitle.startsWith(rTitle)) score += 80; 
@@ -172,7 +163,7 @@ export default function MiniPlayer() {
   const[audioUrl, setAudioUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const[progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
+  const[currentTime, setCurrentTime] = useState(0);
   const[duration, setDuration] = useState(0);
   const[volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -182,6 +173,7 @@ export default function MiniPlayer() {
   const [isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
   const[showQueue, setShowQueue] = useState(false);
+  
   const currentTrackRef = useRef<any>(null);
   const maxListenRef = useRef<number>(0);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -235,7 +227,7 @@ export default function MiniPlayer() {
   const isLyricsEnabledRef = useRef(true);
 
   // ---- Advanced Download Manager States ----
-  const [dlState, setDlState] = useState<{type: "music" | "video" | null, status: string, options?: any[]}>({type: null, status: "idle"});
+  const[dlState, setDlState] = useState<{type: "music" | "video" | null, status: string, options?: any[], progress?: number, server?: number}>({type: null, status: "idle", progress: 0, server: 1});
 
   const isSongLiked = likedSongs.some((s: any) => s && s.id === currentSong?.id);
   const handleLikeClick = (e: any) => { e.stopPropagation(); toggleLikeSong(currentSong); };
@@ -252,16 +244,13 @@ export default function MiniPlayer() {
       if (navigator.canShare) {
         try {
           if (displayImage) {
-            const response = await fetch(displayImage);
-            const blob = await response.blob();
+            const response = await fetch(displayImage); const blob = await response.blob();
             const file = new File([blob], 'cover.jpg', { type: blob.type });
             if (navigator.canShare({ files:[file] })) shareData.files = [file];
           }
         } catch (e) {} 
         await navigator.share(shareData);
-      } else {
-        await navigator.clipboard.writeText(shareUrl); alert("Link copied to clipboard!");
-      }
+      } else { await navigator.clipboard.writeText(shareUrl); alert("Link copied to clipboard!"); }
     } catch (e) { console.error("Error sharing:", e); }
     setShowSettingsMenu(false);
   };
@@ -319,10 +308,7 @@ export default function MiniPlayer() {
     const primaryArr = Array.isArray(songDetails.artists.primary) ? songDetails.artists.primary :[];
     const allArr = Array.isArray(songDetails.artists.all) ? songDetails.artists.all :[];
     const map = new Map();
-    primaryArr.forEach((p: any) => {
-      const full = allArr.find((a: any) => a.id === p.id) || p;
-      map.set(p.id, { ...p, ...full, role: (full.role || "Primary Artist").replace(/_/g, ' ') });
-    });
+    primaryArr.forEach((p: any) => { const full = allArr.find((a: any) => a.id === p.id) || p; map.set(p.id, { ...p, ...full, role: (full.role || "Primary Artist").replace(/_/g, ' ') }); });
     allArr.forEach((a: any) => { if (!map.has(a.id)) map.set(a.id, { ...a, role: (a.role || "Artist").replace(/_/g, ' ') }); });
     return Array.from(map.values());
   },[songDetails]);
@@ -424,12 +410,14 @@ export default function MiniPlayer() {
     if (currentSong.ytVideoId || currentSong.prefetchedYtId) {
       prefetchedYtIdRef.current = currentSong.ytVideoId || currentSong.prefetchedYtId;
       setYtVideoId(prefetchedYtIdRef.current);
-      if (isVideoMode) { setIsVideoLoading(true); videoStartTimeRef.current = 0; setIsVideoLoading(false); }
+      if (isVideoMode || currentSong.isProFallback) { 
+          setIsVideoMode(true); setIsVideoLoading(true); videoStartTimeRef.current = 0; setIsVideoLoading(false); 
+      }
     } else {
-      setIsVideoLoading(isVideoMode); videoStartTimeRef.current = 0;
+      setIsVideoLoading(isVideoMode || currentSong.isProFallback); videoStartTimeRef.current = 0;
       prefetchVideoId(instantTitle, instantArtists).then((vid) => {
          if (!isCurrent) return;
-         if (vid) setYtVideoId(vid);
+         if (vid) { setYtVideoId(vid); if(currentSong.isProFallback) setIsVideoMode(true); }
          else if (isVideoMode) { setIsVideoMode(false); audioRef.current?.play().catch(()=>{}); setIsPlaying(true); }
          setIsVideoLoading(false);
       });
@@ -457,7 +445,6 @@ export default function MiniPlayer() {
       const query = `${instantTitle} ${searchArtist}`.trim();
       let matchData = null;
 
-      // Primary Search: ak47ayush API (Fast Token Base)
       try {
          const auth = await getAuthData();
          if (auth && auth.accessToken) {
@@ -470,14 +457,13 @@ export default function MiniPlayer() {
                         const sId = match.spotify_url?.split('/track/')[1]?.split('?')[0] || match.id;
                         setSpotifyId(sId); setSpotifyUrl(match.spotify_url || `https://open.spotify.com/track/${sId}`);
                         if (typeof window !== "undefined") { localStorage.setItem(cacheKey, match.spotify_url); localStorage.setItem(cacheKey + '_id', sId); }
-                        return; // Found directly!
+                        return;
                      }
                  }
              }
          }
       } catch (e) { console.warn("Primary Spotify Search Failed, falling back..."); }
 
-      // Fallback Search: RapidAPI
       const searchUrl = `https://${RAPID_API_HOST}/search?q=${encodeURIComponent(query)}&type=tracks&offset=0&limit=25&numberOfTopResults=5`;
       for (let attempt = 0; attempt < RAPID_KEYS.length; attempt++) {
         try {
@@ -520,7 +506,6 @@ export default function MiniPlayer() {
     const fetchAudioData = async () => {
       setLoading(true);
 
-      // --- CND Audio Fallback Override ---
       if (currentSong.isProFallback && currentSong.ytVideoId) {
          try {
             let cndRes = await fetch(`https://serverayush.vercel.app/api/cnd?id=${currentSong.ytVideoId}&v=2&lis=true`);
@@ -539,7 +524,6 @@ export default function MiniPlayer() {
          } catch (e) { console.error("CND Audio Fetch failed"); }
       }
 
-      // --- Standard Saavn Audio Fetch ---
       try {
         const fetchLink = encodeURIComponent(currentSong.url || currentSong.perma_url || "");
         const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${fetchLink}`);
@@ -587,7 +571,7 @@ export default function MiniPlayer() {
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
-  }, [isVideoMode, duration, upcomingQueue]);
+  },[isVideoMode, duration, upcomingQueue]);
 
   const handlePlayPauseToggle = (e?: any) => {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -721,12 +705,14 @@ export default function MiniPlayer() {
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
   },[isScrolledPastMain]);
 
-  // TOP-SYNC LYRICS SCROLLING
+  // TOP-SYNC LYRICS SCROLLING w/ CONDITIONAL OFFSET
   useEffect(() => {
     if (isSeekingRef.current) return; 
     if (activeLyricRef.current && lyricsContainerRef.current) {
       const container = lyricsContainerRef.current; const element = activeLyricRef.current;
-      const scrollPos = element.offsetTop - container.offsetTop - 40; // Pin to Top Sync!
+      const scrollPos = isLyricsFullScreen 
+        ? element.offsetTop - container.offsetTop - 60 
+        : element.offsetTop - container.offsetTop - (container.clientHeight / 2) + (element.clientHeight / 2);
       container.scrollTo({ top: scrollPos, behavior: 'smooth' });
     }
     if (fullActiveLyricRef.current && fullLyricsContainerRef.current) {
@@ -763,7 +749,6 @@ export default function MiniPlayer() {
       videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
     } else if (audioRef.current && duration > 0) {
       audioRef.current.currentTime = newTime; syncPosition();
-      // FIX SEEKING BUG: Re-trigger Play if currently playing
       if (isPlaying) { const p = audioRef.current.play(); if (p !== undefined) p.catch(()=>{}); }
     }
   };
@@ -822,38 +807,68 @@ export default function MiniPlayer() {
   const handleTouchMove = (e: React.TouchEvent) => { const diff = e.touches[0].clientX - touchStartX.current; if (diff > 0 && !showQueue) setSwipeX(diff); };
   const handleTouchEnd = () => { if (swipeX > window.innerWidth * 0.45 && !showQueue) { setCurrentSong(null); setIsPlaying(false); setIsExpanded(false); } setSwipeX(0); };
 
-  // --- DOWNLOAD MANAGER LOGIC ---
-  const handleDownloadMusicInit = () => { setDlState({ type: "music", status: "options" }); setShowSettingsMenu(false); };
-  
-  const executeDownload = (url: string, filename: string) => {
-    const a = document.createElement("a");
-    a.href = url; a.target = "_blank"; a.download = filename; 
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setDlState({ type: null, status: "idle" });
+  // --- ADVANCED DOWNLOAD MANAGER ---
+  const executeBlobDownload = async (url: string, filename: string, isVideoMux: boolean = false) => {
+    try {
+      setDlState(prev => ({...prev, status: "downloading", progress: 0}));
+      const res = await fetch(url);
+      const contentLength = res.headers.get('content-length');
+      const total = parseInt(contentLength || '0', 10);
+      let loaded = 0;
+      
+      if (!res.body) throw new Error("No body stream");
+      const reader = res.body.getReader();
+      const chunks =[];
+      
+      while(true) {
+         const {done, value} = await reader.read();
+         if (done) break;
+         chunks.push(value);
+         loaded += value.length;
+         if (total) setDlState(prev => ({...prev, progress: Math.round((loaded/total)*100)}));
+      }
+
+      if (isVideoMux) {
+         setDlState(prev => ({...prev, status: "merging"}));
+         await new Promise(r => setTimeout(r, 2800)); // Fake realistic merging processing for UX
+      }
+
+      const blob = new Blob(chunks);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setDlState({ type: null, status: "idle" });
+    } catch (e) {
+      console.warn("Blob fetch failed (CORS), falling back to raw download", e);
+      const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.download = filename; 
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setDlState({ type: null, status: "idle" });
+    }
   };
 
-  const handleDownloadVideoInit = async () => {
-    setShowSettingsMenu(false); setDlState({ type: "video", status: "verifying" });
+  const handleDownloadMusicInit = () => { setDlState({ type: "music", status: "options" }); setShowSettingsMenu(false); };
+  
+  const handleDownloadVideoInit = () => { setDlState({ type: "video", status: "servers" }); setShowSettingsMenu(false); };
+
+  const triggerVideoServer = async (serverNum: number) => {
+    setDlState({ type: "video", status: "verifying", server: serverNum });
+    
     setTimeout(() => {
       setDlState(prev => prev.type === "video" ? { ...prev, status: "connecting" } : prev);
-    }, 3000);
+    }, 6000); // Wait exactly 6 seconds as requested
     
     try {
       const targetVid = ytVideoId || await prefetchVideoId(displayTitle, displayArtists);
       if (!targetVid) throw new Error("Video not found");
-      const res = await fetch(`https://serverayush.vercel.app/api/cnd?id=${targetVid}&v=2`);
+      const res = await fetch(`https://serverayush.vercel.app/api/cnd?id=${targetVid}&v=${serverNum}`);
       const data = await res.json();
       
+      // Filter out split streams. Provide ONLY VideoWithAudio to guarantee a perfect merged file!
       const mixed = data.VideoWithAudio ||[];
-      const separate = data.Video ||[];
-      const audioFallback = data.Audio && data.Audio.length > 0 ? data.Audio[0] : (data.DefaultAudio?.[0]);
-
-      const formatOptions =[
-        ...mixed.map((v:any) => ({ ...v, label: `${v.quality} (Single File)`, isSplit: false })),
-        ...separate.map((v:any) => ({ ...v, label: `${v.quality} (Needs Audio Merge)`, isSplit: true, audioRef: audioFallback }))
-      ];
+      const formatOptions = mixed.map((v:any) => ({ ...v, label: `${v.quality} Video`, isMuxed: true }));
       
-      setDlState({ type: "video", status: "options", options: formatOptions });
+      setDlState({ type: "video", status: "options", options: formatOptions, server: serverNum });
     } catch (e) {
       alert("Failed to connect to video server. Please try again."); setDlState({ type: null, status: "idle" });
     }
@@ -876,7 +891,6 @@ export default function MiniPlayer() {
         ? "text-white/50 text-[28px] font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2" 
         : "text-white/50 text-[24px] font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2";
         
-      // Spotify-style Black upcoming lyrics
       const futureClasses = isLyricsFullScreen 
         ? "text-black/80 text-[28px] font-black drop-shadow-md leading-tight opacity-70 translate-y-4" 
         : "text-black/80 text-[24px] font-black drop-shadow-md leading-tight opacity-70 translate-y-3";
@@ -940,8 +954,6 @@ export default function MiniPlayer() {
         .mobile-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #fff; margin-top: -4px; box-shadow: 0 2px 4px rgba(0,0,0,0.4); border: 0; }
         .no-select { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; pointer-events: none; }
         .no-select-text { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-        @keyframes lyric-enter { 0% { opacity: 0; transform: translateY(12px); filter: blur(2px); } 100% { opacity: 1; transform: translateY(0); filter: blur(0); } }
-        .animate-lyric-enter { animation: lyric-enter 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
       `}} />
 
       <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} 
@@ -996,12 +1008,29 @@ export default function MiniPlayer() {
 
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
-              {/* MINI LYRIC PREVIEW SHIFTED UP */}
-              <div className={`transition-all duration-500 overflow-hidden w-full relative ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-4 -translate-y-2 opacity-100 min-h-[52px] flex items-end'}`}>
-                {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics[activeLyricIndex] && !isVideoMode && (
-                  <span key={`lyric-${activeLyricIndex}`} className="text-white/95 text-[16px] md:text-[18px] font-black text-left drop-shadow-lg line-clamp-3 leading-snug animate-lyric-enter w-full pr-2 no-select-text absolute bottom-0">
-                    {lyrics[activeLyricIndex].words || "♪"}
-                  </span>
+              {/* CINEMATIC MINI LYRIC ANIMATION */}
+              <div className={`transition-all duration-500 w-full relative mask-edges-vertical ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-4 -translate-y-2 opacity-100 h-[60px] overflow-hidden'}`}>
+                {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics.length > 0 && !isVideoMode && (
+                  <div className="relative w-full h-full">
+                    {lyrics.map((line: any, idx: number) => {
+                       const diff = idx - activeLyricIndex;
+                       if (Math.abs(diff) > 2) return null; 
+                       // Slide old lines UP, new lines from BOTTOM. Exactly 0.8s timing
+                       return (
+                          <span key={idx} 
+                                className="absolute left-0 right-0 text-left pr-2 no-select-text font-black drop-shadow-lg line-clamp-2 leading-tight transition-all duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                                style={{
+                                   transform: `translateY(${diff * 28 + 12}px)`,
+                                   opacity: diff === 0 ? 1 : 0,
+                                   fontSize: diff === 0 ? '18px' : '15px',
+                                   color: 'white',
+                                   zIndex: diff === 0 ? 10 : 1
+                                }}>
+                            {line.words || "♪"}
+                          </span>
+                       );
+                    })}
+                  </div>
                 )}
               </div>
 
@@ -1117,7 +1146,7 @@ export default function MiniPlayer() {
           </div>
         </div>
 
-        {/* --- DOWNLOAD MANAGER MODAL --- */}
+        {/* --- ADVANCED DOWNLOAD MANAGER MODAL --- */}
         <div className={`absolute inset-0 z-[100005] bg-black/80 backdrop-blur-md transition-opacity duration-300 flex items-center justify-center p-6 ${dlState.type !== null ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} onClick={() => setDlState({ type: null, status: "idle" })}>
            <div className={`w-full max-w-sm bg-[#181818] rounded-2xl shadow-2xl border border-white/10 p-6 flex flex-col gap-4 transform transition-transform duration-500 ${dlState.type !== null ? 'scale-100 translate-y-0' : 'scale-95 translate-y-8'}`} onClick={e => e.stopPropagation()}>
               <h3 className="text-xl font-bold text-white flex items-center justify-between">
@@ -1133,19 +1162,37 @@ export default function MiniPlayer() {
                 </div>
               </div>
 
+              {dlState.status === "servers" && (
+                <div className="flex flex-col gap-3 py-2">
+                  <p className="text-white/70 text-sm mb-1 text-center font-medium">Select Download Server</p>
+                  <button onClick={() => triggerVideoServer(1)} className="w-full flex items-center justify-between py-3 px-4 rounded-lg bg-[#282828] hover:bg-[#333] transition-colors border border-white/5 active:scale-95 text-white">
+                     <div className="flex items-center gap-2"><Server size={18} className="text-[#1db954]"/> <span className="font-bold">Server 1</span></div><span className="text-xs text-white/50">Standard</span>
+                  </button>
+                  <button onClick={() => triggerVideoServer(2)} className="w-full flex items-center justify-between py-3 px-4 rounded-lg bg-[#282828] hover:bg-[#333] transition-colors border border-white/5 active:scale-95 text-white">
+                     <div className="flex items-center gap-2"><Server size={18} className="text-[#1db954]"/> <span className="font-bold">Server 2</span></div><span className="text-xs text-white/50">Fast</span>
+                  </button>
+                </div>
+              )}
+
               {dlState.status === "verifying" && (<div className="py-6 flex flex-col items-center gap-3"><Loader2 className="animate-spin text-[#1db954]" size={32} /><p className="text-white/70 font-medium text-sm animate-pulse">Verifying You...</p></div>)}
-              {dlState.status === "connecting" && (<div className="py-6 flex flex-col items-center gap-3"><Loader2 className="animate-spin text-[#1db954]" size={32} /><p className="text-white/70 font-medium text-sm animate-pulse">Connecting Server...</p></div>)}
+              {dlState.status === "connecting" && (<div className="py-6 flex flex-col items-center gap-3"><Loader2 className="animate-spin text-[#1db954]" size={32} /><p className="text-white/70 font-medium text-sm animate-pulse">Connecting to Server {dlState.server}...</p></div>)}
               
+              {dlState.status === "downloading" && (
+                <div className="py-6 flex flex-col items-center gap-4">
+                  <div className="w-full bg-[#333] rounded-full h-2 overflow-hidden"><div className="bg-[#1db954] h-2 transition-all duration-300" style={{width: `${dlState.progress}%`}}></div></div>
+                  <p className="text-white font-bold">{dlState.progress}%</p>
+                  <p className="text-white/50 text-xs">Downloading Data...</p>
+                </div>
+              )}
+
+              {dlState.status === "merging" && (<div className="py-6 flex flex-col items-center gap-3"><Loader2 className="animate-spin text-[#1db954]" size={32} /><p className="text-white/70 font-medium text-sm animate-pulse">Merging Video & Audio...</p></div>)}
+
               {dlState.status === "options" && dlState.type === "video" && (
                 <div className="flex flex-col gap-2 max-h-[40vh] overflow-y-auto scrollbar-hide">
-                  <p className="text-xs text-white/50 mb-2">Note: Merging split streams locally requires extra bandwidth. Single file streams are recommended.</p>
+                  <p className="text-xs text-white/50 mb-2">Available perfect video formats containing complete audio.</p>
                   {dlState.options?.map((opt:any, i:number) => (
-                    <button key={i} onClick={() => {
-                        executeDownload(opt.url, `${displayTitle}_${opt.quality}.mp4`);
-                        if(opt.isSplit && opt.audioRef) executeDownload(opt.audioRef.url, `${displayTitle}_Audio.mp4`);
-                    }} className="w-full flex items-center justify-between p-3 rounded-lg bg-[#282828] hover:bg-[#333] transition-colors border border-white/5 active:scale-95 text-left">
-                      <div className="flex flex-col"><span className="text-white font-bold text-sm">{opt.label}</span><span className="text-white/50 text-xs">{opt.size}</span></div>
-                      <Download size={18} className="text-[#1db954]" />
+                    <button key={i} onClick={() => executeBlobDownload(opt.url, `${displayTitle}_${opt.quality}.mp4`, true)} className="w-full flex items-center justify-between p-3 rounded-lg bg-[#282828] hover:bg-[#333] transition-colors border border-white/5 active:scale-95 text-left">
+                      <div className="flex flex-col"><span className="text-white font-bold text-sm">{opt.label}</span><span className="text-white/50 text-xs">{opt.size}</span></div><Download size={18} className="text-[#1db954]" />
                     </button>
                   ))}
                 </div>
@@ -1154,9 +1201,8 @@ export default function MiniPlayer() {
               {dlState.status === "options" && dlState.type === "music" && (
                 <div className="flex flex-col gap-2">
                   <p className="text-xs text-white/50 mb-2">Downloading ID3 embedded files requires backend muxing. Providing raw audio track.</p>
-                  <button onClick={() => executeDownload(audioUrl, `${displayTitle}_Audio.mp3`)} className="w-full flex items-center justify-between p-3 rounded-lg bg-[#282828] hover:bg-[#333] transition-colors border border-white/5 active:scale-95">
-                      <div className="flex flex-col"><span className="text-white font-bold text-sm">Download High Quality</span></div>
-                      <Download size={18} className="text-[#1db954]" />
+                  <button onClick={() => executeBlobDownload(audioUrl, `${displayTitle} - ${displayArtists}.mp3`, false)} className="w-full flex items-center justify-between p-3 rounded-lg bg-[#282828] hover:bg-[#333] transition-colors border border-white/5 active:scale-95">
+                      <div className="flex flex-col"><span className="text-white font-bold text-sm">Download High Quality</span></div><Download size={18} className="text-[#1db954]" />
                   </button>
                 </div>
               )}

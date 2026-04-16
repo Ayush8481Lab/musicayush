@@ -24,7 +24,7 @@ const getCachedAuth = () => {
       const authData = JSON.parse(cached);
       if (Date.now() < (authData.accessTokenExpirationTimestampMs - 10000)) return authData;
     }
-  } catch (e) { console.error("Error reading cache:", e); }
+  } catch (e) {}
   return null;
 };
 
@@ -169,7 +169,7 @@ export default function MiniPlayer() {
   
   const currentTrackRef = useRef<any>(null);
   const maxListenRef = useRef<number>(0);
-  const lastTimeUpdateRef = useRef<number>(0); // Performance Throttle Ref
+  const lastTimeUpdateRef = useRef<number>(0); // Prevents Device Heating
   
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
@@ -182,10 +182,10 @@ export default function MiniPlayer() {
   const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const[lyrics, setLyrics] = useState<any[]>([]);
   const[syncType, setSyncType] = useState<string | null>(null);
-  const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
+  const[activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const[isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
   const[canvasData, setCanvasData] = useState<any>(null);
-  const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
+  const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
@@ -508,7 +508,6 @@ export default function MiniPlayer() {
       // Cascading Audio Engine (Saavn -> Vidser -> CND Proxy)
       if (currentSong.isProFallback && currentSong.ytVideoId) {
          try {
-            // Priority 1 for Pro: Vidser API (Super fast direct links)
             const vidserRes = await fetch(`https://vidser-ayush.vercel.app/api/vid?id=${currentSong.ytVideoId}`);
             if (vidserRes.ok) {
                 const vidserData = await vidserRes.json();
@@ -517,9 +516,8 @@ export default function MiniPlayer() {
                     setAudioUrl(bestAudio.Link); setLoading(false); return;
                 }
             }
-         } catch (e) { console.warn("Vidser failed (Country restricted likely). Falling back to CND proxy."); }
+         } catch (e) {}
 
-         // Priority 2 for Pro: CND API (Proxy bypass)
          try {
             let cndRes = await fetch(`https://serverayush.vercel.app/api/cnd?id=${currentSong.ytVideoId}&v=2&lis=true`);
             if (!cndRes.ok) cndRes = await fetch(`https://serverayush.vercel.app/api/cnd?id=${currentSong.ytVideoId}&v=1&lis=true`);
@@ -533,15 +531,13 @@ export default function MiniPlayer() {
                 
                 if (resolvedUrl) { 
                    setAudioUrl(resolvedUrl); setLoading(false); 
-                   // Force Video Mode and disable Sync because this is proxy fallback
-                   setIsVideoMode(true); setSyncType("UNSYNCED");
+                   setIsVideoMode(true); setSyncType("UNSYNCED"); // Force Unsynced for Proxy Fallbacks!
                    return; 
                 }
             }
-         } catch (e) { console.error("CND Audio Fetch failed"); }
+         } catch (e) {}
       }
 
-      // Priority Standard: JioSaavn API
       try {
         const fetchLink = encodeURIComponent(currentSong.url || currentSong.perma_url || "");
         const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${fetchLink}`);
@@ -589,7 +585,7 @@ export default function MiniPlayer() {
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
-  }, [isVideoMode, duration, upcomingQueue]);
+  },[isVideoMode, duration, upcomingQueue]);
 
   const handlePlayPauseToggle = (e?: any) => {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -642,7 +638,10 @@ export default function MiniPlayer() {
           const lyricsRes = await fetch(`https://lyr-nine.vercel.app/api/lyrics?url=${encodeURIComponent(spotifyUrl)}&format=lrc`);
           if (lyricsRes.ok) {
             const lyricsJson = await lyricsRes.json();
-            if (isCurrent && lyricsJson.lines) { setLyrics(lyricsJson.lines.map((l: any) => ({ time: parseTimeTag(l.timeTag), words: l.words }))); setSyncType(lyricsJson.syncType); }
+            if (isCurrent && lyricsJson.lines) { 
+                setLyrics(lyricsJson.lines.map((l: any) => ({ time: parseTimeTag(l.timeTag), words: l.words }))); 
+                if(!currentSong?.isProFallback) setSyncType(lyricsJson.syncType); // Protect Unsynced Fallbacks!
+            }
           }
         }
         if (isCanvasEnabledRef.current) {
@@ -672,7 +671,7 @@ export default function MiniPlayer() {
         setDominantColor(count > 0 ? `rgb(${Math.floor(r/count)}, ${Math.floor(g/count)}, ${Math.floor(b/count)})` : "rgb(83, 83, 83)");
       } catch (e) { setDominantColor("rgb(30, 30, 30)"); }
     };
-  }, [displayImage]);
+  },[displayImage]);
 
   useEffect(() => {
     if (audioRef.current && audioUrl) {
@@ -690,29 +689,71 @@ export default function MiniPlayer() {
     }
   },[isPlaying, isScrolledPastMain, isCanvasLoaded, isExpanded, showQueue, isVideoMode, isLyricsFullScreen, isCanvasEnabled]);
 
+  const playNext = () => {
+    if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
+    if (repeatMode === 2 && audioRef.current) { audioRef.current.currentTime = 0; const p = audioRef.current.play(); if (p!==undefined) p.catch(()=>{}); return; }
+    if (isShuffle && upcomingQueue.length > 0) {
+      const randomIdx = Math.floor(Math.random() * upcomingQueue.length); const nextSong = upcomingQueue[randomIdx];
+      setUpcomingQueue(prev => prev.filter((_: any, i: number) => i !== randomIdx));
+      setCurrentSong(nextSong); setIsPlaying(true); return;
+    }
+    if (upcomingQueue.length > 0) { 
+      const nextSong = upcomingQueue[0]; setUpcomingQueue(prev => prev.slice(1)); setCurrentSong(nextSong); setIsPlaying(true); 
+    } else if (repeatMode === 1 && queue && queue.length > 0) { setCurrentSong(queue[0]); setIsPlaying(true); } 
+    else { setIsPlaying(false); setProgress(0); }
+  };
+
+  const playPrev = () => {
+    if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
+    if (audioRef.current && audioRef.current.currentTime > 3) { audioRef.current.currentTime = 0; return; }
+    if (historyQueue.length > 0) {
+      const prevSong = historyQueue[0]; setHistoryQueue(prev => prev.slice(1)); setUpcomingQueue(prev => [currentSong, ...prev]);
+      setCurrentSong(prevSong); setIsPlaying(true);
+    } else {
+      if (!queue || queue.length === 0) return;
+      const idx = queue.findIndex((s: any) => s.id === currentSong.id);
+      if (idx > 0) { setCurrentSong(queue[idx - 1]); setIsPlaying(true); }
+    }
+  };
+
+  useEffect(() => { playNextRef.current = playNext; playPrevRef.current = playPrev; isVideoModeRef.current = isVideoMode; },[playNext, playPrev, isVideoMode]);
+
+  // MEDIA SESSION API NOTIFICATION (100% PERFECT)
   const syncPosition = useCallback(() => {
     if ('mediaSession' in navigator && audioRef.current && duration > 0) {
       try { 
          navigator.mediaSession.setPositionState({ duration, playbackRate: 1, position: audioRef.current.currentTime }); 
-         // Force banner refresh if missing
-         if (!navigator.mediaSession.metadata && displayTitle) {
-            navigator.mediaSession.metadata = new MediaMetadata({
-               title: displayTitle, artist: displayArtists, album: playContext?.name || 'App',
-               artwork: displayImage ? [{ src: displayImage, sizes: '512x512', type: 'image/jpeg' }] : []
-            });
-         }
       } catch(e) {}
     }
-  },[duration, displayTitle, displayArtists, displayImage, playContext]);
+  },[duration]);
+
+  useEffect(() => {
+    if ('mediaSession' in navigator && displayTitle) {
+       navigator.mediaSession.metadata = new MediaMetadata({
+          title: displayTitle, artist: displayArtists, album: playContext?.name || 'App',
+          artwork: displayImage ?[{ src: displayImage, sizes: '512x512', type: 'image/jpeg' }] :[]
+       });
+       navigator.mediaSession.setActionHandler('play', () => handlePlayPauseToggle(true));
+       navigator.mediaSession.setActionHandler('pause', () => handlePlayPauseToggle(false));
+       navigator.mediaSession.setActionHandler('previoustrack', () => playPrevRef.current());
+       navigator.mediaSession.setActionHandler('nexttrack', () => playNextRef.current());
+       navigator.mediaSession.setActionHandler('seekto', (details) => {
+          if (details.seekTime && audioRef.current) {
+            audioRef.current.currentTime = details.seekTime;
+            setCurrentTime(details.seekTime);
+            syncPosition();
+          }
+       });
+    }
+  },[displayTitle, displayArtists, displayImage, playContext, currentSong]);
 
   const handleTimeUpdate = () => {
     if (audioRef.current && !isVideoMode) {
       const c = audioRef.current.currentTime; const d = audioRef.current.duration;
       
-      // PERFORMANCE FIX: Throttle UI Updates to every 250ms unless seeking heavily
+      // HEAT FIX: Throttle Updates!
       const now = Date.now();
       if (!isSeekingRef.current && now - lastTimeUpdateRef.current < 250) {
-         // Background Sync for lyrics only without causing React to re-render
          if (isLyricsEnabled && syncType === "LINE_SYNCED" && lyrics.length > 0) {
             let activeIdx = -1;
             for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].time <= c) activeIdx = i; else break; }
@@ -746,18 +787,17 @@ export default function MiniPlayer() {
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
   },[isScrolledPastMain]);
 
-  // TOP-SYNC LYRICS SCROLLING w/ EXACT OFFSET
+  // CARD AND FULLSCREEN SCROLL FIX
   useEffect(() => {
     if (isSeekingRef.current) return; 
     if (activeLyricRef.current && lyricsContainerRef.current) {
       const container = lyricsContainerRef.current; const element = activeLyricRef.current;
-      // Normal Card keeps active line near center-top
-      const scrollPos = isLyricsFullScreen ? element.offsetTop - container.offsetTop - 60 : element.offsetTop - container.offsetTop - (container.clientHeight / 2) + (element.clientHeight / 2);
+      const scrollPos = element.offsetTop - container.offsetTop - 20; // Locks nicely to Top for Card
       container.scrollTo({ top: scrollPos, behavior: 'smooth' });
     }
     if (fullActiveLyricRef.current && fullLyricsContainerRef.current) {
       const container = fullLyricsContainerRef.current; const element = fullActiveLyricRef.current;
-      const scrollPos = element.offsetTop - container.offsetTop - 60; 
+      const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + 40; // Locks to Center for Fullscreen
       container.scrollTo({ top: scrollPos, behavior: 'smooth' });
     }
   },[activeLyricIndex, isLyricsFullScreen]);
@@ -814,35 +854,6 @@ export default function MiniPlayer() {
     dragItem.current = null; dragOverItem.current = null; setDraggedIndex(null); setDropTargetIndex(null);
   };
 
-  const playNext = () => {
-    if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
-    if (repeatMode === 2 && audioRef.current) { audioRef.current.currentTime = 0; const p = audioRef.current.play(); if (p!==undefined) p.catch(()=>{}); return; }
-    if (isShuffle && upcomingQueue.length > 0) {
-      const randomIdx = Math.floor(Math.random() * upcomingQueue.length); const nextSong = upcomingQueue[randomIdx];
-      setUpcomingQueue(prev => prev.filter((_: any, i: number) => i !== randomIdx));
-      setCurrentSong(nextSong); setIsPlaying(true); return;
-    }
-    if (upcomingQueue.length > 0) { 
-      const nextSong = upcomingQueue[0]; setUpcomingQueue(prev => prev.slice(1)); setCurrentSong(nextSong); setIsPlaying(true); 
-    } else if (repeatMode === 1 && queue && queue.length > 0) { setCurrentSong(queue[0]); setIsPlaying(true); } 
-    else { setIsPlaying(false); setProgress(0); }
-  };
-
-  const playPrev = () => {
-    if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
-    if (audioRef.current && audioRef.current.currentTime > 3) { audioRef.current.currentTime = 0; return; }
-    if (historyQueue.length > 0) {
-      const prevSong = historyQueue[0]; setHistoryQueue(prev => prev.slice(1)); setUpcomingQueue(prev => [currentSong, ...prev]);
-      setCurrentSong(prevSong); setIsPlaying(true);
-    } else {
-      if (!queue || queue.length === 0) return;
-      const idx = queue.findIndex((s: any) => s.id === currentSong.id);
-      if (idx > 0) { setCurrentSong(queue[idx - 1]); setIsPlaying(true); }
-    }
-  };
-
-  useEffect(() => { playNextRef.current = playNext; playPrevRef.current = playPrev; isVideoModeRef.current = isVideoMode; syncPositionRef.current = syncPosition; });
-
   const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
   const handleTouchMove = (e: React.TouchEvent) => { const diff = e.touches[0].clientX - touchStartX.current; if (diff > 0 && !showQueue) setSwipeX(diff); };
   const handleTouchEnd = () => { if (swipeX > window.innerWidth * 0.45 && !showQueue) { setCurrentSong(null); setIsPlaying(false); setIsExpanded(false); } setSwipeX(0); };
@@ -870,7 +881,7 @@ export default function MiniPlayer() {
 
       if (isVideoMux) {
          setDlState(prev => ({...prev, status: "merging"}));
-         await new Promise(r => setTimeout(r, 2800)); // Fake realistic UX for perfect single-file Video downloads
+         await new Promise(r => setTimeout(r, 2800)); 
       }
 
       const blob = new Blob(chunks);
@@ -880,38 +891,43 @@ export default function MiniPlayer() {
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setDlState({ type: null, status: "idle" });
     } catch (e) {
-      console.warn("Blob fetch failed (CORS), falling back to raw download", e);
+      console.warn("Blob fetch failed, falling back to raw download", e);
       const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.download = filename; 
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setDlState({ type: null, status: "idle" });
     }
   };
 
-  const handleDownloadMusicInit = () => { setDlState({ type: "music", status: "options" }); setShowSettingsMenu(false); };
+  const handleDownloadMusicInit = () => { 
+      // Natively maps Saavn Audio Qualities flawlessly
+      if (currentSong.downloadUrl && currentSong.downloadUrl.length > 0 && !currentSong.isProFallback) {
+          const opts = currentSong.downloadUrl.map((u:any) => ({ url: u.url, quality: u.quality, label: `${u.quality} Quality` }));
+          setDlState({ type: "music", status: "options", options: opts });
+      } else {
+          setDlState({ type: "music", status: "options" }); 
+      }
+      setShowSettingsMenu(false); 
+  };
   
   const handleDownloadVideoInit = () => { setDlState({ type: "video", status: "servers" }); setShowSettingsMenu(false); };
 
   const triggerVideoServer = async (serverNum: number) => {
     setDlState({ type: "video", status: "verifying", server: serverNum });
-    
     setTimeout(async () => {
       setDlState(prev => prev.type === "video" ? { ...prev, status: "connecting" } : prev);
-      
       try {
         const targetVid = ytVideoId || await prefetchVideoId(displayTitle, displayArtists);
         if (!targetVid) throw new Error("Video not found");
         const res = await fetch(`https://serverayush.vercel.app/api/cnd?id=${targetVid}&v=${serverNum}`);
         const data = await res.json();
         
-        // PERFECT MERGE GUARANTEE: Only show VideoWithAudio formats (already merged)
         const mixed = data.VideoWithAudio ||[];
-        const formatOptions = mixed.map((v:any) => ({ ...v, label: `${v.quality} Video (Merged Audio)`, isMuxed: true }));
-        
+        const formatOptions = mixed.map((v:any) => ({ ...v, label: `${v.quality} Video`, isMuxed: true }));
         setDlState({ type: "video", status: "options", options: formatOptions, server: serverNum });
       } catch (e) {
         alert("Failed to connect to video server. Please try again."); setDlState({ type: null, status: "idle" });
       }
-    }, 6000); // Wait exactly 6 seconds as requested
+    }, 6000);
   };
 
   let albumRoute = `/album/${songDetails?.album?.id || ''}`;
@@ -920,12 +936,16 @@ export default function MiniPlayer() {
   const getFontSizeClass = (isPast: boolean, isFuture: boolean, isFS: boolean) => {
       const s = lyricsFontSize;
       if (isFS) {
-         if (isPast) return s === "Small" ? "text-[22px]" : s === "Large" ? "text-[32px]" : "text-[28px]";
-         if (isFuture) return s === "Small" ? "text-[22px]" : s === "Large" ? "text-[32px]" : "text-[28px]";
+         if (isPast || isFuture) return s === "Small" ? "text-[22px]" : s === "Large" ? "text-[32px]" : "text-[28px]";
          return s === "Small" ? "text-[30px]" : s === "Large" ? "text-[42px]" : "text-[36px]";
       }
       if (isPast || isFuture) return s === "Small" ? "text-[18px]" : s === "Large" ? "text-[28px]" : "text-[24px]";
       return s === "Small" ? "text-[22px]" : s === "Large" ? "text-[32px]" : "text-[28px]";
+  };
+
+  const getMiniFontSize = () => {
+      const s = lyricsFontSize;
+      return s === "Small" ? "text-[15px]" : s === "Large" ? "text-[20px]" : "text-[18px]";
   };
 
   const RenderedLyrics = useMemo(() => {
@@ -936,7 +956,6 @@ export default function MiniPlayer() {
       const isFuture = idx > activeLyricIndex;
       
       const fzClass = getFontSizeClass(isPast, isFuture, isLyricsFullScreen);
-      
       const activeClasses = `text-white ${fzClass} font-black drop-shadow-2xl leading-tight opacity-100`;
       const pastClasses = `text-white/50 ${fzClass} font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2`;
       const futureClasses = `text-black/80 ${fzClass} font-black drop-shadow-md leading-tight opacity-70 translate-y-3`;
@@ -1054,23 +1073,20 @@ export default function MiniPlayer() {
 
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
-              {/* CINEMATIC MINI LYRIC ANIMATION (Exactly 3 Lines Space) */}
-              <div className={`transition-all duration-500 w-full relative mask-edges-vertical ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-4 -translate-y-2 opacity-100 h-[60px] overflow-hidden'}`}>
+              {/* SPOTIFY-STYLE MINI LYRICS (Placed right above title, pure 0.8s slide transition) */}
+              <div className={`transition-all duration-500 w-full relative mask-edges overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-2 h-[34px] opacity-100'}`}>
                 {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics.length > 0 && !isVideoMode && (
                   <div className="relative w-full h-full">
                     {lyrics.map((line: any, idx: number) => {
                        const diff = idx - activeLyricIndex;
-                       // Only render exactly 3 lines (Old, Current, Next) for max performance
-                       if (diff < -1 || diff > 1) return null; 
+                       if (diff < -1 || diff > 1) return null; // Render max 3 lines for performance
                        return (
                           <span key={idx} 
-                                className="absolute left-0 right-0 text-left pr-2 no-select-text font-black drop-shadow-lg line-clamp-2 leading-tight transition-all duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                                className={`absolute left-0 right-0 text-left pr-2 no-select-text font-black drop-shadow-md truncate transition-all duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${getMiniFontSize()}`}
                                 style={{
-                                   // Pushes old behind banner (-35px), Active to Top (0px), New from bottom (+35px)
-                                   transform: `translateY(${diff * 35}px)`,
+                                   transform: `translateY(${diff * 26}px)`,
                                    opacity: diff === 0 ? 1 : 0,
-                                   fontSize: diff === 0 ? '18px' : '15px',
-                                   color: diff === 0 ? 'white' : 'rgba(255,255,255,0.5)',
+                                   color: 'white',
                                    zIndex: diff === 0 ? 10 : 1
                                 }}>
                             {line.words || "♪"}
@@ -1114,7 +1130,6 @@ export default function MiniPlayer() {
             </div>
           </div>
 
-          {/* DYNAMIC HIDING FOR PRO FALLBACKS */}
           <div className={`w-full px-5 pb-24 flex flex-col gap-6 pointer-events-auto transition-opacity duration-500 ${isUiHidden && !isVideoMode ? 'opacity-0 pointer-events-none' : 'opacity-100'} ${isLyricsFullScreen ? 'hidden' : 'block'}`}>
             {isLyricsEnabled && lyrics.length > 0 && !isLyricsFullScreen && (
               <div className="rounded-2xl p-6 w-full mx-auto shadow-2xl relative overflow-hidden transition-colors duration-500 border border-white/10" style={{ backgroundColor: dominantColor }}>
@@ -1259,10 +1274,17 @@ export default function MiniPlayer() {
 
               {dlState.status === "options" && dlState.type === "music" && (
                 <div className="flex flex-col gap-2">
-                  <p className="text-xs text-white/50 mb-2 text-center">Note: Artwork metadata relies on exact MP3 formats. Current pristine stream is extracted natively.</p>
-                  <button onClick={() => executeBlobDownload(audioUrl, `${displayTitle} - ${displayArtists}.mp3`, false)} className="w-full flex items-center justify-between p-3 rounded-lg bg-[#282828] hover:bg-[#333] transition-colors border border-white/5 active:scale-95">
-                      <div className="flex flex-col"><span className="text-white font-bold text-sm">Download Pristine Stream</span></div><Download size={18} className="text-[#1db954]" />
-                  </button>
+                  <p className="text-xs text-white/50 mb-2 text-center">Natively extracted audio directly from stream API.</p>
+                  {dlState.options?.map((opt:any, i:number) => (
+                    <button key={i} onClick={() => executeBlobDownload(opt.url, `${displayTitle} - ${displayArtists}.mp3`, false)} className="w-full flex items-center justify-between p-3 rounded-lg bg-[#282828] hover:bg-[#333] transition-colors border border-white/5 active:scale-95 text-left">
+                        <div className="flex flex-col"><span className="text-white font-bold text-sm">{opt.label}</span></div><Download size={18} className="text-[#1db954]" />
+                    </button>
+                  ))}
+                  {(!dlState.options || dlState.options.length === 0) && (
+                    <button onClick={() => executeBlobDownload(audioUrl, `${displayTitle} - ${displayArtists}.mp3`, false)} className="w-full flex items-center justify-between p-3 rounded-lg bg-[#282828] hover:bg-[#333] transition-colors border border-white/5 active:scale-95 text-left">
+                        <div className="flex flex-col"><span className="text-white font-bold text-sm">Download Raw Stream</span></div><Download size={18} className="text-[#1db954]" />
+                    </button>
+                  )}
                 </div>
               )}
            </div>

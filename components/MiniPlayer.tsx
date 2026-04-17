@@ -1,3 +1,4 @@
+
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -222,7 +223,7 @@ export default function MiniPlayer() {
   } = useAppContext();
   
   const[audioUrl, setAudioUrl] = useState("");
-  const[loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const[progress, setProgress] = useState(0);
   const[currentTime, setCurrentTime] = useState(0);
   const[duration, setDuration] = useState(0);
@@ -231,7 +232,7 @@ export default function MiniPlayer() {
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   const[isUiHidden, setIsUiHidden] = useState(false); 
-  const [isShuffle, setIsShuffle] = useState(false);
+  const[isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
   const[showQueue, setShowQueue] = useState(false);
   
@@ -1039,10 +1040,16 @@ export default function MiniPlayer() {
 
   const handleDownloadMusicInit = () => { 
       if (currentSong.downloadUrl && currentSong.downloadUrl.length > 0 && !currentSong.isProFallback) {
-          const opts = currentSong.downloadUrl.map((u:any) => {
-              const qStr = String(u.quality || "320");
-              return { url: u.url, quality: qStr, label: qStr.includes("kbps") ? qStr : `${qStr}kbps` };
-          }).reverse();
+          // Robust Quality Extractor & Sorter
+          const uniqueMap = new Map();
+          currentSong.downloadUrl.forEach((u: any) => {
+              const qStr = String(u.quality || "").toLowerCase().replace("kbps", "").trim();
+              const qNum = parseInt(qStr) || 128;
+              if (!uniqueMap.has(qNum)) {
+                  uniqueMap.set(qNum, { url: u.url, quality: `${qNum}kbps`, label: `${qNum}kbps`, num: qNum });
+              }
+          });
+          const opts = Array.from(uniqueMap.values()).sort((a, b) => b.num - a.num);
           setDlState({ type: "music", status: "options", options: opts });
       } else {
           setDlState({ type: "music", status: "options" }); 
@@ -1086,7 +1093,7 @@ export default function MiniPlayer() {
 
   const getLineFontSize = () => {
       const s = lineFontSize;
-      return s === "Small" ? "text-[16px]" : s === "Large" ? "text-[22px]" : "text-[19px]";
+      return s === "Small" ? "text-[15px]" : s === "Large" ? "text-[20px]" : "text-[17px]";
   };
 
   const RenderedLyrics = useMemo(() => {
@@ -1214,23 +1221,26 @@ export default function MiniPlayer() {
 
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
-              {/* SINGLE LINE BUTTERFLY LYRICS (Above Title, Centric, Slow 1.2s Animation) */}
-              <div className={`transition-all duration-500 w-full relative overflow-hidden flex items-center justify-center ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 h-[44px]'}`}>
+              {/* SPOTIFY-STYLE BUTTERFLY LYRICS (Min Height, Left Aligned, Multi-line support) */}
+              <div className={`transition-all duration-500 w-full relative overflow-visible flex items-center justify-start ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 min-h-[75px]'}`}>
                 {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics.length > 0 && !isVideoMode && (
-                  <div className="relative w-full h-full flex justify-center items-center">
+                  <div className="relative w-full h-full flex justify-start items-center">
                     {lyrics.map((line: any, idx: number) => {
                        const diff = idx - activeLyricIndex;
-                       if (Math.abs(diff) > 1) return null; // Only keep 3 lines in DOM for transitions
+                       if (Math.abs(diff) > 1) return null; // Only keep exactly 1 active + 1 queued in DOM
                        
                        let transform = '', op = 0;
+                       // Diff 0 = Active Line (Centered)
                        if (diff === 0) { transform = 'translateY(0px) scale(1)'; op = 1; }
-                       else if (diff > 0) { transform = 'translateY(40px) scale(0.9)'; op = 0; } // Comes from bottom (under title)
-                       else { transform = 'translateY(-40px) scale(1.1)'; op = 0; } // Flies upward and fades
+                       // Diff > 0 = Upcoming Line (Waits hidden at bottom)
+                       else if (diff > 0) { transform = 'translateY(35px) scale(0.9)'; op = 0; } 
+                       // Diff < 0 = Past Line (Flies up and fades out)
+                       else { transform = 'translateY(-35px) scale(1.1)'; op = 0; } 
                        
                        return (
                           <span key={idx} 
-                                className={`absolute left-0 right-0 text-center px-2 no-select-text font-extrabold drop-shadow-xl line-clamp-1 leading-tight transition-all duration-[1200ms] ease-[cubic-bezier(0.34,1.15,0.3,1)] ${getLineFontSize()}`}
-                                style={{ transform, opacity: op, color: 'white', zIndex: diff === 0 ? 10 : 1 }}>
+                                className={`absolute left-0 w-full text-left pr-2 no-select-text font-extrabold drop-shadow-xl leading-snug transition-all duration-[1200ms] ease-[cubic-bezier(0.34,1.15,0.3,1)] ${getLineFontSize()}`}
+                                style={{ transform, opacity: op, color: 'white', zIndex: diff === 0 ? 10 : 1, transformOrigin: 'left center' }}>
                             {line.words || "♪"}
                           </span>
                        );

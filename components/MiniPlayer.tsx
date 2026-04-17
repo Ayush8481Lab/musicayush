@@ -232,7 +232,7 @@ export default function MiniPlayer() {
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   const[isUiHidden, setIsUiHidden] = useState(false); 
-  const[isShuffle, setIsShuffle] = useState(false);
+  const [isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
   const[showQueue, setShowQueue] = useState(false);
   
@@ -264,7 +264,6 @@ export default function MiniPlayer() {
   const playNextRef = useRef<() => void>(() => {});
   const playPrevRef = useRef<() => void>(() => {});
   const isVideoModeRef = useRef<boolean>(false);
-  const syncPositionRef = useRef<() => void>(() => {});
   const[swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -718,7 +717,7 @@ export default function MiniPlayer() {
     };
     fetchExtras();
     return () => { isCurrent = false; };
-  }, [spotifyId, spotifyUrl]);
+  },[spotifyId, spotifyUrl]);
 
   useEffect(() => {
     if (!displayImage) return;
@@ -786,10 +785,20 @@ export default function MiniPlayer() {
 
   // MEDIA SESSION API (Perfect Native Notification Links)
   const syncPosition = useCallback(() => {
-    if ('mediaSession' in navigator && audioRef.current && duration > 0) {
-      try { navigator.mediaSession.setPositionState({ duration, playbackRate: 1, position: audioRef.current.currentTime }); } catch(e) {}
+    if ('mediaSession' in navigator && audioRef.current) {
+      const d = audioRef.current.duration;
+      const c = audioRef.current.currentTime;
+      if (d > 0 && c >= 0 && c <= d && !isNaN(d) && !isNaN(c)) {
+        try { 
+           navigator.mediaSession.setPositionState({ 
+             duration: d, 
+             playbackRate: audioRef.current.playbackRate || 1, 
+             position: c 
+           }); 
+        } catch(e) {}
+      }
     }
-  },[duration]);
+  },[]);
 
   useEffect(() => {
     if ('mediaSession' in navigator && displayTitle) {
@@ -817,6 +826,12 @@ export default function MiniPlayer() {
     }
   },[displayTitle, displayArtists, displayImage, playContext, currentSong]);
 
+  useEffect(() => {
+    if ('mediaSession' in navigator) {
+       navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    }
+  }, [isPlaying]);
+
   const handleTimeUpdate = () => {
     if (audioRef.current && !isVideoMode) {
       const c = audioRef.current.currentTime; const d = audioRef.current.duration;
@@ -838,7 +853,6 @@ export default function MiniPlayer() {
         const currentPercent = (c / d) * 100;
         setProgress(currentPercent);
         if (currentPercent > maxListenRef.current) maxListenRef.current = currentPercent;
-        if (duration === 0) syncPosition();
       }
 
       if (c > 0 && Math.abs(c - (parseFloat(localStorage.getItem('last_session_time')||'0'))) > 2) localStorage.setItem('last_session_time', c.toString());
@@ -865,7 +879,7 @@ export default function MiniPlayer() {
     }
     if (fullActiveLyricRef.current && fullLyricsContainerRef.current) {
       const container = fullLyricsContainerRef.current; const element = fullActiveLyricRef.current;
-      const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + 40; 
+      const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + 60; 
       container.scrollTo({ top: scrollPos, behavior: 'smooth' });
     }
   },[activeLyricIndex, isLyricsFullScreen]);
@@ -1040,7 +1054,7 @@ export default function MiniPlayer() {
 
   const handleDownloadMusicInit = () => { 
       if (currentSong.downloadUrl && currentSong.downloadUrl.length > 0 && !currentSong.isProFallback) {
-          // Robust Quality Extractor & Sorter
+          // Dynamic Extractor: Gets all qualities natively from Saavn Array
           const uniqueMap = new Map();
           currentSong.downloadUrl.forEach((u: any) => {
               const qStr = String(u.quality || "").toLowerCase().replace("kbps", "").trim();
@@ -1049,6 +1063,7 @@ export default function MiniPlayer() {
                   uniqueMap.set(qNum, { url: u.url, quality: `${qNum}kbps`, label: `${qNum}kbps`, num: qNum });
               }
           });
+          // Sort Highest to Lowest (e.g. 320, 160, 96, 48, 12)
           const opts = Array.from(uniqueMap.values()).sort((a, b) => b.num - a.num);
           setDlState({ type: "music", status: "options", options: opts });
       } else {
@@ -1093,7 +1108,7 @@ export default function MiniPlayer() {
 
   const getLineFontSize = () => {
       const s = lineFontSize;
-      return s === "Small" ? "text-[15px]" : s === "Large" ? "text-[20px]" : "text-[17px]";
+      return s === "Small" ? "text-[14px]" : s === "Large" ? "text-[20px]" : "text-[16px]";
   };
 
   const RenderedLyrics = useMemo(() => {
@@ -1170,7 +1185,12 @@ export default function MiniPlayer() {
       `}} />
 
       <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} 
-        onLoadedMetadata={() => { setDuration(audioRef.current?.duration || 0); if (restoreTimeRef.current !== null && restoreTimeRef.current > 0) { audioRef.current!.currentTime = restoreTimeRef.current; setCurrentTime(restoreTimeRef.current); restoreTimeRef.current = null; } }} 
+        onLoadedMetadata={() => { 
+           const dur = audioRef.current?.duration || 0;
+           setDuration(dur); 
+           if (restoreTimeRef.current !== null && restoreTimeRef.current > 0) { audioRef.current!.currentTime = restoreTimeRef.current; setCurrentTime(restoreTimeRef.current); restoreTimeRef.current = null; } 
+           syncPosition();
+        }} 
       />
 
       <div className={`fixed inset-0 z-[99999] text-white transition-all duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0 opacity-100 overflow-hidden" : "translate-y-full opacity-0 pointer-events-none"}`}>
@@ -1221,8 +1241,8 @@ export default function MiniPlayer() {
 
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
-              {/* SPOTIFY-STYLE BUTTERFLY LYRICS (Min Height, Left Aligned, Multi-line support) */}
-              <div className={`transition-all duration-500 w-full relative overflow-visible flex items-center justify-start ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 min-h-[75px]'}`}>
+              {/* SPOTIFY-STYLE BUTTERFLY LYRICS (Min Height, Left Aligned, Multi-line wrapping support) */}
+              <div className={`transition-all duration-500 w-full relative overflow-hidden flex items-center justify-start mask-edges-vertical ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 min-h-[75px]'}`}>
                 {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics.length > 0 && !isVideoMode && (
                   <div className="relative w-full h-full flex justify-start items-center">
                     {lyrics.map((line: any, idx: number) => {
@@ -1239,7 +1259,7 @@ export default function MiniPlayer() {
                        
                        return (
                           <span key={idx} 
-                                className={`absolute left-0 w-full text-left pr-2 no-select-text font-extrabold drop-shadow-xl leading-snug transition-all duration-[1200ms] ease-[cubic-bezier(0.34,1.15,0.3,1)] ${getLineFontSize()}`}
+                                className={`absolute left-0 w-full text-left pr-2 no-select-text font-extrabold drop-shadow-xl leading-snug transition-all duration-[1500ms] ease-[cubic-bezier(0.25,1,0.5,1)] ${getLineFontSize()}`}
                                 style={{ transform, opacity: op, color: 'white', zIndex: diff === 0 ? 10 : 1, transformOrigin: 'left center' }}>
                             {line.words || "♪"}
                           </span>

@@ -1,3 +1,4 @@
+
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -231,7 +232,7 @@ export default function MiniPlayer() {
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   const[isUiHidden, setIsUiHidden] = useState(false); 
-  const [isShuffle, setIsShuffle] = useState(false);
+  const[isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
   const[showQueue, setShowQueue] = useState(false);
   
@@ -284,7 +285,8 @@ export default function MiniPlayer() {
   const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   
   const[selectedQuality, setSelectedQuality] = useState("320");
-  const[lyricsFontSize, setLyricsFontSize] = useState("Medium");
+  const[lineFontSize, setLineFontSize] = useState("Medium");
+  const[cardFontSize, setCardFontSize] = useState("Medium");
   const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
   const[isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const restoreTimeRef = useRef<number | null>(null);
@@ -339,7 +341,8 @@ export default function MiniPlayer() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
        const q = localStorage.getItem('audio_quality'); if (q) setSelectedQuality(q);
-       const fz = localStorage.getItem('lyrics_font_size'); if (fz) setLyricsFontSize(fz);
+       const lf = localStorage.getItem('line_font_size'); if (lf) setLineFontSize(lf);
+       const cf = localStorage.getItem('card_font_size'); if (cf) setCardFontSize(cf);
        const c = localStorage.getItem('canvas_enabled'); if (c !== null) { setIsCanvasEnabled(c === 'true'); isCanvasEnabledRef.current = c === 'true'; }
        const l = localStorage.getItem('lyrics_enabled'); if (l !== null) { setIsLyricsEnabled(l === 'true'); isLyricsEnabledRef.current = l === 'true'; }
 
@@ -477,7 +480,7 @@ export default function MiniPlayer() {
     if (currentSong.ytVideoId || currentSong.prefetchedYtId) {
       prefetchedYtIdRef.current = currentSong.ytVideoId || currentSong.prefetchedYtId;
       setYtVideoId(prefetchedYtIdRef.current);
-      if (isVideoMode) { setIsVideoLoading(true); videoStartTimeRef.current = 0; setIsVideoLoading(false); }
+      // NOTE: Intentionally keeping it in Audio mode unless the user explicitly flips. Proxy fallbacks trigger it later.
     } else {
       setIsVideoLoading(isVideoMode); videoStartTimeRef.current = 0;
       prefetchVideoId(instantTitle, instantArtists).then((vid) => {
@@ -562,7 +565,7 @@ export default function MiniPlayer() {
     }
   }, [queue]); 
 
-  // AUDIO URL FETCH ENGINE (Vidser -> Cnd -> Saavn)
+  // AUDIO URL FETCH ENGINE
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true;
@@ -595,7 +598,7 @@ export default function MiniPlayer() {
                 
                 if (resolvedUrl) { 
                    setAudioUrl(resolvedUrl); setLoading(false); 
-                   setIsVideoMode(true); setSyncType("UNSYNCED"); // Bypass restricted audio safely
+                   setIsVideoMode(true); setSyncType("UNSYNCED");
                    return; 
                 }
             }
@@ -716,7 +719,7 @@ export default function MiniPlayer() {
     };
     fetchExtras();
     return () => { isCurrent = false; };
-  },[spotifyId, spotifyUrl]);
+  }, [spotifyId, spotifyUrl]);
 
   useEffect(() => {
     if (!displayImage) return;
@@ -863,7 +866,7 @@ export default function MiniPlayer() {
     }
     if (fullActiveLyricRef.current && fullLyricsContainerRef.current) {
       const container = fullLyricsContainerRef.current; const element = fullActiveLyricRef.current;
-      const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + 40; 
+      const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight * 0.6); 
       container.scrollTo({ top: scrollPos, behavior: 'smooth' });
     }
   },[activeLyricIndex, isLyricsFullScreen]);
@@ -931,7 +934,7 @@ export default function MiniPlayer() {
       await loadLameJS();
       setDlState(prev => ({...prev, packStep: "Downloading Media...", progress: 10}));
       
-      const [audioResp, imgResp] = await Promise.all([
+      const[audioResp, imgResp] = await Promise.all([
           fetch(url), fetch(displayImage || "https://via.placeholder.com/500")
       ]);
       const audioFileBuffer = await audioResp.arrayBuffer();
@@ -1078,8 +1081,8 @@ export default function MiniPlayer() {
   let albumRoute = `/album/${songDetails?.album?.id || ''}`;
   if (songDetails?.album?.url) { const match = songDetails.album.url.match(/\/album\/([^\/]+\/[^\/?]+)/); if (match) albumRoute = `/album/${match[1]}`; }
 
-  const getFontSizeClass = (isPast: boolean, isFuture: boolean, isFS: boolean) => {
-      const s = lyricsFontSize;
+  const getCardFontSizeClass = (isPast: boolean, isFuture: boolean, isFS: boolean) => {
+      const s = cardFontSize;
       if (isFS) {
          if (isPast || isFuture) return s === "Small" ? "text-[22px]" : s === "Large" ? "text-[32px]" : "text-[28px]";
          return s === "Small" ? "text-[30px]" : s === "Large" ? "text-[42px]" : "text-[36px]";
@@ -1088,9 +1091,9 @@ export default function MiniPlayer() {
       return s === "Small" ? "text-[22px]" : s === "Large" ? "text-[32px]" : "text-[28px]";
   };
 
-  const getMiniFontSize = () => {
-      const s = lyricsFontSize;
-      return s === "Small" ? "text-[15px]" : s === "Large" ? "text-[20px]" : "text-[18px]";
+  const getLineFontSize = () => {
+      const s = lineFontSize;
+      return s === "Small" ? "text-[14px]" : s === "Large" ? "text-[20px]" : "text-[16px]";
   };
 
   const RenderedLyrics = useMemo(() => {
@@ -1100,7 +1103,7 @@ export default function MiniPlayer() {
       const isPast = idx < activeLyricIndex;
       const isFuture = idx > activeLyricIndex;
       
-      const fzClass = getFontSizeClass(isPast, isFuture, isLyricsFullScreen);
+      const fzClass = getCardFontSizeClass(isPast, isFuture, isLyricsFullScreen);
       const activeClasses = `text-white ${fzClass} font-black drop-shadow-2xl leading-tight opacity-100`;
       const pastClasses = `text-white/50 ${fzClass} font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2`;
       const futureClasses = `text-black/80 ${fzClass} font-black drop-shadow-md leading-tight opacity-70 translate-y-3`;
@@ -1109,7 +1112,7 @@ export default function MiniPlayer() {
         <p key={idx} ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} onClick={() => handleLyricClick(line.time)} className={`cursor-pointer transition-all duration-[800ms] ease-out origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`}>{line.words || '♪'}</p>
       )
     });
-  },[lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled, lyricsFontSize]);
+  },[lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled, cardFontSize]);
 
   const RenderedArtists = useMemo(() => {
     return uniqueArtists.map((artist: any) => {
@@ -1218,33 +1221,37 @@ export default function MiniPlayer() {
 
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
-              {/* SPOTIFY-STYLE PREMIUM MINI LYRICS (3 Lines, 1.3s Custom Bezier Push/Pull) */}
-              <div className={`transition-all duration-500 w-full relative mask-edges-vertical overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 h-[80px]'}`}>
+              {/* SPOTIFY-STYLE PREMIUM MINI LYRICS (No Overlaps, Exact Anchor Sync, 1.3s Slide) */}
+              <div className={`transition-all duration-500 w-full relative mask-edges-vertical overflow-hidden flex items-center ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 h-[100px]'}`}>
                 {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics.length > 0 && !isVideoMode && (
-                  <div className="relative w-full h-full flex flex-col justify-center">
+                  <div className="relative w-full h-full flex justify-center items-center">
                     {lyrics.map((line: any, idx: number) => {
                        const diff = idx - activeLyricIndex;
                        if (diff < -1 || diff > 1) return null; 
                        
                        const timeToPlay = line.time - currentTime;
-                       // Pull upcoming line early by 0.7s, push past line away naturally
-                       const isUpcomingReady = diff === 1 && timeToPlay <= 0.7 && timeToPlay > -0.1;
+                       const isUpcomingReady = diff === 1 && timeToPlay <= 0.7; // Pulls exactly 0.7s before note hits
 
-                       let yPos = 0, scale = 1, op = 0;
-                       if (diff < 0) { yPos = -10; scale = 0.85; op = 0; } // Pushed line hides up
-                       else if (diff === 0) { yPos = 25; scale = 1; op = 1; } // Active line
-                       else { yPos = isUpcomingReady ? 65 : 100; scale = 0.9; op = isUpcomingReady ? 0.4 : 0; } // Pulled line waits ready
+                       // Exact Flow Anchors (Prevents Multi-line Overlaps)
+                       let alignment: any = {}, transform = '', op = 0;
+                       if (diff < 0) { 
+                           alignment = { top: 0 }; 
+                           transform = 'translateY(-10px) scale(0.85)'; 
+                           op = 0; 
+                       } else if (diff === 0) { 
+                           alignment = { top: '50%', marginTop: '-14px' }; // Center Anchor
+                           transform = 'translateY(-50%) scale(1)'; 
+                           op = 1; 
+                       } else { 
+                           alignment = { bottom: 0 }; 
+                           transform = isUpcomingReady ? 'translateY(0px) scale(0.9)' : 'translateY(20px) scale(0.9)'; 
+                           op = isUpcomingReady ? 0.4 : 0; 
+                       }
 
                        return (
                           <span key={idx} 
-                                className={`absolute left-0 right-0 text-left pr-2 no-select-text font-black drop-shadow-lg line-clamp-2 leading-tight transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${getMiniFontSize()}`}
-                                style={{
-                                   transform: `translateY(${yPos}px) scale(${scale})`,
-                                   opacity: op,
-                                   color: diff === 0 ? 'white' : 'rgba(255,255,255,0.6)',
-                                   zIndex: diff === 0 ? 10 : 1,
-                                   transformOrigin: 'left top'
-                                }}>
+                                className={`absolute left-0 right-0 text-left pr-2 no-select-text font-black drop-shadow-lg line-clamp-3 leading-tight transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${getLineFontSize()}`}
+                                style={{ ...alignment, transform, opacity: op, color: diff === 0 ? 'white' : 'rgba(255,255,255,0.5)', zIndex: diff === 0 ? 10 : 1, transformOrigin: 'left center' }}>
                             {line.words || "♪"}
                           </span>
                        );
@@ -1327,7 +1334,7 @@ export default function MiniPlayer() {
         {/* --- SETTINGS MENU --- */}
         <div className={`absolute inset-0 z-[100000] bg-black/60 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto ${showSettingsMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowSettingsMenu(false)}>
           <div className={`absolute bottom-0 left-0 w-full bg-[#121212] rounded-t-[28px] transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] shadow-2xl border-t border-white/10 ${showSettingsMenu ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}>
-             <div className="px-6 pt-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] flex flex-col gap-6">
+             <div className="px-6 pt-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] flex flex-col gap-6 max-h-[85vh] overflow-y-auto scrollbar-hide">
                 <div className="flex items-center justify-between"><h3 className="text-white font-extrabold text-[22px] flex items-center gap-2"><Settings2 size={24}/> Settings</h3><button onClick={() => setShowSettingsMenu(false)} className="text-white/60 p-2 hover:text-white bg-white/5 rounded-full"><ChevronDown size={20} /></button></div>
 
                 <div className="flex flex-col gap-3">
@@ -1357,20 +1364,36 @@ export default function MiniPlayer() {
                 <div className="flex flex-col gap-3">
                    <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Lyrics & Visuals</span>
                    <div className="flex flex-col bg-[#1e1e1e] rounded-[16px] overflow-hidden">
+                      
                       <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
                         <span className="text-white font-bold text-[15px]">Show Lyrics</span>
                         <button onClick={() => { setIsLyricsEnabled(!isLyricsEnabled); localStorage.setItem('lyrics_enabled', (!isLyricsEnabled).toString()); }} className={`w-11 h-[26px] rounded-full relative transition-colors duration-300 flex items-center ${isLyricsEnabled ? 'bg-[#1db954]' : 'bg-[#535353]'}`}><div className={`w-[22px] h-[22px] bg-white rounded-full absolute shadow-md transition-transform duration-300 ${isLyricsEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} /></button>
                       </div>
+                      
                       {isLyricsEnabled && (
-                        <div className="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-black/10">
-                          <span className="text-white/70 font-medium text-[13px]">Font Size</span>
-                          <div className="flex bg-white/5 rounded-lg p-1">
-                            {['Small', 'Medium', 'Large'].map(sz => (
-                              <button key={sz} onClick={() => { setLyricsFontSize(sz); localStorage.setItem('lyrics_font_size', sz); }} className={`px-3 py-1 rounded-md text-[12px] font-bold transition-all ${lyricsFontSize === sz ? 'bg-white/20 text-white shadow-sm' : 'text-white/50 hover:text-white'}`}>{sz}</button>
-                            ))}
+                        <div className="flex flex-col gap-4 px-5 py-4 border-b border-white/5 bg-black/10">
+                          <span className="text-white/70 font-bold text-[13px] tracking-wide uppercase">Font Sizes</span>
+                          
+                          <div className="flex items-center justify-between">
+                            <span className="text-white/50 text-[13px] font-medium">Above Title (Mini)</span>
+                            <div className="flex bg-white/5 rounded-lg p-1">
+                              {['Small', 'Medium', 'Large'].map(sz => (
+                                <button key={`line-${sz}`} onClick={() => { setLineFontSize(sz); localStorage.setItem('line_font_size', sz); }} className={`px-3 py-1 rounded-md text-[12px] font-bold transition-all ${lineFontSize === sz ? 'bg-white/20 text-white shadow-sm' : 'text-white/50 hover:text-white'}`}>{sz}</button>
+                              ))}
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center justify-between">
+                            <span className="text-white/50 text-[13px] font-medium">Card / Fullscreen</span>
+                            <div className="flex bg-white/5 rounded-lg p-1">
+                              {['Small', 'Medium', 'Large'].map(sz => (
+                                <button key={`card-${sz}`} onClick={() => { setCardFontSize(sz); localStorage.setItem('card_font_size', sz); }} className={`px-3 py-1 rounded-md text-[12px] font-bold transition-all ${cardFontSize === sz ? 'bg-white/20 text-white shadow-sm' : 'text-white/50 hover:text-white'}`}>{sz}</button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       )}
+
                       <div className="flex items-center justify-between px-5 py-4">
                         <span className="text-white font-bold text-[15px]">Show Canvas</span>
                         <button onClick={() => { setIsCanvasEnabled(!isCanvasEnabled); localStorage.setItem('canvas_enabled', (!isCanvasEnabled).toString()); }} className={`w-11 h-[26px] rounded-full relative transition-colors duration-300 flex items-center ${isCanvasEnabled ? 'bg-[#1db954]' : 'bg-[#535353]'}`}><div className={`w-[22px] h-[22px] bg-white rounded-full absolute shadow-md transition-transform duration-300 ${isCanvasEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} /></button>

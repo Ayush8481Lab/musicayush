@@ -1,3 +1,4 @@
+
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -124,7 +125,7 @@ const performMatching = (apiData: any, targetTrack: string, targetArtist: string
 
 // --- DYNAMIC QUALITY GENERATOR ---
 const generateAllQualities = (baseUrls: any[]) => {
-  if (!baseUrls || baseUrls.length === 0) return [];
+  if (!baseUrls || baseUrls.length === 0) return[];
   const sampleUrl = baseUrls[0].url || "";
   const match = sampleUrl.match(/_(\d+)\.(mp4|m4a|mp3|aac)/i);
   if (match) {
@@ -205,8 +206,8 @@ const loadLameJS = () => new Promise((resolve, reject) => {
   document.head.appendChild(script);
 });
 
-// --- MARQUEE TEXT REWRITE (Flawless Scrolling) ---
-const MarqueeText = ({ text, className = "" }: { text: string, className?: string }) => {
+// --- FLICKER-FREE MEMOIZED MARQUEE ---
+const MarqueeText = React.memo(({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
   const[isOverflowing, setIsOverflowing] = useState(false);
@@ -231,7 +232,8 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
       </div>
     </div>
   );
-};
+});
+MarqueeText.displayName = 'MarqueeText';
 
 export default function MiniPlayer() {
   const { 
@@ -241,17 +243,17 @@ export default function MiniPlayer() {
   } = useAppContext();
   
   const [audioUrl, setAudioUrl] = useState("");
-  const [loading, setLoading] = useState(false);
+  const[loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const[isExpanded, setIsExpanded] = useState(false);
   const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   const[isUiHidden, setIsUiHidden] = useState(false); 
   const [isShuffle, setIsShuffle] = useState(false);
-  const [repeatMode, setRepeatMode] = useState(0); 
+  const[repeatMode, setRepeatMode] = useState(0); 
   const[showQueue, setShowQueue] = useState(false);
   
   // Advanced Touch Drag Queue Setup
@@ -283,6 +285,8 @@ export default function MiniPlayer() {
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
   const fullLyricsContainerRef = useRef<HTMLDivElement>(null);
   const fullActiveLyricRef = useRef<HTMLParagraphElement>(null);
+  const miniActiveLyricRef = useRef<HTMLDivElement>(null);
+  
   const canvasVideoRef = useRef<HTMLVideoElement>(null);
   const playNextRef = useRef<() => void>(() => {});
   const playPrevRef = useRef<() => void>(() => {});
@@ -290,11 +294,12 @@ export default function MiniPlayer() {
   const[swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const queueContainerRef = useRef<HTMLDivElement>(null);
   const isSeekingRef = useRef(false);
   const[songDetails, setSongDetails] = useState<any>(null);
 
   const [isVideoMode, setIsVideoMode] = useState(false);
-  const [ytVideoId, setYtVideoId] = useState<string | null>(null);
+  const[ytVideoId, setYtVideoId] = useState<string | null>(null);
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const iframeInitialTimeRef = useRef<number>(0); 
   const videoStartTimeRef = useRef<number>(0);    
@@ -306,12 +311,13 @@ export default function MiniPlayer() {
   const [isSessionRestored, setIsSessionRestored] = useState(false);
   const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   
-  const [selectedQuality, setSelectedQuality] = useState("320");
+  const[selectedQuality, setSelectedQuality] = useState("320");
   const [lineFontSize, setLineFontSize] = useState("Medium");
   const [cardFontSize, setCardFontSize] = useState("Medium");
   const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
   const [isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const [isWordSyncEnabled, setIsWordSyncEnabled] = useState(true);
+  const [isMiniWordSyncEnabled, setIsMiniWordSyncEnabled] = useState(true); // Above title toggle
   const restoreTimeRef = useRef<number | null>(null);
 
   const isCanvasEnabledRef = useRef(true);
@@ -390,6 +396,7 @@ export default function MiniPlayer() {
        const c = localStorage.getItem('canvas_enabled'); if (c !== null) { setIsCanvasEnabled(c === 'true'); isCanvasEnabledRef.current = c === 'true'; }
        const l = localStorage.getItem('lyrics_enabled'); if (l !== null) { setIsLyricsEnabled(l === 'true'); isLyricsEnabledRef.current = l === 'true'; }
        const ws = localStorage.getItem('word_sync_enabled'); if (ws !== null) setIsWordSyncEnabled(ws === 'true');
+       const mws = localStorage.getItem('mini_word_sync_enabled'); if (mws !== null) setIsMiniWordSyncEnabled(mws === 'true');
 
        const storedSong = localStorage.getItem('last_session_song');
        if (storedSong && !currentSong && !isSessionRestored) {
@@ -562,7 +569,8 @@ export default function MiniPlayer() {
       try {
          const auth = await getAuthData();
          if (auth && auth.accessToken) {
-             const authRes = await fetch(`https://ak47ayush.vercel.app/search?q=${encodeURIComponent(query)}&CID=${auth.clientId}&token=${auth.accessToken}&limit=5&offset=0`);
+             // 1. Fetch AK47 (Limit 25 priority)
+             const authRes = await fetch(`https://ak47ayush.vercel.app/search?q=${encodeURIComponent(query)}&CID=${auth.clientId}&token=${auth.accessToken}&limit=25&offset=0`);
              if (authRes.ok) {
                  const authJson = await authRes.json();
                  if (Array.isArray(authJson) && authJson.length > 0) {
@@ -571,13 +579,14 @@ export default function MiniPlayer() {
                         const sId = match.spotify_url?.split('/track/')[1]?.split('?')[0] || match.id;
                         setSpotifyId(sId); setSpotifyUrl(match.spotify_url || `https://open.spotify.com/track/${sId}`);
                         if (typeof window !== "undefined") { localStorage.setItem(cacheKey, match.spotify_url); localStorage.setItem(cacheKey + '_id', sId); }
-                        return;
+                        return; // Found match via primary, exit.
                      }
                  }
              }
          }
       } catch (e) {}
 
+      // 2. Fallback to RapidAPI only if AK47 failed or found zero match
       const searchUrl = `https://${RAPID_API_HOST}/search?q=${encodeURIComponent(query)}&type=tracks&offset=0&limit=25&numberOfTopResults=5`;
       for (let attempt = 0; attempt < RAPID_KEYS.length; attempt++) {
         try {
@@ -962,9 +971,9 @@ export default function MiniPlayer() {
             const rawProgress = duration > 0 ? (elapsed / duration) * 100 : 100;
             const boundedProgress = Math.max(0, Math.min(100, rawProgress));
 
-            const processContainer = (container: HTMLElement | null) => {
-                if (!container) return;
-                const words = container.querySelectorAll('.lyric-word') as NodeListOf<HTMLElement>;
+            const processContainer = (container: HTMLElement | null, selector: string, activeSyncEnabled: boolean) => {
+                if (!container || !activeSyncEnabled) return;
+                const words = container.querySelectorAll(selector) as NodeListOf<HTMLElement>;
                 if (!words.length) return;
                 
                 let totalChars = 0;
@@ -1000,8 +1009,9 @@ export default function MiniPlayer() {
                 });
             };
 
-            processContainer(fullActiveLyricRef.current);
-            processContainer(activeLyricRef.current);
+            processContainer(fullActiveLyricRef.current, '.lyric-word', isWordSyncEnabled);
+            processContainer(activeLyricRef.current, '.lyric-word', isWordSyncEnabled);
+            processContainer(miniActiveLyricRef.current, '.lyric-word-mini', isMiniWordSyncEnabled);
         }
         if (isPlaying) animationFrameId = requestAnimationFrame(updateProgress);
     };
@@ -1010,7 +1020,7 @@ export default function MiniPlayer() {
     else updateProgress();
 
     return () => { if (animationFrameId) cancelAnimationFrame(animationFrameId); };
-  },[isWordSyncEnabled, isLyricsEnabled, isVideoMode, activeLyricIndex, lyrics, isPlaying]);
+  },[isWordSyncEnabled, isMiniWordSyncEnabled, isLyricsEnabled, isVideoMode, activeLyricIndex, lyrics, isPlaying]);
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
@@ -1075,7 +1085,18 @@ export default function MiniPlayer() {
     e.preventDefault(); 
     const clientY = 'touches' in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
     setDragState(prev => ({ ...prev, currentY: clientY }));
-  }, [dragState.activeIndex]);
+
+    // Auto-scroll queue when dragged near top/bottom edges
+    if (queueContainerRef.current) {
+        const container = queueContainerRef.current;
+        const rect = container.getBoundingClientRect();
+        if (clientY < rect.top + 80) {
+            container.scrollTop -= 15;
+        } else if (clientY > rect.bottom - 80) {
+            container.scrollTop += 15;
+        }
+    }
+  },[dragState.activeIndex]);
 
   const handleDragEnd = useCallback(() => {
     if (dragState.activeIndex !== null) {
@@ -1288,6 +1309,40 @@ export default function MiniPlayer() {
 
   const showTinyBanner = ((isCanvasLoaded && isCanvasEnabled && !isVideoMode && !isLyricsFullScreen) || isVideoMode || isLyricsFullScreen);
 
+  // MEMOIZED FLICKER-FREE LYRICS ABOVE TITLE
+  const RenderedMiniLyrics = useMemo(() => {
+    if (!isLyricsEnabled || isLyricsFullScreen || syncType !== "LINE_SYNCED" || lyrics.length === 0 || isVideoMode) return null;
+    return (
+       <div className="relative w-full h-full flex justify-start items-center">
+         {lyrics.map((line: any, idx: number) => {
+            const diff = idx - activeLyricIndex;
+            if (Math.abs(diff) > 1) return null;
+            
+            let transform = '', op = 0;
+            if (diff === 0) { transform = 'translateY(0px) scale(1)'; op = 1; }
+            else if (diff > 0) { transform = 'translateY(35px) scale(0.9)'; op = 0; } 
+            else { return null; } 
+            
+            return (
+               <div key={idx} 
+                     ref={diff === 0 ? miniActiveLyricRef : null}
+                     className={`absolute left-0 w-full text-left pr-2 no-select-text font-extrabold drop-shadow-xl leading-snug transition-all duration-[1500ms] ease-[cubic-bezier(0.25,1,0.5,1)] ${getLineFontSize()}`}
+                     style={{ transform, opacity: op, color: 'white', zIndex: diff === 0 ? 10 : 1, transformOrigin: 'left center' }}>
+                 {isMiniWordSyncEnabled ? (
+                     (line.words || '♪').split(' ').map((word: string, wIdx: number, arr: any[]) => (
+                         <span key={wIdx} className="lyric-word-mini inline">{word}{wIdx < arr.length - 1 ? ' ' : ''}</span>
+                     ))
+                 ) : (
+                     line.words || "♪"
+                 )}
+               </div>
+            );
+         })}
+       </div>
+    );
+  },[lyrics, activeLyricIndex, isLyricsEnabled, isLyricsFullScreen, syncType, isVideoMode, isMiniWordSyncEnabled, lineFontSize]);
+
+
   const RenderedLyrics = useMemo(() => {
     if (!isLyricsEnabled) return null;
     return lyrics.map((line: any, idx: number) => {
@@ -1419,6 +1474,9 @@ export default function MiniPlayer() {
   return (
     <>
       <style dangerouslySetInnerHTML={{__html: `
+        * { -webkit-tap-highlight-color: transparent; }
+        .player-root { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
+        img, video, canvas { pointer-events: none; -webkit-touch-callout: none; user-select: none; }
         @keyframes spotify-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
         .animate-spotify-marquee { animation: spotify-marquee 12s linear infinite; display: inline-block; white-space: nowrap; }
         .mask-edges { mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); }
@@ -1442,7 +1500,7 @@ export default function MiniPlayer() {
         }} 
       />
 
-      <div className={`fixed inset-0 z-[99999] text-white transition-all duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0 opacity-100 overflow-hidden" : "translate-y-full opacity-0 pointer-events-none"}`}>
+      <div className={`player-root fixed inset-0 z-[99999] text-white transition-all duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0 opacity-100 overflow-hidden" : "translate-y-full opacity-0 pointer-events-none"}`}>
         
         {isCanvasLoaded && !isScrolledPastMain && !showQueue && !isVideoMode && !isLyricsFullScreen && isCanvasEnabled && (
           <div className="absolute inset-0 z-10 cursor-pointer" onClick={() => setIsUiHidden(!isUiHidden)} />
@@ -1491,27 +1549,7 @@ export default function MiniPlayer() {
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
               <div className={`transition-all duration-500 w-full relative overflow-hidden flex items-center justify-start mask-edges-vertical ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 min-h-[75px]'}`}>
-                {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics.length > 0 && !isVideoMode && (
-                  <div className="relative w-full h-full flex justify-start items-center">
-                    {lyrics.map((line: any, idx: number) => {
-                       const diff = idx - activeLyricIndex;
-                       if (Math.abs(diff) > 1) return null;
-                       
-                       let transform = '', op = 0;
-                       if (diff === 0) { transform = 'translateY(0px) scale(1)'; op = 1; }
-                       else if (diff > 0) { transform = 'translateY(35px) scale(0.9)'; op = 0; } 
-                       else { return null; } 
-                       
-                       return (
-                          <span key={idx} 
-                                className={`absolute left-0 w-full text-left pr-2 no-select-text font-extrabold drop-shadow-xl leading-snug transition-all duration-[1500ms] ease-[cubic-bezier(0.25,1,0.5,1)] ${getLineFontSize()}`}
-                                style={{ transform, opacity: op, color: 'white', zIndex: diff === 0 ? 10 : 1, transformOrigin: 'left center' }}>
-                            {line.words || "♪"}
-                          </span>
-                       );
-                    })}
-                  </div>
-                )}
+                {RenderedMiniLyrics}
               </div>
 
               <div className="flex items-center justify-between mb-5 drop-shadow-md w-full no-select-text">
@@ -1654,8 +1692,19 @@ export default function MiniPlayer() {
                       )}
 
                       <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
-                        <span className="text-white font-bold text-[15px]">Word Sync Animation</span>
+                        <div className="flex flex-col">
+                           <span className="text-white font-bold text-[15px]">Word Sync (Card)</span>
+                           <span className="text-white/50 text-[11px]">Syncs full screen & card lyrics</span>
+                        </div>
                         <button onClick={() => { setIsWordSyncEnabled(!isWordSyncEnabled); localStorage.setItem('word_sync_enabled', (!isWordSyncEnabled).toString()); }} className={`w-11 h-[26px] rounded-full relative transition-colors duration-300 flex items-center ${isWordSyncEnabled ? 'bg-[#1db954]' : 'bg-[#535353]'}`}><div className={`w-[22px] h-[22px] bg-white rounded-full absolute shadow-md transition-transform duration-300 ${isWordSyncEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} /></button>
+                      </div>
+                      
+                      <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+                        <div className="flex flex-col">
+                           <span className="text-white font-bold text-[15px]">Word Sync (Mini)</span>
+                           <span className="text-white/50 text-[11px]">Syncs the lyrics above title</span>
+                        </div>
+                        <button onClick={() => { setIsMiniWordSyncEnabled(!isMiniWordSyncEnabled); localStorage.setItem('mini_word_sync_enabled', (!isMiniWordSyncEnabled).toString()); }} className={`w-11 h-[26px] rounded-full relative transition-colors duration-300 flex items-center ${isMiniWordSyncEnabled ? 'bg-[#1db954]' : 'bg-[#535353]'}`}><div className={`w-[22px] h-[22px] bg-white rounded-full absolute shadow-md transition-transform duration-300 ${isMiniWordSyncEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} /></button>
                       </div>
 
                       <div className="flex items-center justify-between px-5 py-4">
@@ -1768,7 +1817,7 @@ export default function MiniPlayer() {
             )}
           </div>
           
-          <div className="flex-1 overflow-y-auto px-5 pb-32 no-select-text relative scrollbar-hide">
+          <div className="flex-1 overflow-y-auto px-5 pb-32 no-select-text relative scrollbar-hide" ref={queueContainerRef}>
             <span className="text-[14px] font-medium text-white/60 block mb-6 uppercase tracking-wider">Playing from {playContext?.type || 'App'}</span>
             <div className="flex items-center justify-between w-full mb-8">
               <div className="flex items-center gap-3 overflow-hidden">
@@ -1797,7 +1846,7 @@ export default function MiniPlayer() {
                             const arr = [...prev]; const toMove: any[] =[];
                             const sortedSelected = Array.from(selectedQueueItems).sort((a,b)=>b-a);
                             sortedSelected.forEach(idx => toMove.push(arr.splice(idx, 1)[0]));
-                            return [...toMove.reverse(), ...arr];
+                            return[...toMove.reverse(), ...arr];
                         });
                         setSelectedQueueItems(new Set()); setIsQueueEditMode(false);
                     }} className="text-white font-bold text-[13px] bg-white/10 px-4 py-2 rounded-full active:bg-white/20 transition-colors">Move to Top</button>

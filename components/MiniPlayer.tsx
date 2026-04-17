@@ -223,7 +223,7 @@ export default function MiniPlayer() {
   } = useAppContext();
   
   const[audioUrl, setAudioUrl] = useState("");
-  const [loading, setLoading] = useState(false);
+  const[loading, setLoading] = useState(false);
   const[progress, setProgress] = useState(0);
   const[currentTime, setCurrentTime] = useState(0);
   const[duration, setDuration] = useState(0);
@@ -855,7 +855,8 @@ export default function MiniPlayer() {
       if (!isSeekingRef.current && now - lastTimeUpdateRef.current < 250) {
          if (isLyricsEnabled && syncType === "LINE_SYNCED" && lyrics.length > 0) {
             let activeIdx = -1;
-            for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].time <= c) activeIdx = i; else break; }
+            const offsetTime = c + 0.4; // 0.4s Early Offset
+            for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].time <= offsetTime) activeIdx = i; else break; }
             if (activeIdx !== activeLyricIndex) setActiveLyricIndex(activeIdx);
          }
          return; 
@@ -874,28 +875,23 @@ export default function MiniPlayer() {
 
       if (isLyricsEnabled && syncType === "LINE_SYNCED" && lyrics.length > 0 && !isSeekingRef.current) {
         let activeIdx = -1;
-        for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].time <= c) activeIdx = i; else break; }
+        const offsetTime = c + 0.4; // 0.4s Early Offset
+        for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].time <= offsetTime) activeIdx = i; else break; }
         if (activeIdx !== activeLyricIndex) setActiveLyricIndex(activeIdx);
       }
     }
   };
 
-  // --- APPLE MUSIC STYLE WORD SYNC ---
+  // --- APPLE MUSIC STYLE WORD SYNC ENGINE ---
   useEffect(() => {
     if (!isWordSyncEnabled || !isLyricsEnabled || isVideoMode || activeLyricIndex < 0 || !lyrics[activeLyricIndex]) {
-        if (activeLyricRef.current) {
-            activeLyricRef.current.style.backgroundImage = ''; activeLyricRef.current.style.webkitBackgroundClip = ''; activeLyricRef.current.style.webkitTextFillColor = '';
-        }
-        if (fullActiveLyricRef.current) {
-            fullActiveLyricRef.current.style.backgroundImage = ''; fullActiveLyricRef.current.style.webkitBackgroundClip = ''; fullActiveLyricRef.current.style.webkitTextFillColor = '';
-        }
         return;
     }
 
     let animationFrameId: number;
     const updateProgress = () => {
         if (audioRef.current) {
-            const currentTime = audioRef.current.currentTime;
+            const currentTime = audioRef.current.currentTime + 0.4; // 0.4s Early Offset
             const currentLineTime = lyrics[activeLyricIndex].time;
             let nextLineTime = lyrics[activeLyricIndex + 1]?.time;
             if (!nextLineTime) nextLineTime = currentLineTime + 4; // Fallback duration
@@ -905,19 +901,47 @@ export default function MiniPlayer() {
             const rawProgress = duration > 0 ? (elapsed / duration) * 100 : 100;
             const boundedProgress = Math.max(0, Math.min(100, rawProgress));
 
-            // Black/Dimmed unfilled to Pure White filled exactly like Apple Music
-            const gradient = `linear-gradient(to right, #ffffff ${boundedProgress}%, rgba(0, 0, 0, 0.5) ${boundedProgress}%)`;
+            const processContainer = (container: HTMLElement | null) => {
+                if (!container) return;
+                const words = container.querySelectorAll('.lyric-word') as NodeListOf<HTMLElement>;
+                if (!words.length) return;
+                
+                let totalChars = 0;
+                words.forEach(w => totalChars += (w.textContent || '').length);
+                if (totalChars === 0) return;
+                
+                let charAccumulator = 0;
+                words.forEach((wordNode) => {
+                    const wordLen = (wordNode.textContent || '').length;
+                    const wordStartPct = (charAccumulator / totalChars) * 100;
+                    const wordEndPct = ((charAccumulator + wordLen) / totalChars) * 100;
+                    
+                    if (boundedProgress >= wordEndPct) {
+                        wordNode.style.backgroundImage = 'none';
+                        wordNode.style.webkitBackgroundClip = 'unset';
+                        wordNode.style.webkitTextFillColor = 'white';
+                        wordNode.style.color = 'white';
+                    } else if (boundedProgress <= wordStartPct) {
+                        wordNode.style.backgroundImage = 'none';
+                        wordNode.style.webkitBackgroundClip = 'unset';
+                        wordNode.style.webkitTextFillColor = 'rgba(255, 255, 255, 0.3)';
+                        wordNode.style.color = 'rgba(255, 255, 255, 0.3)';
+                    } else {
+                        const localProgress = ((boundedProgress - wordStartPct) / (wordEndPct - wordStartPct)) * 100;
+                        // Beautiful smoothly feathered blended gradient exactly like Apple Music
+                        const gradient = `linear-gradient(to right, rgba(255,255,255,1) ${Math.max(0, localProgress - 20)}%, rgba(255,255,255,0.7) ${localProgress}%, rgba(255,255,255,0.3) ${Math.min(100, localProgress + 20)}%)`;
+                        
+                        wordNode.style.backgroundImage = gradient;
+                        wordNode.style.webkitBackgroundClip = 'text';
+                        wordNode.style.webkitTextFillColor = 'transparent';
+                        wordNode.style.color = 'transparent';
+                    }
+                    charAccumulator += wordLen;
+                });
+            };
 
-            if (fullActiveLyricRef.current) {
-                fullActiveLyricRef.current.style.backgroundImage = gradient;
-                fullActiveLyricRef.current.style.webkitBackgroundClip = 'text';
-                fullActiveLyricRef.current.style.webkitTextFillColor = 'transparent';
-            }
-            if (activeLyricRef.current) {
-                activeLyricRef.current.style.backgroundImage = gradient;
-                activeLyricRef.current.style.webkitBackgroundClip = 'text';
-                activeLyricRef.current.style.webkitTextFillColor = 'transparent';
-            }
+            processContainer(fullActiveLyricRef.current);
+            processContainer(activeLyricRef.current);
         }
         if (isPlaying) animationFrameId = requestAnimationFrame(updateProgress);
     };
@@ -957,7 +981,8 @@ export default function MiniPlayer() {
     const newTime = (val / 100) * duration; setCurrentTime(newTime);
     if (isLyricsEnabled && syncType === "LINE_SYNCED" && lyrics.length > 0) {
       let activeIdx = -1;
-      for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].time <= newTime) activeIdx = i; else break; }
+      const offsetTime = newTime + 0.4; // 0.4s Early Offset
+      for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].time <= offsetTime) activeIdx = i; else break; }
       if (activeIdx !== activeLyricIndex) setActiveLyricIndex(activeIdx);
     }
   };
@@ -1186,14 +1211,22 @@ export default function MiniPlayer() {
       const pastClasses = `text-white/50 ${fzClass} font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2`;
       const futureClasses = `text-black/80 ${fzClass} font-black drop-shadow-md leading-tight opacity-70 translate-y-3`;
 
-      // Clear the word sync specific inline styles applied directly via DOM manipulation to prevent sticking
-      const cleanupStyles = !isActive ? { backgroundImage: 'none', WebkitBackgroundClip: 'unset', WebkitTextFillColor: 'unset', color: '' } : {};
-
       return (
-        <p key={idx} ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} onClick={() => handleLyricClick(line.time)} className={`cursor-pointer transition-all duration-[800ms] ease-out origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`} style={cleanupStyles}>{line.words || '♪'}</p>
+        <p key={idx} 
+           ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} 
+           onClick={() => handleLyricClick(line.time)} 
+           className={`cursor-pointer transition-all duration-[800ms] ease-out origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`}>
+           {isWordSyncEnabled ? (
+              (line.words || '♪').split(' ').map((word: string, wIdx: number, arr: any[]) => (
+                  <span key={wIdx} className="lyric-word inline">{word}{wIdx < arr.length - 1 ? ' ' : ''}</span>
+              ))
+           ) : (
+              line.words || '♪'
+           )}
+        </p>
       )
     });
-  },[lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled, cardFontSize]);
+  },[lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled, cardFontSize, isWordSyncEnabled]);
 
   const RenderedArtists = useMemo(() => {
     return uniqueArtists.map((artist: any) => {

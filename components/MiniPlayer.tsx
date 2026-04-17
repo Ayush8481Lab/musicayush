@@ -288,6 +288,7 @@ export default function MiniPlayer() {
   const[cardFontSize, setCardFontSize] = useState("Medium");
   const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
   const[isLyricsEnabled, setIsLyricsEnabled] = useState(true);
+  const[isWordSyncEnabled, setIsWordSyncEnabled] = useState(true); // Apple Music Sync
   const restoreTimeRef = useRef<number | null>(null);
 
   const isCanvasEnabledRef = useRef(true);
@@ -344,6 +345,7 @@ export default function MiniPlayer() {
        const cf = localStorage.getItem('card_font_size'); if (cf) setCardFontSize(cf);
        const c = localStorage.getItem('canvas_enabled'); if (c !== null) { setIsCanvasEnabled(c === 'true'); isCanvasEnabledRef.current = c === 'true'; }
        const l = localStorage.getItem('lyrics_enabled'); if (l !== null) { setIsLyricsEnabled(l === 'true'); isLyricsEnabledRef.current = l === 'true'; }
+       const ws = localStorage.getItem('word_sync_enabled'); if (ws !== null) setIsWordSyncEnabled(ws === 'true');
 
        const storedSong = localStorage.getItem('last_session_song');
        if (storedSong && !currentSong && !isSessionRestored) {
@@ -570,6 +572,7 @@ export default function MiniPlayer() {
 
     const fetchAudioData = async () => {
       setLoading(true);
+      if ('mediaSession' in navigator && isPlaying) navigator.mediaSession.playbackState = 'playing'; // Keep alive
 
       if (currentSong.isProFallback && currentSong.ytVideoId) {
          try {
@@ -656,6 +659,7 @@ export default function MiniPlayer() {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     const newState = !isPlaying;
     setIsPlaying(newState);
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = newState ? 'playing' : 'paused';
     
     if (isVideoMode && videoIframeRef.current?.contentWindow) {
       videoIframeRef.current.contentWindow.postMessage({ type: newState ? 'MUSIC_PLAY' : 'MUSIC_PAUSE' }, '*');
@@ -677,7 +681,8 @@ export default function MiniPlayer() {
         audioRef.current.currentTime = safeTime; setCurrentTime(safeTime);
         const playPromise = audioRef.current.play();
         if (playPromise !== undefined) playPromise.catch(()=>{});
-        setIsPlaying(true); 
+        setIsPlaying(true);
+        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; 
       }
       return;
     }
@@ -742,7 +747,7 @@ export default function MiniPlayer() {
     if (audioRef.current && audioUrl) {
       audioRef.current.volume = volume / 100; audioRef.current.loop = repeatMode === 2;
       if (isPlaying && !isVideoMode) { const p = audioRef.current.play(); if (p !== undefined) p.catch(() => {}); }
-      else audioRef.current.pause();
+      else if (!isPlaying) audioRef.current.pause();
     }
   },[isPlaying, audioUrl, volume, repeatMode, isVideoMode]);
 
@@ -760,11 +765,17 @@ export default function MiniPlayer() {
     if (isShuffle && upcomingQueue.length > 0) {
       const randomIdx = Math.floor(Math.random() * upcomingQueue.length); const nextSong = upcomingQueue[randomIdx];
       setUpcomingQueue(prev => prev.filter((_: any, i: number) => i !== randomIdx));
-      setCurrentSong(nextSong); setIsPlaying(true); return;
+      setCurrentSong(nextSong); setIsPlaying(true); 
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+      return;
     }
     if (upcomingQueue.length > 0) { 
       const nextSong = upcomingQueue[0]; setUpcomingQueue(prev => prev.slice(1)); setCurrentSong(nextSong); setIsPlaying(true); 
-    } else if (repeatMode === 1 && queue && queue.length > 0) { setCurrentSong(queue[0]); setIsPlaying(true); } 
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    } else if (repeatMode === 1 && queue && queue.length > 0) { 
+      setCurrentSong(queue[0]); setIsPlaying(true); 
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    } 
     else { setIsPlaying(false); setProgress(0); }
   };
 
@@ -774,10 +785,14 @@ export default function MiniPlayer() {
     if (historyQueue.length > 0) {
       const prevSong = historyQueue[0]; setHistoryQueue(prev => prev.slice(1)); setUpcomingQueue(prev =>[currentSong, ...prev]);
       setCurrentSong(prevSong); setIsPlaying(true);
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
     } else {
       if (!queue || queue.length === 0) return;
       const idx = queue.findIndex((s: any) => s.id === currentSong.id);
-      if (idx > 0) { setCurrentSong(queue[idx - 1]); setIsPlaying(true); }
+      if (idx > 0) { 
+          setCurrentSong(queue[idx - 1]); setIsPlaying(true); 
+          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+      }
     }
   };
 
@@ -807,12 +822,12 @@ export default function MiniPlayer() {
           artwork: displayImage ?[{ src: displayImage, sizes: '512x512', type: 'image/jpeg' }] :[]
        });
        navigator.mediaSession.setActionHandler('play', () => {
-          setIsPlaying(true);
+          setIsPlaying(true); navigator.mediaSession.playbackState = 'playing';
           if (isVideoModeRef.current && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_PLAY' }, '*');
           else if (audioRef.current) { const p = audioRef.current.play(); if (p !== undefined) p.catch(()=>{}); }
        });
        navigator.mediaSession.setActionHandler('pause', () => {
-          setIsPlaying(false);
+          setIsPlaying(false); navigator.mediaSession.playbackState = 'paused';
           if (isVideoModeRef.current && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_PAUSE' }, '*');
           else if (audioRef.current) audioRef.current.pause();
        });
@@ -864,6 +879,54 @@ export default function MiniPlayer() {
       }
     }
   };
+
+  // --- APPLE MUSIC STYLE WORD SYNC ---
+  useEffect(() => {
+    if (!isWordSyncEnabled || !isLyricsEnabled || isVideoMode || activeLyricIndex < 0 || !lyrics[activeLyricIndex]) {
+        if (activeLyricRef.current) {
+            activeLyricRef.current.style.backgroundImage = ''; activeLyricRef.current.style.webkitBackgroundClip = ''; activeLyricRef.current.style.webkitTextFillColor = '';
+        }
+        if (fullActiveLyricRef.current) {
+            fullActiveLyricRef.current.style.backgroundImage = ''; fullActiveLyricRef.current.style.webkitBackgroundClip = ''; fullActiveLyricRef.current.style.webkitTextFillColor = '';
+        }
+        return;
+    }
+
+    let animationFrameId: number;
+    const updateProgress = () => {
+        if (audioRef.current) {
+            const currentTime = audioRef.current.currentTime;
+            const currentLineTime = lyrics[activeLyricIndex].time;
+            let nextLineTime = lyrics[activeLyricIndex + 1]?.time;
+            if (!nextLineTime) nextLineTime = currentLineTime + 4; // Fallback duration
+
+            const duration = nextLineTime - currentLineTime;
+            const elapsed = currentTime - currentLineTime;
+            const rawProgress = duration > 0 ? (elapsed / duration) * 100 : 100;
+            const boundedProgress = Math.max(0, Math.min(100, rawProgress));
+
+            // Black/Dimmed unfilled to Pure White filled exactly like Apple Music
+            const gradient = `linear-gradient(to right, #ffffff ${boundedProgress}%, rgba(0, 0, 0, 0.5) ${boundedProgress}%)`;
+
+            if (fullActiveLyricRef.current) {
+                fullActiveLyricRef.current.style.backgroundImage = gradient;
+                fullActiveLyricRef.current.style.webkitBackgroundClip = 'text';
+                fullActiveLyricRef.current.style.webkitTextFillColor = 'transparent';
+            }
+            if (activeLyricRef.current) {
+                activeLyricRef.current.style.backgroundImage = gradient;
+                activeLyricRef.current.style.webkitBackgroundClip = 'text';
+                activeLyricRef.current.style.webkitTextFillColor = 'transparent';
+            }
+        }
+        if (isPlaying) animationFrameId = requestAnimationFrame(updateProgress);
+    };
+
+    if (isPlaying) animationFrameId = requestAnimationFrame(updateProgress);
+    else updateProgress();
+
+    return () => { if (animationFrameId) cancelAnimationFrame(animationFrameId); };
+  },[isWordSyncEnabled, isLyricsEnabled, isVideoMode, activeLyricIndex, lyrics, isPlaying]);
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
@@ -1123,8 +1186,11 @@ export default function MiniPlayer() {
       const pastClasses = `text-white/50 ${fzClass} font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2`;
       const futureClasses = `text-black/80 ${fzClass} font-black drop-shadow-md leading-tight opacity-70 translate-y-3`;
 
+      // Clear the word sync specific inline styles applied directly via DOM manipulation to prevent sticking
+      const cleanupStyles = !isActive ? { backgroundImage: 'none', WebkitBackgroundClip: 'unset', WebkitTextFillColor: 'unset', color: '' } : {};
+
       return (
-        <p key={idx} ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} onClick={() => handleLyricClick(line.time)} className={`cursor-pointer transition-all duration-[800ms] ease-out origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`}>{line.words || '♪'}</p>
+        <p key={idx} ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} onClick={() => handleLyricClick(line.time)} className={`cursor-pointer transition-all duration-[800ms] ease-out origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`} style={cleanupStyles}>{line.words || '♪'}</p>
       )
     });
   },[lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled, cardFontSize]);
@@ -1254,8 +1320,8 @@ export default function MiniPlayer() {
                        if (diff === 0) { transform = 'translateY(0px) scale(1)'; op = 1; }
                        // Diff > 0 = Upcoming Line (Waits hidden at bottom)
                        else if (diff > 0) { transform = 'translateY(35px) scale(0.9)'; op = 0; } 
-                       // Diff < 0 = Past Line (Flies up and fades out)
-                       else { transform = 'translateY(-35px) scale(1.1)'; op = 0; } 
+                       // Diff < 0 = Past Line (Instantly hide to prevent overlapping/looking poor)
+                       else { return null; } 
                        
                        return (
                           <span key={idx} 
@@ -1289,7 +1355,9 @@ export default function MiniPlayer() {
                 <div className="flex items-center justify-between w-full mb-5 px-1 drop-shadow-md no-select-text">
                   <button onClick={() => { setIsShuffle(!isShuffle); if(isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*'); }} className={`active:opacity-50 pointer-events-auto ${isShuffle ? 'text-[#1db954]' : 'text-white'}`}><Shuffle size={24} /></button>
                   <button onClick={playPrev} className="text-white active:opacity-50 pointer-events-auto"><SkipBack size={36} fill="white" stroke="white" /></button>
-                  <button onClick={handlePlayPauseToggle} className="w-[64px] h-[64px] rounded-full bg-white flex items-center justify-center text-black active:scale-95 transition-transform shadow-lg pointer-events-auto">{isPlaying ? <Pause fill="black" stroke="black" size={26} /> : <Play fill="black" stroke="black" size={28} className="translate-x-[2px]" />}</button>
+                  <button onClick={handlePlayPauseToggle} className="w-[64px] h-[64px] rounded-full bg-white flex items-center justify-center text-black active:scale-95 transition-transform shadow-lg pointer-events-auto">
+                     {(loading || isVideoLoading) ? <Loader2 size={26} className="animate-spin text-black" /> : (isPlaying ? <Pause fill="black" stroke="black" size={26} /> : <Play fill="black" stroke="black" size={28} className="translate-x-[2px]" />)}
+                  </button>
                   <button onClick={playNext} className="text-white active:opacity-50 pointer-events-auto"><SkipForward size={36} fill="white" stroke="white" /></button>
                   <button onClick={() => { setRepeatMode((prev) => (prev + 1) % 3); if(isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*'); }} className={`active:opacity-50 relative pointer-events-auto ${repeatMode > 0 ? 'text-[#1db954]' : 'text-white/70'}`}><Repeat size={24} />{repeatMode === 2 && <span className="absolute -top-1 -right-1 bg-[#1db954] text-black text-[9px] font-bold rounded-full w-3 h-3 flex items-center justify-center">1</span>}</button>
                 </div>
@@ -1402,6 +1470,11 @@ export default function MiniPlayer() {
                           </div>
                         </div>
                       )}
+
+                      <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+                        <span className="text-white font-bold text-[15px]">Word Sync Animation</span>
+                        <button onClick={() => { setIsWordSyncEnabled(!isWordSyncEnabled); localStorage.setItem('word_sync_enabled', (!isWordSyncEnabled).toString()); }} className={`w-11 h-[26px] rounded-full relative transition-colors duration-300 flex items-center ${isWordSyncEnabled ? 'bg-[#1db954]' : 'bg-[#535353]'}`}><div className={`w-[22px] h-[22px] bg-white rounded-full absolute shadow-md transition-transform duration-300 ${isWordSyncEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} /></button>
+                      </div>
 
                       <div className="flex items-center justify-between px-5 py-4">
                         <span className="text-white font-bold text-[15px]">Show Canvas</span>
@@ -1518,8 +1591,10 @@ export default function MiniPlayer() {
           </div>
           <div className="flex flex-col flex-1 min-w-0 pr-3 justify-center"><MarqueeText text={displayTitle} className="text-[13px] font-bold text-white leading-tight mb-[2px]" /><MarqueeText text={displayArtists} className="text-[12px] font-medium text-white/70 leading-tight" /></div>
           <div className="flex items-center gap-4 flex-shrink-0 pr-2 text-white">
-            <button className="active:scale-75 transition-transform" onClick={toggleVideoMode}><MonitorPlay size={20} className={isVideoMode ? "text-[#1db954]" : ""} /></button>
-            <button className="active:scale-75 transition-transform" onClick={handlePlayPauseToggle}>{isPlaying ? <Pause fill="white" stroke="white" size={24} /> : <Play fill="white" stroke="white" size={24} className="translate-x-[1px]" />}</button>
+            <button className="active:scale-75 transition-transform flex items-center justify-center w-[20px] h-[20px]" onClick={toggleVideoMode}><MonitorPlay size={20} className={isVideoMode ? "text-[#1db954]" : ""} /></button>
+            <button className="active:scale-75 transition-transform flex items-center justify-center w-[24px] h-[24px]" onClick={handlePlayPauseToggle}>
+               {(loading || isVideoLoading) ? <Loader2 size={24} className="animate-spin text-white" /> : (isPlaying ? <Pause fill="white" stroke="white" size={24} /> : <Play fill="white" stroke="white" size={24} className="translate-x-[1px]" />)}
+            </button>
           </div>
         </div>
         <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-white/20 rounded-full z-20 pointer-events-none overflow-hidden"><div className="h-full bg-white rounded-full transition-all duration-300 ease-linear" style={{ width: `${progress}%` }} /></div>

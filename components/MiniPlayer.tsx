@@ -48,9 +48,18 @@ const getAuthData = async () => {
   return await fetchNewAuthToken();
 };
 
+// --- ADVANCED HTML ENTITY DECODER ---
 const decodeEntities = (text: string) => {
   if (!text) return "";
-  return text.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'");
+  let decoded = text;
+  try {
+    if (typeof window !== "undefined") {
+      const txt = document.createElement("textarea");
+      txt.innerHTML = text;
+      decoded = txt.value;
+    }
+  } catch (e) {}
+  return decoded.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'");
 };
 
 const getArtistsText = (data: any) => {
@@ -94,9 +103,44 @@ const parseTimeTag = (tag: string) => {
 const RAPID_KEYS =["d1edce158amshec139440d20658ap1f2545jsnbb7da9add82f", "6cf7f03014msh787c51a713c0264p15c20djsna1f9a9f6a378", "13d48f6bb8msh459c11b91bdcc44p110f4ejsn099443894115", "03fc23317fmsh0535ef9ec8c6f5bp1db59bjsn545991df9343", "e54e3fbc4dmshfc16d4417b618fdp1a2fafjsn30c72d8cf3ab"];
 const RAPID_API_HOST = "spotify81.p.rapidapi.com";
 
+// --- AK47 SPECIFIC MATCHER ---
+const performAK47Matching = (results: any[], targetTrack: string, targetArtist: string): any => {
+    if (!results || results.length === 0) return null;
+    const clean = (s: string) => decodeEntities(s || "").toLowerCase().replace(/[^\w\s]|_/g, "").replace(/\s+/g, " ").trim();
+    const tTitle = clean(targetTrack);
+    const tArtist = clean(targetArtist);
+    let bestMatch = null; let highestScore = 0;
+
+    results.forEach((track) => {
+        if (!track) return;
+        const rTitle = clean(track.song_name);
+        const rArtists = clean(track.artist);
+        let score = 0; let artistMatched = false;
+
+        if (tArtist.length > 0) {
+            if (rArtists === tArtist) { score += 100; artistMatched = true; }
+            else if (rArtists.includes(tArtist) || tArtist.includes(rArtists)) { score += 80; artistMatched = true; }
+            else {
+                const tSplit = tArtist.split(" ");
+                for (let t of tSplit) { if (t.length > 2 && rArtists.includes(t)) { score += 50; artistMatched = true; break; } }
+            }
+            if (!artistMatched) score = 0;
+        } else score += 50;
+
+        if (score > 0) {
+            if (rTitle === tTitle) score += 100;
+            else if (rTitle.startsWith(tTitle) || tTitle.startsWith(rTitle)) score += 80;
+            else if (rTitle.includes(tTitle) || tTitle.includes(rTitle)) score += 50;
+        }
+        if (score > highestScore) { highestScore = score; bestMatch = track; }
+    });
+    if (highestScore > 0) return bestMatch;
+    return results[0];
+};
+
 const performMatching = (apiData: any, targetTrack: string, targetArtist: string): any => {
   if (!apiData.tracks || apiData.tracks.length === 0) return null;
-  const clean = (s: string) => (s || "").toLowerCase().replace(/[^\w\s]|_/g, "").replace(/\s+/g, " ").trim();
+  const clean = (s: string) => decodeEntities(s || "").toLowerCase().replace(/[^\w\s]|_/g, "").replace(/\s+/g, " ").trim();
   const tTitle = clean(targetTrack); const tArtist = clean(targetArtist);
   let bestMatch: any = null; let highestScore = 0;
   
@@ -129,7 +173,7 @@ const generateAllQualities = (baseUrls: any[]) => {
   const sampleUrl = baseUrls[0].url || "";
   const match = sampleUrl.match(/_(\d+)\.(mp4|m4a|mp3|aac)/i);
   if (match) {
-    return['12', '48', '96', '160', '320'].map(q => ({
+    return ['12', '48', '96', '160', '320'].map(q => ({
       quality: `${q}kbps`,
       url: sampleUrl.replace(match[0], `_${q}.${match[2]}`),
       label: `${q}kbps`
@@ -146,52 +190,34 @@ const NativeID3 = {
       if(data.artist) frames.push(this.txtFrame('TPE1', data.artist));
       if(data.album) frames.push(this.txtFrame('TALB', data.album));
       if(data.image) frames.push(this.picFrame(data.image));
-
-      let totalSize = 0;
-      frames.forEach(f => totalSize += f.length);
-
+      let totalSize = 0; frames.forEach(f => totalSize += f.length);
       const header = new Uint8Array(10);
-      header.set([0x49, 0x44, 0x33, 0x03, 0x00, 0x00], 0); 
-      header.set(this.calcSize(totalSize), 6);
-
+      header.set([0x49, 0x44, 0x33, 0x03, 0x00, 0x00], 0); header.set(this.calcSize(totalSize), 6);
       const final = new Uint8Array(10 + totalSize + data.audio.byteLength);
-      final.set(header, 0);
-      
-      let offset = 10;
+      final.set(header, 0); let offset = 10;
       frames.forEach(f => { final.set(f, offset); offset += f.length; });
       final.set(new Uint8Array(data.audio), offset);
       return final;
   },
   txtFrame: function(id: string, text: string) {
-      const strBytes = this.strToUtf16(text);
-      const size = 1 + strBytes.length;
+      const strBytes = this.strToUtf16(text); const size = 1 + strBytes.length;
       const buf = new Uint8Array(10 + size);
-      buf.set(this.strToAscii(id), 0);
-      buf.set(this.intToBytes(size), 4);
-      buf[10] = 0x01; 
-      buf.set(strBytes, 11);
-      return buf;
+      buf.set(this.strToAscii(id), 0); buf.set(this.intToBytes(size), 4);
+      buf[10] = 0x01; buf.set(strBytes, 11); return buf;
   },
   picFrame: function(imgBuf: ArrayBuffer) {
-      const mime = this.strToAscii("image/jpeg");
-      const imgData = new Uint8Array(imgBuf);
+      const mime = this.strToAscii("image/jpeg"); const imgData = new Uint8Array(imgBuf);
       const size = 1 + mime.length + 1 + 1 + 1 + imgData.length;
       const buf = new Uint8Array(10 + size);
-      buf.set(this.strToAscii('APIC'), 0);
-      buf.set(this.intToBytes(size), 4);
-      let p = 10;
-      buf[p++] = 0x00; 
-      buf.set(mime, p); p += mime.length;
-      buf[p++] = 0x00; buf[p++] = 0x03; buf[p++] = 0x00; 
-      buf.set(imgData, p);
-      return buf;
+      buf.set(this.strToAscii('APIC'), 0); buf.set(this.intToBytes(size), 4);
+      let p = 10; buf[p++] = 0x00; buf.set(mime, p); p += mime.length;
+      buf[p++] = 0x00; buf[p++] = 0x03; buf[p++] = 0x00; buf.set(imgData, p); return buf;
   },
   calcSize: function(n: number) { return[(n>>21)&0x7F, (n>>14)&0x7F, (n>>7)&0x7F, n&0x7F]; },
   intToBytes: function(n: number) { return[(n>>24)&0xFF, (n>>16)&0xFF, (n>>8)&0xFF, n&0xFF]; },
   strToAscii: (s: string) => new Uint8Array([...s].map(c=>c.charCodeAt(0))),
   strToUtf16: (s: string) => {
-      const b = new Uint8Array(2 + s.length*2);
-      b[0]=0xFF; b[1]=0xFE;
+      const b = new Uint8Array(2 + s.length*2); b[0]=0xFF; b[1]=0xFE;
       for(let i=0; i<s.length; i++){ const c = s.charCodeAt(i); b[2 + i*2] = c & 0xFF; b[3 + i*2] = (c >> 8) & 0xFF; }
       return b;
   }
@@ -210,7 +236,7 @@ const loadLameJS = () => new Promise((resolve, reject) => {
 const MarqueeText = React.memo(({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const[isOverflowing, setIsOverflowing] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
 
   useEffect(() => {
     const checkOverflow = () => { 
@@ -222,7 +248,7 @@ const MarqueeText = React.memo(({ text, className = "" }: { text: string, classN
     const timeouts =[setTimeout(checkOverflow, 100), setTimeout(checkOverflow, 500)];
     window.addEventListener('resize', checkOverflow);
     return () => { timeouts.forEach(clearTimeout); window.removeEventListener('resize', checkOverflow); };
-  },[text]);
+  }, [text]);
 
   return (
     <div ref={containerRef} className={`overflow-hidden whitespace-nowrap w-full flex items-center ${isOverflowing ? "mask-edges" : ""} ${className}`}>
@@ -245,25 +271,25 @@ export default function MiniPlayer() {
   const [audioUrl, setAudioUrl] = useState("");
   const[loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
+  const[currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const[isExpanded, setIsExpanded] = useState(false);
   const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const[isUiHidden, setIsUiHidden] = useState(false); 
+  const [isUiHidden, setIsUiHidden] = useState(false); 
   const [isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
-  const[showQueue, setShowQueue] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
   
   // Advanced Touch Drag Queue Setup
   const [dragState, setDragState] = useState<{ activeIndex: number | null, startY: number, currentY: number }>({ activeIndex: null, startY: 0, currentY: 0 });
   const[isQueueEditMode, setIsQueueEditMode] = useState(false);
-  const [selectedQueueItems, setSelectedQueueItems] = useState<Set<number>>(new Set());
+  const [selectedQueueItems, setSelectedQueueItems] = useState<number[]>([]); // Preserves exactly tap order
 
   // Sleep Timer Setup
-  const [sleepTimer, setSleepTimer] = useState<number | 'end' | null>(null);
-  const [timerRemaining, setTimerRemaining] = useState<number | null>(null);
+  const[sleepTimer, setSleepTimer] = useState<number | 'end' | null>(null);
+  const[timerRemaining, setTimerRemaining] = useState<number | null>(null);
   const [showTimerMenu, setShowTimerMenu] = useState(false);
   
   const currentTrackRef = useRef<any>(null);
@@ -272,14 +298,14 @@ export default function MiniPlayer() {
   const isNavigatingBackRef = useRef(false);
   
   const rapidKeyIdxRef = useRef(0);
-  const[spotifyId, setSpotifyId] = useState<string | null>(null);
+  const [spotifyId, setSpotifyId] = useState<string | null>(null);
   const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
-  const [lyrics, setLyrics] = useState<any[]>([]);
+  const[lyrics, setLyrics] = useState<any[]>([]);
   const [syncType, setSyncType] = useState<string | null>(null);
-  const[activeLyricIndex, setActiveLyricIndex] = useState(-1);
+  const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const [isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
-  const [canvasData, setCanvasData] = useState<any>(null);
-  const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
+  const[canvasData, setCanvasData] = useState<any>(null);
+  const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
@@ -291,7 +317,7 @@ export default function MiniPlayer() {
   const playNextRef = useRef<() => void>(() => {});
   const playPrevRef = useRef<() => void>(() => {});
   const isVideoModeRef = useRef<boolean>(false);
-  const[swipeX, setSwipeX] = useState(0);
+  const [swipeX, setSwipeX] = useState(0);
   const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const queueContainerRef = useRef<HTMLDivElement>(null);
@@ -299,7 +325,7 @@ export default function MiniPlayer() {
   const[songDetails, setSongDetails] = useState<any>(null);
 
   const [isVideoMode, setIsVideoMode] = useState(false);
-  const[ytVideoId, setYtVideoId] = useState<string | null>(null);
+  const [ytVideoId, setYtVideoId] = useState<string | null>(null);
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const iframeInitialTimeRef = useRef<number>(0); 
   const videoStartTimeRef = useRef<number>(0);    
@@ -311,13 +337,13 @@ export default function MiniPlayer() {
   const [isSessionRestored, setIsSessionRestored] = useState(false);
   const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   
-  const[selectedQuality, setSelectedQuality] = useState("320");
+  const [selectedQuality, setSelectedQuality] = useState("320");
   const [lineFontSize, setLineFontSize] = useState("Medium");
-  const [cardFontSize, setCardFontSize] = useState("Medium");
-  const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
+  const[cardFontSize, setCardFontSize] = useState("Medium");
+  const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
   const [isLyricsEnabled, setIsLyricsEnabled] = useState(true);
-  const [isWordSyncEnabled, setIsWordSyncEnabled] = useState(true);
-  const [isMiniWordSyncEnabled, setIsMiniWordSyncEnabled] = useState(true); // Above title toggle
+  const[isWordSyncEnabled, setIsWordSyncEnabled] = useState(true);
+  const[isMiniWordSyncEnabled, setIsMiniWordSyncEnabled] = useState(true);
   const restoreTimeRef = useRef<number | null>(null);
 
   const isCanvasEnabledRef = useRef(true);
@@ -342,7 +368,7 @@ export default function MiniPlayer() {
           if (displayImage) {
             const response = await fetch(displayImage); const blob = await response.blob();
             const file = new File([blob], 'cover.jpg', { type: blob.type });
-            if (navigator.canShare({ files:[file] })) shareData.files = [file];
+            if (navigator.canShare({ files: [file] })) shareData.files = [file];
           }
         } catch (e) {} 
         await navigator.share(shareData);
@@ -410,10 +436,10 @@ export default function MiniPlayer() {
           } catch(e) {}
        } else setIsSessionRestored(true);
     }
-  },[currentSong, isSessionRestored, setCurrentSong, setUpcomingQueue]);
+  }, [currentSong, isSessionRestored, setCurrentSong, setUpcomingQueue]);
 
-  useEffect(() => { isCanvasEnabledRef.current = isCanvasEnabled; },[isCanvasEnabled]);
-  useEffect(() => { isLyricsEnabledRef.current = isLyricsEnabled; if (!isLyricsEnabled) setIsLyricsFullScreen(false); },[isLyricsEnabled]);
+  useEffect(() => { isCanvasEnabledRef.current = isCanvasEnabled; }, [isCanvasEnabled]);
+  useEffect(() => { isLyricsEnabledRef.current = isLyricsEnabled; if (!isLyricsEnabled) setIsLyricsFullScreen(false); }, [isLyricsEnabled]);
   useEffect(() => { if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong)); }, [currentSong]);
   useEffect(() => { if (upcomingQueue && upcomingQueue.length > 0) localStorage.setItem('last_session_queue', JSON.stringify(upcomingQueue)); }, [upcomingQueue]);
 
@@ -433,7 +459,7 @@ export default function MiniPlayer() {
     primaryArr.forEach((p: any) => { const full = allArr.find((a: any) => a.id === p.id) || p; map.set(p.id, { ...p, ...full, role: (full.role || "Primary Artist").replace(/_/g, ' ') }); });
     allArr.forEach((a: any) => { if (!map.has(a.id)) map.set(a.id, { ...a, role: (a.role || "Artist").replace(/_/g, ' ') }); });
     return Array.from(map.values());
-  },[songDetails]);
+  }, [songDetails]);
 
   const updateTop30Cache = useCallback((song: any, maxPercent: number) => {
     if (!song) return;
@@ -502,7 +528,7 @@ export default function MiniPlayer() {
       if (seedVid) recTimer = setTimeout(() => fetchRecs(seedVid as string), 2500);
     }
     return () => { isSubscribed = false; fetchingRecsRef.current = false; clearTimeout(recTimer); };
-  },[upcomingQueue.length, ytVideoId, playContext?.type, historyQueue]);
+  }, [upcomingQueue.length, ytVideoId, playContext?.type, historyQueue]);
 
   // MAIN TRACK CHANGE HOOK
   useEffect(() => {
@@ -573,13 +599,16 @@ export default function MiniPlayer() {
              const authRes = await fetch(`https://ak47ayush.vercel.app/search?q=${encodeURIComponent(query)}&CID=${auth.clientId}&token=${auth.accessToken}&limit=25&offset=0`);
              if (authRes.ok) {
                  const authJson = await authRes.json();
-                 if (Array.isArray(authJson) && authJson.length > 0) {
-                     const match = performMatching({ tracks: authJson }, instantTitle, searchArtist);
+                 // Deep inspection of the { search_query: "...", results: [...] } JSON format
+                 if (authJson.results && Array.isArray(authJson.results) && authJson.results.length > 0) {
+                     const match = performAK47Matching(authJson.results, instantTitle, searchArtist);
                      if (match) {
-                        const sId = match.spotify_url?.split('/track/')[1]?.split('?')[0] || match.id;
-                        setSpotifyId(sId); setSpotifyUrl(match.spotify_url || `https://open.spotify.com/track/${sId}`);
-                        if (typeof window !== "undefined") { localStorage.setItem(cacheKey, match.spotify_url); localStorage.setItem(cacheKey + '_id', sId); }
-                        return; // Found match via primary, exit.
+                        const sId = match.spotify_url?.split('/track/')[1]?.split('?')[0];
+                        if (sId) {
+                            setSpotifyId(sId); setSpotifyUrl(match.spotify_url);
+                            if (typeof window !== "undefined") { localStorage.setItem(cacheKey, match.spotify_url); localStorage.setItem(cacheKey + '_id', sId); }
+                            return; // Found exact match via primary AK47, exit fallback!
+                        }
                      }
                  }
              }
@@ -609,7 +638,7 @@ export default function MiniPlayer() {
     
     spotifyTimer = setTimeout(() => { fetchSpotifyMatch(); }, 1500);
     return () => { isCurrent = false; clearTimeout(spotifyTimer); };
-  },[currentSong]);
+  }, [currentSong]);
 
   useEffect(() => {
     if (queue && queue.length > 0) {
@@ -692,7 +721,7 @@ export default function MiniPlayer() {
     };
     fetchAudioData();
     return () => { isCurrent = false; };
-  },[currentSong, selectedQuality]);
+  }, [currentSong, selectedQuality]);
 
   useEffect(() => {
     const handleMsg = (e: MessageEvent) => {
@@ -711,7 +740,7 @@ export default function MiniPlayer() {
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
-  },[isVideoMode, duration, upcomingQueue]);
+  }, [isVideoMode, duration, upcomingQueue]);
 
   const handlePlayPauseToggle = (e?: any) => {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -780,7 +809,7 @@ export default function MiniPlayer() {
     };
     fetchExtras();
     return () => { isCurrent = false; };
-  },[spotifyId, spotifyUrl]);
+  }, [spotifyId, spotifyUrl]);
 
   useEffect(() => {
     if (!displayImage) return;
@@ -799,12 +828,11 @@ export default function MiniPlayer() {
         setDominantColor(count > 0 ? `rgb(${Math.floor(r/count)}, ${Math.floor(g/count)}, ${Math.floor(b/count)})` : "rgb(83, 83, 83)");
       } catch (e) { setDominantColor("rgb(30, 30, 30)"); }
     };
-  },[displayImage]);
+  }, [displayImage]);
 
   useEffect(() => {
     if (audioRef.current && audioUrl) {
       audioRef.current.volume = volume / 100;
-      // Let the native loop engine handle strict single track looping if repeatMode === 2, but we manage it in onEnded
       if (isPlaying && !isVideoMode) { const p = audioRef.current.play(); if (p !== undefined) p.catch(() => {}); }
       else if (!isPlaying) audioRef.current.pause();
     }
@@ -823,10 +851,10 @@ export default function MiniPlayer() {
 
     if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
     
-    // Exact loop single fix: play once, unclick loop button
+    // EXACT LOOP SINGLE FIX: Play once, instantly unclick loop button
     if (repeatMode === 2 && audioRef.current) { 
       audioRef.current.currentTime = 0; 
-      setRepeatMode(0); // UNCLICK LOOP
+      setRepeatMode(0); // Unclick loop!
       const p = audioRef.current.play(); 
       if (p!==undefined) p.catch(()=>{}); 
       return; 
@@ -853,15 +881,15 @@ export default function MiniPlayer() {
     if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
     if (audioRef.current && audioRef.current.currentTime > 3) { audioRef.current.currentTime = 0; return; }
     if (historyQueue.length > 0) {
-      isNavigatingBackRef.current = true; // Prevents recursive history loop
-      const prevSong = historyQueue[0]; setHistoryQueue(prev => prev.slice(1)); setUpcomingQueue(prev => [currentSong, ...prev]);
+      isNavigatingBackRef.current = true;
+      const prevSong = historyQueue[0]; setHistoryQueue(prev => prev.slice(1)); setUpcomingQueue(prev =>[currentSong, ...prev]);
       setCurrentSong(prevSong); setIsPlaying(true);
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
     } else {
       if (!queue || queue.length === 0) return;
       const idx = queue.findIndex((s: any) => s.id === currentSong.id);
       if (idx > 0) { 
-          isNavigatingBackRef.current = true; // Prevents recursive history loop
+          isNavigatingBackRef.current = true;
           setCurrentSong(queue[idx - 1]); setIsPlaying(true); 
           if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
       }
@@ -953,6 +981,7 @@ export default function MiniPlayer() {
     }
   };
 
+  // FLICKER-FREE WORD SYNC ENGINE
   useEffect(() => {
     if (!isWordSyncEnabled || !isLyricsEnabled || isVideoMode || activeLyricIndex < 0 || !lyrics[activeLyricIndex]) {
         return;
@@ -1025,7 +1054,7 @@ export default function MiniPlayer() {
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
-  },[isScrolledPastMain]);
+  }, [isScrolledPastMain]);
 
   useEffect(() => {
     if (isSeekingRef.current) return; 
@@ -1073,7 +1102,7 @@ export default function MiniPlayer() {
     }
   };
 
-  // SPOTIFY FLUID TOUCH DRAG QUEUE ENGINE
+  // SPOTIFY FLUID TOUCH DRAG QUEUE ENGINE (WITH AUTO SCROLL)
   const handleDragStart = (e: React.TouchEvent | React.MouseEvent, index: number) => {
     if (isQueueEditMode) return;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
@@ -1086,17 +1115,13 @@ export default function MiniPlayer() {
     const clientY = 'touches' in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
     setDragState(prev => ({ ...prev, currentY: clientY }));
 
-    // Auto-scroll queue when dragged near top/bottom edges
     if (queueContainerRef.current) {
         const container = queueContainerRef.current;
         const rect = container.getBoundingClientRect();
-        if (clientY < rect.top + 80) {
-            container.scrollTop -= 15;
-        } else if (clientY > rect.bottom - 80) {
-            container.scrollTop += 15;
-        }
+        if (clientY < rect.top + 80) container.scrollTop -= 15;
+        else if (clientY > rect.bottom - 80) container.scrollTop += 15;
     }
-  },[dragState.activeIndex]);
+  }, [dragState.activeIndex]);
 
   const handleDragEnd = useCallback(() => {
     if (dragState.activeIndex !== null) {
@@ -1136,7 +1161,7 @@ export default function MiniPlayer() {
   const handleTouchMove = (e: React.TouchEvent) => { const diff = e.touches[0].clientX - touchStartX.current; if (diff > 0 && !showQueue) setSwipeX(diff); };
   const handleTouchEnd = () => { if (swipeX > window.innerWidth * 0.45 && !showQueue) { setCurrentSong(null); setIsPlaying(false); setIsExpanded(false); } setSwipeX(0); };
 
-  // --- 20X FASTER NATIVE MP3 PACKER ENGINE ---
+  // --- 20X FASTER NATIVE MP3 PACKER ENGINE (HTML Entities Decoded!) ---
   const executeMp3PackerDownload = async (url: string, quality: string) => {
     setDlState({ type: "music", status: "downloading", progress: 0, packStep: "Fetching Audio..." });
     try {
@@ -1171,7 +1196,7 @@ export default function MiniPlayer() {
       }
 
       const mp3Data =[];
-      const blockSize = 1152 * 100; // HUGE BLOCK CHUNKS FOR SPEED
+      const blockSize = 1152 * 500; // HUGE BLOCK CHUNKS FOR LIGHTNING SPEED
       let lastYield = Date.now();
       
       for (let i = 0; i < buffer.length; i += blockSize) {
@@ -1194,21 +1219,25 @@ export default function MiniPlayer() {
       setDlState(prev => ({...prev, progress: 95, packStep: "Injecting Metadata..."}));
       const mp3ArrayBuffer = await mp3Blob.arrayBuffer();
 
+      const cleanTitle = decodeEntities(displayTitle);
+      const cleanArtist = decodeEntities(displayArtists);
+      const cleanAlbum = decodeEntities(songDetails?.album?.name || displayTitle);
+
       const taggedBuffer = NativeID3.tag({
           audio: mp3ArrayBuffer, image: coverBuffer,
-          title: displayTitle, artist: displayArtists, album: songDetails?.album?.name || displayTitle
+          title: cleanTitle, artist: cleanArtist, album: cleanAlbum
       });
 
       setDlState(prev => ({...prev, progress: 100, packStep: "Complete!"}));
       const finalBlob = new Blob([taggedBuffer], { type: 'audio/mp3' });
       const dlUrl = URL.createObjectURL(finalBlob);
-      const a = document.createElement('a'); a.href = dlUrl; a.download = `${displayTitle} - ${displayArtists}.mp3`;
+      const a = document.createElement('a'); a.href = dlUrl; a.download = `${cleanTitle} - ${cleanArtist}.mp3`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setDlState({ type: null, status: "idle" });
 
     } catch (e) {
       console.warn("Packer failed, using raw fallback", e);
-      const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.download = `${displayTitle} - ${displayArtists}.m4a`; 
+      const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.download = `${decodeEntities(displayTitle)} - ${decodeEntities(displayArtists)}.m4a`; 
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setDlState({ type: null, status: "idle" });
     }
@@ -1240,11 +1269,11 @@ export default function MiniPlayer() {
       }
 
       const blob = new Blob(chunks);
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = decodeEntities(filename);
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setDlState({ type: null, status: "idle" });
     } catch (e) {
-      const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.download = filename; 
+      const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.download = decodeEntities(filename); 
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setDlState({ type: null, status: "idle" });
     }
@@ -1342,7 +1371,6 @@ export default function MiniPlayer() {
     );
   },[lyrics, activeLyricIndex, isLyricsEnabled, isLyricsFullScreen, syncType, isVideoMode, isMiniWordSyncEnabled, lineFontSize]);
 
-
   const RenderedLyrics = useMemo(() => {
     if (!isLyricsEnabled) return null;
     return lyrics.map((line: any, idx: number) => {
@@ -1389,7 +1417,7 @@ export default function MiniPlayer() {
         </Link>
       )
     });
-  },[uniqueArtists]);
+  }, [uniqueArtists]);
 
   const RenderedQueue = useMemo(() => {
     return upcomingQueue.map((track: any, index: number) => {
@@ -1413,7 +1441,7 @@ export default function MiniPlayer() {
         }
       }
 
-      const isSelected = selectedQueueItems.has(index);
+      const isSelected = selectedQueueItems.includes(index);
 
       return (
         <div key={track.id + index} 
@@ -1423,9 +1451,10 @@ export default function MiniPlayer() {
           {isQueueEditMode && (
             <div className="flex-shrink-0 mr-3 pl-1" onClick={(e) => {
                e.stopPropagation();
-               const newSet = new Set(selectedQueueItems);
-               if (newSet.has(index)) newSet.delete(index); else newSet.add(index);
-               setSelectedQueueItems(newSet);
+               setSelectedQueueItems(prev => {
+                   if (prev.includes(index)) return prev.filter(i => i !== index);
+                   return [...prev, index];
+               });
             }}>
                <div className={`w-[22px] h-[22px] rounded-full border-[2px] flex items-center justify-center transition-colors ${isSelected ? 'bg-[#1db954] border-[#1db954]' : 'border-white/40'}`}>
                   {isSelected && <Check size={14} className="text-black stroke-[3px]" />}
@@ -1435,9 +1464,10 @@ export default function MiniPlayer() {
 
           <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0" onClick={() => { 
              if(isQueueEditMode) {
-                 const newSet = new Set(selectedQueueItems);
-                 if (newSet.has(index)) newSet.delete(index); else newSet.add(index);
-                 setSelectedQueueItems(newSet);
+                 setSelectedQueueItems(prev => {
+                     if (prev.includes(index)) return prev.filter(i => i !== index);
+                     return [...prev, index];
+                 });
                  return;
              }
              setCurrentSong(track); 
@@ -1811,7 +1841,7 @@ export default function MiniPlayer() {
             <button onClick={() => { setShowQueue(false); setIsQueueEditMode(false); }} className="p-2 -ml-2 text-white/80 active:opacity-50"><ChevronDown size={28} /></button>
             <span className="text-[15px] font-bold text-white">Queue</span>
             {isQueueEditMode ? (
-               <button onClick={() => { setIsQueueEditMode(false); setSelectedQueueItems(new Set()); }} className="text-[14px] font-bold text-[#1db954] active:opacity-50">Done</button>
+               <button onClick={() => { setIsQueueEditMode(false); setSelectedQueueItems([]); }} className="text-[14px] font-bold text-[#1db954] active:opacity-50">Done</button>
             ) : (
                <button onClick={() => setIsQueueEditMode(true)} className="text-[14px] font-medium text-white/80 active:opacity-50">Edit</button>
             )}
@@ -1841,20 +1871,20 @@ export default function MiniPlayer() {
             {isQueueEditMode ? (
                 <div className="flex items-center justify-between w-full">
                     <button onClick={() => {
-                        if (selectedQueueItems.size === 0) return;
+                        if (selectedQueueItems.length === 0) return;
                         setUpcomingQueue(prev => {
-                            const arr = [...prev]; const toMove: any[] =[];
-                            const sortedSelected = Array.from(selectedQueueItems).sort((a,b)=>b-a);
-                            sortedSelected.forEach(idx => toMove.push(arr.splice(idx, 1)[0]));
-                            return[...toMove.reverse(), ...arr];
+                            const arr = [...prev]; 
+                            const toMove = selectedQueueItems.map(idx => prev[idx]);
+                            const remaining = arr.filter((_, i) => !selectedQueueItems.includes(i));
+                            return[...toMove, ...remaining];
                         });
-                        setSelectedQueueItems(new Set()); setIsQueueEditMode(false);
+                        setSelectedQueueItems([]); setIsQueueEditMode(false);
                     }} className="text-white font-bold text-[13px] bg-white/10 px-4 py-2 rounded-full active:bg-white/20 transition-colors">Move to Top</button>
-                    <span className="text-white/50 text-[12px] font-bold">{selectedQueueItems.size} Selected</span>
+                    <span className="text-white/50 text-[12px] font-bold">{selectedQueueItems.length} Selected</span>
                     <button onClick={() => {
-                        if (selectedQueueItems.size === 0) return;
-                        setUpcomingQueue(prev => prev.filter((_, i) => !selectedQueueItems.has(i)));
-                        setSelectedQueueItems(new Set()); setIsQueueEditMode(false);
+                        if (selectedQueueItems.length === 0) return;
+                        setUpcomingQueue(prev => prev.filter((_, i) => !selectedQueueItems.includes(i)));
+                        setSelectedQueueItems([]); setIsQueueEditMode(false);
                     }} className="text-[#ff4444] font-bold text-[13px] bg-[#ff4444]/10 px-4 py-2 rounded-full active:bg-[#ff4444]/20 transition-colors">Remove</button>
                 </div>
             ) : (

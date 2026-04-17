@@ -477,14 +477,12 @@ export default function MiniPlayer() {
     if (currentSong.ytVideoId || currentSong.prefetchedYtId) {
       prefetchedYtIdRef.current = currentSong.ytVideoId || currentSong.prefetchedYtId;
       setYtVideoId(prefetchedYtIdRef.current);
-      if (isVideoMode || currentSong.isProFallback) { 
-          setIsVideoMode(true); setIsVideoLoading(true); videoStartTimeRef.current = 0; setIsVideoLoading(false); 
-      }
+      if (isVideoMode) { setIsVideoLoading(true); videoStartTimeRef.current = 0; setIsVideoLoading(false); }
     } else {
-      setIsVideoLoading(isVideoMode || currentSong.isProFallback); videoStartTimeRef.current = 0;
+      setIsVideoLoading(isVideoMode); videoStartTimeRef.current = 0;
       prefetchVideoId(instantTitle, instantArtists).then((vid) => {
          if (!isCurrent) return;
-         if (vid) { setYtVideoId(vid); if(currentSong.isProFallback) setIsVideoMode(true); }
+         if (vid) setYtVideoId(vid);
          else if (isVideoMode) { setIsVideoMode(false); audioRef.current?.play().catch(()=>{}); setIsPlaying(true); }
          setIsVideoLoading(false);
       });
@@ -564,7 +562,7 @@ export default function MiniPlayer() {
     }
   }, [queue]); 
 
-  // AUDIO URL FETCH ENGINE
+  // AUDIO URL FETCH ENGINE (Vidser -> Cnd -> Saavn)
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true;
@@ -597,7 +595,7 @@ export default function MiniPlayer() {
                 
                 if (resolvedUrl) { 
                    setAudioUrl(resolvedUrl); setLoading(false); 
-                   setIsVideoMode(true); setSyncType("UNSYNCED");
+                   setIsVideoMode(true); setSyncType("UNSYNCED"); // Bypass restricted audio safely
                    return; 
                 }
             }
@@ -718,7 +716,7 @@ export default function MiniPlayer() {
     };
     fetchExtras();
     return () => { isCurrent = false; };
-  }, [spotifyId, spotifyUrl]);
+  },[spotifyId, spotifyUrl]);
 
   useEffect(() => {
     if (!displayImage) return;
@@ -784,7 +782,7 @@ export default function MiniPlayer() {
 
   useEffect(() => { playNextRef.current = playNext; playPrevRef.current = playPrev; isVideoModeRef.current = isVideoMode; },[playNext, playPrev, isVideoMode]);
 
-  // MEDIA SESSION API (Flawless Play/Pause Links)
+  // MEDIA SESSION API (Perfect Native Notification Links)
   const syncPosition = useCallback(() => {
     if ('mediaSession' in navigator && audioRef.current && duration > 0) {
       try { navigator.mediaSession.setPositionState({ duration, playbackRate: 1, position: audioRef.current.currentTime }); } catch(e) {}
@@ -810,7 +808,7 @@ export default function MiniPlayer() {
        navigator.mediaSession.setActionHandler('previoustrack', () => playPrevRef.current());
        navigator.mediaSession.setActionHandler('nexttrack', () => playNextRef.current());
        navigator.mediaSession.setActionHandler('seekto', (details) => {
-          if (details.seekTime && audioRef.current) {
+          if (details.seekTime !== undefined && audioRef.current) {
             audioRef.current.currentTime = details.seekTime; setCurrentTime(details.seekTime); syncPosition();
           }
        });
@@ -959,7 +957,7 @@ export default function MiniPlayer() {
       }
 
       const mp3Data =[];
-      const blockSize = 1152 * 20; // Fast 20-frame chunks
+      const blockSize = 1152 * 20; 
       let lastYield = Date.now();
       
       for (let i = 0; i < buffer.length; i += blockSize) {
@@ -968,7 +966,7 @@ export default function MiniPlayer() {
           if (mp3buf.length > 0) mp3Data.push(mp3buf);
           
           const now = Date.now();
-          if (now - lastYield > 100) { // Yield UI every 100ms
+          if (now - lastYield > 100) { 
               const pct = 40 + Math.floor((i / buffer.length) * 50);
               setDlState(prev => ({...prev, progress: pct}));
               await new Promise(r => setTimeout(r, 0)); 
@@ -1040,7 +1038,7 @@ export default function MiniPlayer() {
 
   const handleDownloadMusicInit = () => { 
       if (currentSong.downloadUrl && currentSong.downloadUrl.length > 0 && !currentSong.isProFallback) {
-          const desired =['320kbps', '160kbps', '96kbps', '48kbps'];
+          const desired =['320kbps', '160kbps', '96kbps', '48kbps', '12kbps'];
           const opts: any[] =[];
           desired.forEach(q => {
               const match = currentSong.downloadUrl.find((u:any) => u.quality === q || u.quality.includes(q.replace('kbps','')));
@@ -1220,22 +1218,32 @@ export default function MiniPlayer() {
 
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
-              {/* SPOTIFY-STYLE MINI LYRICS (3 Lines, Above Title, 1.3s Animation) */}
+              {/* SPOTIFY-STYLE PREMIUM MINI LYRICS (3 Lines, 1.3s Custom Bezier Push/Pull) */}
               <div className={`transition-all duration-500 w-full relative mask-edges-vertical overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 h-[80px]'}`}>
                 {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics.length > 0 && !isVideoMode && (
                   <div className="relative w-full h-full flex flex-col justify-center">
                     {lyrics.map((line: any, idx: number) => {
                        const diff = idx - activeLyricIndex;
                        if (diff < -1 || diff > 1) return null; 
+                       
+                       const timeToPlay = line.time - currentTime;
+                       // Pull upcoming line early by 0.7s, push past line away naturally
+                       const isUpcomingReady = diff === 1 && timeToPlay <= 0.7 && timeToPlay > -0.1;
+
+                       let yPos = 0, scale = 1, op = 0;
+                       if (diff < 0) { yPos = -10; scale = 0.85; op = 0; } // Pushed line hides up
+                       else if (diff === 0) { yPos = 25; scale = 1; op = 1; } // Active line
+                       else { yPos = isUpcomingReady ? 65 : 100; scale = 0.9; op = isUpcomingReady ? 0.4 : 0; } // Pulled line waits ready
+
                        return (
                           <span key={idx} 
                                 className={`absolute left-0 right-0 text-left pr-2 no-select-text font-black drop-shadow-lg line-clamp-2 leading-tight transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${getMiniFontSize()}`}
                                 style={{
-                                   // old line(-1) moves to 0px and scales down. new line(1) moves to 60px. active(0) sits at 30px.
-                                   transform: `translateY(${diff === 0 ? 30 : diff < 0 ? 0 : 60}px) scale(${diff === 0 ? 1 : 0.85})`,
-                                   opacity: diff === 0 ? 1 : diff > 0 ? 0.4 : 0,
+                                   transform: `translateY(${yPos}px) scale(${scale})`,
+                                   opacity: op,
                                    color: diff === 0 ? 'white' : 'rgba(255,255,255,0.6)',
-                                   zIndex: diff === 0 ? 10 : 1
+                                   zIndex: diff === 0 ? 10 : 1,
+                                   transformOrigin: 'left top'
                                 }}>
                             {line.words || "♪"}
                           </span>
@@ -1431,6 +1439,11 @@ export default function MiniPlayer() {
                         <div className="flex flex-col"><span className="text-white font-bold text-sm">Download {opt.label}</span></div><Download size={18} className="text-[#1db954]" />
                     </button>
                   ))}
+                  {(!dlState.options || dlState.options.length === 0) && (
+                    <button onClick={() => executeMp3PackerDownload(audioUrl, "320")} className="w-full flex items-center justify-between p-3 rounded-lg bg-[#282828] hover:bg-[#333] transition-colors border border-white/5 active:scale-95 text-left">
+                        <div className="flex flex-col"><span className="text-white font-bold text-sm">Download Premium MP3</span></div><Download size={18} className="text-[#1db954]" />
+                    </button>
+                  )}
                 </div>
               )}
            </div>

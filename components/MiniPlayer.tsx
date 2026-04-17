@@ -1,4 +1,3 @@
-
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -223,7 +222,7 @@ export default function MiniPlayer() {
   } = useAppContext();
   
   const[audioUrl, setAudioUrl] = useState("");
-  const [loading, setLoading] = useState(false);
+  const[loading, setLoading] = useState(false);
   const[progress, setProgress] = useState(0);
   const[currentTime, setCurrentTime] = useState(0);
   const[duration, setDuration] = useState(0);
@@ -232,7 +231,7 @@ export default function MiniPlayer() {
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   const[isUiHidden, setIsUiHidden] = useState(false); 
-  const[isShuffle, setIsShuffle] = useState(false);
+  const [isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
   const[showQueue, setShowQueue] = useState(false);
   
@@ -480,7 +479,6 @@ export default function MiniPlayer() {
     if (currentSong.ytVideoId || currentSong.prefetchedYtId) {
       prefetchedYtIdRef.current = currentSong.ytVideoId || currentSong.prefetchedYtId;
       setYtVideoId(prefetchedYtIdRef.current);
-      // NOTE: Intentionally keeping it in Audio mode unless the user explicitly flips. Proxy fallbacks trigger it later.
     } else {
       setIsVideoLoading(isVideoMode); videoStartTimeRef.current = 0;
       prefetchVideoId(instantTitle, instantArtists).then((vid) => {
@@ -866,7 +864,7 @@ export default function MiniPlayer() {
     }
     if (fullActiveLyricRef.current && fullLyricsContainerRef.current) {
       const container = fullLyricsContainerRef.current; const element = fullActiveLyricRef.current;
-      const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight * 0.6); 
+      const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + 40; 
       container.scrollTo({ top: scrollPos, behavior: 'smooth' });
     }
   },[activeLyricIndex, isLyricsFullScreen]);
@@ -1041,15 +1039,10 @@ export default function MiniPlayer() {
 
   const handleDownloadMusicInit = () => { 
       if (currentSong.downloadUrl && currentSong.downloadUrl.length > 0 && !currentSong.isProFallback) {
-          const desired =['320kbps', '160kbps', '96kbps', '48kbps', '12kbps'];
-          const opts: any[] =[];
-          desired.forEach(q => {
-              const match = currentSong.downloadUrl.find((u:any) => u.quality === q || u.quality.includes(q.replace('kbps','')));
-              if(match) opts.push({ url: match.url, quality: q, label: `${q}` });
-          });
-          if(opts.length === 0) {
-              currentSong.downloadUrl.forEach((u:any) => opts.push({ url: u.url, quality: u.quality, label: `${u.quality}` }));
-          }
+          const opts = currentSong.downloadUrl.map((u:any) => {
+              const qStr = String(u.quality || "320");
+              return { url: u.url, quality: qStr, label: qStr.includes("kbps") ? qStr : `${qStr}kbps` };
+          }).reverse();
           setDlState({ type: "music", status: "options", options: opts });
       } else {
           setDlState({ type: "music", status: "options" }); 
@@ -1093,7 +1086,7 @@ export default function MiniPlayer() {
 
   const getLineFontSize = () => {
       const s = lineFontSize;
-      return s === "Small" ? "text-[14px]" : s === "Large" ? "text-[20px]" : "text-[16px]";
+      return s === "Small" ? "text-[16px]" : s === "Large" ? "text-[22px]" : "text-[19px]";
   };
 
   const RenderedLyrics = useMemo(() => {
@@ -1221,37 +1214,23 @@ export default function MiniPlayer() {
 
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
-              {/* SPOTIFY-STYLE PREMIUM MINI LYRICS (No Overlaps, Exact Anchor Sync, 1.3s Slide) */}
-              <div className={`transition-all duration-500 w-full relative mask-edges-vertical overflow-hidden flex items-center ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 h-[100px]'}`}>
+              {/* SINGLE LINE BUTTERFLY LYRICS (Above Title, Centric, Slow 1.2s Animation) */}
+              <div className={`transition-all duration-500 w-full relative overflow-hidden flex items-center justify-center ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 h-[44px]'}`}>
                 {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics.length > 0 && !isVideoMode && (
                   <div className="relative w-full h-full flex justify-center items-center">
                     {lyrics.map((line: any, idx: number) => {
                        const diff = idx - activeLyricIndex;
-                       if (diff < -1 || diff > 1) return null; 
+                       if (Math.abs(diff) > 1) return null; // Only keep 3 lines in DOM for transitions
                        
-                       const timeToPlay = line.time - currentTime;
-                       const isUpcomingReady = diff === 1 && timeToPlay <= 0.7; // Pulls exactly 0.7s before note hits
-
-                       // Exact Flow Anchors (Prevents Multi-line Overlaps)
-                       let alignment: any = {}, transform = '', op = 0;
-                       if (diff < 0) { 
-                           alignment = { top: 0 }; 
-                           transform = 'translateY(-10px) scale(0.85)'; 
-                           op = 0; 
-                       } else if (diff === 0) { 
-                           alignment = { top: '50%', marginTop: '-14px' }; // Center Anchor
-                           transform = 'translateY(-50%) scale(1)'; 
-                           op = 1; 
-                       } else { 
-                           alignment = { bottom: 0 }; 
-                           transform = isUpcomingReady ? 'translateY(0px) scale(0.9)' : 'translateY(20px) scale(0.9)'; 
-                           op = isUpcomingReady ? 0.4 : 0; 
-                       }
-
+                       let transform = '', op = 0;
+                       if (diff === 0) { transform = 'translateY(0px) scale(1)'; op = 1; }
+                       else if (diff > 0) { transform = 'translateY(40px) scale(0.9)'; op = 0; } // Comes from bottom (under title)
+                       else { transform = 'translateY(-40px) scale(1.1)'; op = 0; } // Flies upward and fades
+                       
                        return (
                           <span key={idx} 
-                                className={`absolute left-0 right-0 text-left pr-2 no-select-text font-black drop-shadow-lg line-clamp-3 leading-tight transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${getLineFontSize()}`}
-                                style={{ ...alignment, transform, opacity: op, color: diff === 0 ? 'white' : 'rgba(255,255,255,0.5)', zIndex: diff === 0 ? 10 : 1, transformOrigin: 'left center' }}>
+                                className={`absolute left-0 right-0 text-center px-2 no-select-text font-extrabold drop-shadow-xl line-clamp-1 leading-tight transition-all duration-[1200ms] ease-[cubic-bezier(0.34,1.15,0.3,1)] ${getLineFontSize()}`}
+                                style={{ transform, opacity: op, color: 'white', zIndex: diff === 0 ? 10 : 1 }}>
                             {line.words || "♪"}
                           </span>
                        );

@@ -8,12 +8,12 @@
   "theme_color": "#121212",
   "icons":[
     {
-      "src": "https://via.placeholder.com/192x192.png?text=M",
+      "src": "https://raw.githubusercontent.com/Ayush8481Lab/musicayush/refs/heads/main/app/android-chrome-192x192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://via.placeholder.com/512x512.png?text=M",
+      "src": "https://raw.githubusercontent.com/Ayush8481Lab/musicayush/refs/heads/main/app/android-chrome-512x512.png",
       "sizes": "512x512",
       "type": "image/png"
     }

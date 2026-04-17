@@ -206,8 +206,8 @@ const MarqueeText = ({ text, className = "" }: { text: string, className?: strin
   }, [text]);
 
   return (
-    <div ref={containerRef} className={`overflow-hidden whitespace-nowrap w-full no-select ${isOverflowing ? "mask-edges" : ""} ${className}`}>
-      <div className={`inline-block ${isOverflowing ? "animate-spotify-marquee" : ""}`}>
+    <div ref={containerRef} className={`overflow-hidden whitespace-nowrap w-full max-w-full no-select ${isOverflowing ? "mask-edges" : ""} ${className}`}>
+      <div className={`inline-block ${isOverflowing ? "animate-spotify-marquee" : ""}`} style={{ minWidth: "100%" }}>
         <span ref={textRef} className={isOverflowing ? "pr-12" : ""}>{text}</span>
         {isOverflowing && <span className="pr-12">{text}</span>}
       </div>
@@ -232,13 +232,14 @@ export default function MiniPlayer() {
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   const[isUiHidden, setIsUiHidden] = useState(false); 
-  const [isShuffle, setIsShuffle] = useState(false);
+  const[isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
   const[showQueue, setShowQueue] = useState(false);
   
   const currentTrackRef = useRef<any>(null);
   const maxListenRef = useRef<number>(0);
   const lastTimeUpdateRef = useRef<number>(0); 
+  const isNavigatingBackRef = useRef(false);
   
   const[draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const[dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
@@ -461,11 +462,14 @@ export default function MiniPlayer() {
     
     if (currentTrackRef.current && currentTrackRef.current.id !== currentSong.id) {
       updateTop30Cache(currentTrackRef.current, maxListenRef.current);
-      const trackToSave = { ...currentTrackRef.current, prefetchedYtId: ytVideoId || currentTrackRef.current.prefetchedYtId };
-      setHistoryQueue(prev => {
-        const newHist =[trackToSave, ...prev].filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.id === v.id) === i);
-        const sliced = newHist.slice(0, 20); localStorage.setItem('recent_songs', JSON.stringify(sliced)); return sliced;
-      });
+      if (!isNavigatingBackRef.current) {
+          const trackToSave = { ...currentTrackRef.current, prefetchedYtId: ytVideoId || currentTrackRef.current.prefetchedYtId };
+          setHistoryQueue(prev => {
+            const newHist =[trackToSave, ...prev].filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.id === v.id) === i);
+            const sliced = newHist.slice(0, 20); localStorage.setItem('recent_songs', JSON.stringify(sliced)); return sliced;
+          });
+      }
+      isNavigatingBackRef.current = false;
     }
     currentTrackRef.current = currentSong; maxListenRef.current = 0;
     
@@ -783,6 +787,7 @@ export default function MiniPlayer() {
     if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
     if (audioRef.current && audioRef.current.currentTime > 3) { audioRef.current.currentTime = 0; return; }
     if (historyQueue.length > 0) {
+      isNavigatingBackRef.current = true; // Prevents recursive history loop
       const prevSong = historyQueue[0]; setHistoryQueue(prev => prev.slice(1)); setUpcomingQueue(prev =>[currentSong, ...prev]);
       setCurrentSong(prevSong); setIsPlaying(true);
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
@@ -790,6 +795,7 @@ export default function MiniPlayer() {
       if (!queue || queue.length === 0) return;
       const idx = queue.findIndex((s: any) => s.id === currentSong.id);
       if (idx > 0) { 
+          isNavigatingBackRef.current = true; // Prevents recursive history loop
           setCurrentSong(queue[idx - 1]); setIsPlaying(true); 
           if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
       }
@@ -1016,7 +1022,7 @@ export default function MiniPlayer() {
 
   const handleSort = () => {
     if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
-      const _upcomingQueue = [...upcomingQueue];
+      const _upcomingQueue =[...upcomingQueue];
       const draggedItemContent = _upcomingQueue.splice(dragItem.current, 1)[0];
       _upcomingQueue.splice(dragOverItem.current, 0, draggedItemContent);
       setUpcomingQueue(_upcomingQueue);
@@ -1199,6 +1205,8 @@ export default function MiniPlayer() {
       return s === "Small" ? "text-[14px]" : s === "Large" ? "text-[20px]" : "text-[16px]";
   };
 
+  const showTinyBanner = ((isCanvasLoaded && isCanvasEnabled && !isVideoMode && !isLyricsFullScreen) || isVideoMode || isLyricsFullScreen);
+
   const RenderedLyrics = useMemo(() => {
     if (!isLyricsEnabled) return null;
     return lyrics.map((line: any, idx: number) => {
@@ -1211,11 +1219,14 @@ export default function MiniPlayer() {
       const pastClasses = `text-white/50 ${fzClass} font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2`;
       const futureClasses = `text-black/80 ${fzClass} font-black drop-shadow-md leading-tight opacity-70 translate-y-3`;
 
+      // Clear the word sync specific inline styles applied directly via DOM manipulation to prevent sticking
+      const cleanupStyles = !isActive ? { backgroundImage: 'none', WebkitBackgroundClip: 'unset', WebkitTextFillColor: 'unset', color: '' } : {};
+
       return (
         <p key={idx} 
            ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} 
            onClick={() => handleLyricClick(line.time)} 
-           className={`cursor-pointer transition-all duration-[800ms] ease-out origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`}>
+           className={`cursor-pointer transition-all duration-[800ms] ease-out origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`} style={cleanupStyles}>
            {isWordSyncEnabled ? (
               (line.words || '♪').split(' ').map((word: string, wIdx: number, arr: any[]) => (
                   <span key={wIdx} className="lyric-word inline">{word}{wIdx < arr.length - 1 ? ' ' : ''}</span>
@@ -1248,7 +1259,13 @@ export default function MiniPlayer() {
   const RenderedQueue = useMemo(() => {
     return upcomingQueue.map((track: any, index: number) => (
       <div key={index} draggable onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }} onDragStart={(e) => { dragItem.current = index; setDraggedIndex(index); }} onDragEnter={(e) => { e.preventDefault(); }} onDragOver={(e) => handleDragOver(e, index)} onDragEnd={handleSort}
-        onClick={() => { setCurrentSong(track); const idx = upcomingQueue.findIndex((t: any) => t.id === track.id); setUpcomingQueue((prev: any) => prev.slice(idx + 1)); setIsPlaying(true); }}
+        onClick={() => { 
+            setCurrentSong(track); 
+            const idx = upcomingQueue.findIndex((t: any) => t.id === track.id); 
+            // Removes ONLY the clicked song, preserving the rest of the upcoming queue
+            setUpcomingQueue((prev: any) => prev.filter((_: any, i: number) => i !== idx)); 
+            setIsPlaying(true); 
+        }}
         style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', willChange: 'transform, margin', transform: 'translateZ(0)', transition: 'all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1)', marginTop: dropTargetIndex === index && draggedIndex !== index && draggedIndex! > index ? '3.5rem' : '0', marginBottom: dropTargetIndex === index && draggedIndex !== index && draggedIndex! < index ? '3.5rem' : '0' }}
         className={`flex items-center justify-between w-full group p-1 rounded-md cursor-pointer ${draggedIndex === index ? 'opacity-40 scale-[0.98] bg-white/10 shadow-inner' : 'hover:bg-white/5'} `}
       >
@@ -1369,11 +1386,11 @@ export default function MiniPlayer() {
               </div>
 
               <div className="flex items-center justify-between mb-5 drop-shadow-md w-full no-select-text">
-                <div className="flex items-center gap-3 overflow-hidden pr-4 flex-1 min-w-0 w-full">
-                  {isCanvasLoaded && isCanvasEnabled && !isVideoMode && !isLyricsFullScreen && (<img draggable={false} src={displayImage} className="w-[48px] h-[48px] rounded-md shadow-md flex-shrink-0 no-select pointer-events-none" alt="tiny cover" />)}
+                <div className="flex items-center gap-3 overflow-hidden pr-4 flex-1 min-w-0 w-full max-w-full">
+                  {showTinyBanner && displayImage && (<img draggable={false} src={displayImage} className="w-[48px] h-[48px] rounded-md shadow-md flex-shrink-0 no-select pointer-events-none" alt="tiny cover" />)}
                   <div className="flex flex-col flex-1 min-w-0 w-full overflow-hidden">
-                    <MarqueeText text={displayTitle} className="text-[22px] font-bold text-white tracking-tight leading-tight drop-shadow-md" />
-                    <MarqueeText text={displayArtists} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md" />
+                    <MarqueeText text={displayTitle} className="text-[22px] font-bold text-white tracking-tight leading-tight drop-shadow-md w-full max-w-full" />
+                    <MarqueeText text={displayArtists} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md w-full max-w-full" />
                   </div>
                 </div>
                 <button onClick={handleLikeClick} className="flex-shrink-0 ml-2 active:scale-75 transition-transform pointer-events-auto"><Heart size={26} fill={isSongLiked ? "#1db954" : "none"} color={isSongLiked ? "#1db954" : "white"} /></button>
@@ -1622,7 +1639,7 @@ export default function MiniPlayer() {
             {(loading || isVideoLoading) && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 size={16} className="animate-spin text-white" /></div>}
             {displayImage && <img draggable={false} src={displayImage} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />}
           </div>
-          <div className="flex flex-col flex-1 min-w-0 pr-3 justify-center"><MarqueeText text={displayTitle} className="text-[13px] font-bold text-white leading-tight mb-[2px]" /><MarqueeText text={displayArtists} className="text-[12px] font-medium text-white/70 leading-tight" /></div>
+          <div className="flex flex-col flex-1 min-w-0 pr-3 justify-center"><MarqueeText text={displayTitle} className="text-[13px] font-bold text-white leading-tight mb-[2px] w-full max-w-full" /><MarqueeText text={displayArtists} className="text-[12px] font-medium text-white/70 leading-tight w-full max-w-full" /></div>
           <div className="flex items-center gap-4 flex-shrink-0 pr-2 text-white">
             <button className="active:scale-75 transition-transform flex items-center justify-center w-[20px] h-[20px]" onClick={toggleVideoMode}><MonitorPlay size={20} className={isVideoMode ? "text-[#1db954]" : ""} /></button>
             <button className="active:scale-75 transition-transform flex items-center justify-center w-[24px] h-[24px]" onClick={handlePlayPauseToggle}>

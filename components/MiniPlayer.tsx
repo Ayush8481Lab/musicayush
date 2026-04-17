@@ -562,7 +562,7 @@ export default function MiniPlayer() {
         if (idx !== -1) setUpcomingQueue(queue.slice(idx + 1));
       }
     }
-  },[queue]); 
+  }, [queue]); 
 
   // AUDIO URL FETCH ENGINE
   useEffect(() => {
@@ -597,7 +597,7 @@ export default function MiniPlayer() {
                 
                 if (resolvedUrl) { 
                    setAudioUrl(resolvedUrl); setLoading(false); 
-                   setIsVideoMode(true); setSyncType("UNSYNCED"); // Fallback safety
+                   setIsVideoMode(true); setSyncType("UNSYNCED");
                    return; 
                 }
             }
@@ -926,7 +926,7 @@ export default function MiniPlayer() {
   const handleTouchMove = (e: React.TouchEvent) => { const diff = e.touches[0].clientX - touchStartX.current; if (diff > 0 && !showQueue) setSwipeX(diff); };
   const handleTouchEnd = () => { if (swipeX > window.innerWidth * 0.45 && !showQueue) { setCurrentSong(null); setIsPlaying(false); setIsExpanded(false); } setSwipeX(0); };
 
-  // --- NATIVE MP3 PACKER ENGINE ---
+  // --- NATIVE MP3 PACKER ENGINE (FAST) ---
   const executeMp3PackerDownload = async (url: string, quality: string) => {
     setDlState({ type: "music", status: "downloading", progress: 0, packStep: "Fetching Audio..." });
     try {
@@ -943,12 +943,12 @@ export default function MiniPlayer() {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const audioBuffer = await audioCtx.decodeAudioData(audioFileBuffer);
 
-      setDlState(prev => ({...prev, progress: 40, packStep: "Encoding to MP3 (High CPU)..."}));
-      await new Promise(r => setTimeout(r, 100)); // Yield UI
+      setDlState(prev => ({...prev, progress: 40, packStep: "Encoding to MP3..."}));
+      await new Promise(r => setTimeout(r, 100)); 
       
       const channels = 1; 
       const sampleRate = audioBuffer.sampleRate;
-      const kbps = parseInt(quality) || 128;
+      const kbps = parseInt(quality.replace('kbps','')) || 128;
       const mp3encoder = new (window as any).lamejs.Mp3Encoder(channels, sampleRate, kbps);
       
       let samples = audioBuffer.getChannelData(0); 
@@ -959,16 +959,20 @@ export default function MiniPlayer() {
       }
 
       const mp3Data =[];
-      const blockSize = 1152; 
+      const blockSize = 1152 * 20; // Fast 20-frame chunks
+      let lastYield = Date.now();
+      
       for (let i = 0; i < buffer.length; i += blockSize) {
           const chunk = buffer.subarray(i, i + blockSize);
           const mp3buf = mp3encoder.encodeBuffer(chunk);
           if (mp3buf.length > 0) mp3Data.push(mp3buf);
           
-          if (i % (blockSize * 150) === 0) {
+          const now = Date.now();
+          if (now - lastYield > 100) { // Yield UI every 100ms
               const pct = 40 + Math.floor((i / buffer.length) * 50);
               setDlState(prev => ({...prev, progress: pct}));
-              await new Promise(r => setTimeout(r, 0)); // Keep UI responsive
+              await new Promise(r => setTimeout(r, 0)); 
+              lastYield = Date.now();
           }
       }
       const endBuf = mp3encoder.flush();
@@ -986,13 +990,13 @@ export default function MiniPlayer() {
       setDlState(prev => ({...prev, progress: 100, packStep: "Complete!"}));
       const finalBlob = new Blob([taggedBuffer], { type: 'audio/mp3' });
       const dlUrl = URL.createObjectURL(finalBlob);
-      const a = document.createElement('a'); a.href = dlUrl; a.download = `${displayArtists} - ${displayTitle}.mp3`;
+      const a = document.createElement('a'); a.href = dlUrl; a.download = `${displayTitle} - ${displayArtists}.mp3`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setDlState({ type: null, status: "idle" });
 
     } catch (e) {
       console.warn("Packer failed, using raw fallback", e);
-      const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.download = `${displayArtists} - ${displayTitle}.m4a`; 
+      const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.download = `${displayTitle} - ${displayArtists}.m4a`; 
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setDlState({ type: null, status: "idle" });
     }
@@ -1036,13 +1040,16 @@ export default function MiniPlayer() {
 
   const handleDownloadMusicInit = () => { 
       if (currentSong.downloadUrl && currentSong.downloadUrl.length > 0 && !currentSong.isProFallback) {
-          const validQualities =['12kbps', '48kbps', '96kbps', '160kbps', '320kbps'];
-          const opts = currentSong.downloadUrl
-              .filter((u:any) => validQualities.includes(u.quality))
-              .map((u:any) => ({ url: u.url, quality: u.quality, label: `${u.quality} Quality` }));
-          
-          const fallbackOpts = currentSong.downloadUrl.map((u:any) => ({ url: u.url, quality: u.quality, label: `${u.quality} Quality` }));
-          setDlState({ type: "music", status: "options", options: opts.length > 0 ? opts : fallbackOpts });
+          const desired =['320kbps', '160kbps', '96kbps', '48kbps'];
+          const opts: any[] =[];
+          desired.forEach(q => {
+              const match = currentSong.downloadUrl.find((u:any) => u.quality === q || u.quality.includes(q.replace('kbps','')));
+              if(match) opts.push({ url: match.url, quality: q, label: `${q}` });
+          });
+          if(opts.length === 0) {
+              currentSong.downloadUrl.forEach((u:any) => opts.push({ url: u.url, quality: u.quality, label: `${u.quality}` }));
+          }
+          setDlState({ type: "music", status: "options", options: opts });
       } else {
           setDlState({ type: "music", status: "options" }); 
       }
@@ -1121,7 +1128,7 @@ export default function MiniPlayer() {
         </Link>
       )
     });
-  }, [uniqueArtists]);
+  },[uniqueArtists]);
 
   const RenderedQueue = useMemo(() => {
     return upcomingQueue.map((track: any, index: number) => (
@@ -1213,8 +1220,8 @@ export default function MiniPlayer() {
 
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
               
-              {/* SPOTIFY-STYLE MINI LYRICS (Above Title, Max 3 Lines, 1.3s Premium Animation) */}
-              <div className={`transition-all duration-500 w-full relative mask-edges-vertical overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 h-[85px]'}`}>
+              {/* SPOTIFY-STYLE MINI LYRICS (3 Lines, Above Title, 1.3s Animation) */}
+              <div className={`transition-all duration-500 w-full relative mask-edges-vertical overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 h-[80px]'}`}>
                 {isLyricsEnabled && !isLyricsFullScreen && syncType === "LINE_SYNCED" && lyrics.length > 0 && !isVideoMode && (
                   <div className="relative w-full h-full flex flex-col justify-center">
                     {lyrics.map((line: any, idx: number) => {
@@ -1224,10 +1231,10 @@ export default function MiniPlayer() {
                           <span key={idx} 
                                 className={`absolute left-0 right-0 text-left pr-2 no-select-text font-black drop-shadow-lg line-clamp-2 leading-tight transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${getMiniFontSize()}`}
                                 style={{
-                                   // Diff -1 pushes UP to 5px, Diff 0 locks at Center 30px, Diff 1 waits at Bottom 70px
-                                   transform: `translateY(${diff === 0 ? 30 : diff < 0 ? 5 : 70}px) scale(${diff === 0 ? 1 : 0.9})`,
-                                   opacity: diff === 0 ? 1 : 0.3,
-                                   color: diff === 0 ? 'white' : 'rgba(255,255,255,0.5)',
+                                   // old line(-1) moves to 0px and scales down. new line(1) moves to 60px. active(0) sits at 30px.
+                                   transform: `translateY(${diff === 0 ? 30 : diff < 0 ? 0 : 60}px) scale(${diff === 0 ? 1 : 0.85})`,
+                                   opacity: diff === 0 ? 1 : diff > 0 ? 0.4 : 0,
+                                   color: diff === 0 ? 'white' : 'rgba(255,255,255,0.6)',
                                    zIndex: diff === 0 ? 10 : 1
                                 }}>
                             {line.words || "♪"}
@@ -1424,11 +1431,6 @@ export default function MiniPlayer() {
                         <div className="flex flex-col"><span className="text-white font-bold text-sm">Download {opt.label}</span></div><Download size={18} className="text-[#1db954]" />
                     </button>
                   ))}
-                  {(!dlState.options || dlState.options.length === 0) && (
-                    <button onClick={() => executeMp3PackerDownload(audioUrl, "320")} className="w-full flex items-center justify-between p-3 rounded-lg bg-[#282828] hover:bg-[#333] transition-colors border border-white/5 active:scale-95 text-left">
-                        <div className="flex flex-col"><span className="text-white font-bold text-sm">Download Premium MP3</span></div><Download size={18} className="text-[#1db954]" />
-                    </button>
-                  )}
                 </div>
               )}
            </div>

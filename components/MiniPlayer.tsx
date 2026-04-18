@@ -1,4 +1,3 @@
-
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -395,7 +394,7 @@ export default function MiniPlayer() {
   const[isSessionRestored, setIsSessionRestored] = useState(false);
   const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   
-  const[selectedQuality, setSelectedQuality] = useState("320");
+  const [selectedQuality, setSelectedQuality] = useState("320");
   const[lineFontSize, setLineFontSize] = useState("Medium");
   const[cardFontSize, setCardFontSize] = useState("Medium");
   const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
@@ -854,11 +853,18 @@ export default function MiniPlayer() {
         if (e.data.duration) {
           if (duration !== e.data.duration) setDuration(e.data.duration);
           if (!isSeekingRef.current && isExpanded) setProgress((e.data.time / e.data.duration) * 100);
-        } else if (duration > 0 && !isSeekingRef.current && isExpanded) setProgress((e.data.time / duration) * 100);
+        } else if (duration > 0 && !isSeekingRef.current && isExpanded) {
+           setProgress((e.data.time / duration) * 100);
+        }
       } else if (e.data?.type === 'YTP_STATE') {
         if (e.data.state === 1) { audioRef.current?.pause(); setIsPlaying(true); } 
         else if (e.data.state === 2) { setIsPlaying(false); } 
-        else if (e.data.state === 0) { playNextRef.current(); } 
+        else if (e.data.state === 0 || String(e.data.state) === '0') { 
+            // Automatically click the next button securely when video ends
+            const btn = document.getElementById('next-song-btn');
+            if (btn) btn.click();
+            else playNextRef.current();
+        } 
       }
     };
     window.addEventListener('message', handleMsg);
@@ -1783,7 +1789,7 @@ export default function MiniPlayer() {
             <div className={`flex-1 min-h-0 w-full flex items-center justify-center relative z-30 transition-all duration-500 ${isLyricsFullScreen ? 'px-0 py-0 flex-col items-stretch justify-start' : (isVideoMode ? 'px-4 py-2' : 'px-8 py-2')}`}>
               {isLyricsFullScreen && isLyricsEnabled ? (
                 <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden pointer-events-auto transition-colors duration-700 bg-transparent">
-                  <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-0 pb-[30vh] flex flex-col gap-8 w-full h-full mask-edges-vertical" ref={fullLyricsContainerRef}>
+                  <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-4 pb-[30vh] flex flex-col gap-8 w-full h-full mask-edges-vertical" ref={fullLyricsContainerRef}>
                      {lyrics.length > 0 && (syncType !== "LINE_SYNCED" || isVideoMode) && (
                          <div className="flex items-center gap-3 mb-2 px-1 opacity-70">
                             <span className="px-2.5 py-[3px] bg-white/20 rounded text-[10px] font-bold text-white uppercase tracking-widest border border-white/20">Unsynced</span>
@@ -1796,17 +1802,7 @@ export default function MiniPlayer() {
                 <div className="w-full aspect-video max-w-[600px] max-h-[50vh] relative bg-black shadow-[0_15px_40px_rgba(0,0,0,0.5)] rounded-[12px] transition-all duration-500 overflow-hidden mx-auto pointer-events-auto" style={{ transform: 'translateZ(0)' }}>
                   <iframe 
                     ref={videoIframeRef} 
-                    src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${iframeInitialTimeRef.current}${isPlaying ? '&autoplay=1' : ''}`} 
-                    onLoad={() => {
-                        if (isPlaying && isVideoMode) {
-                            let attempts = 0;
-                            const interval = setInterval(() => {
-                                videoIframeRef.current?.contentWindow?.postMessage({ type: 'MUSIC_PLAY' }, '*');
-                                attempts++;
-                                if (attempts >= 6) clearInterval(interval);
-                            }, 500);
-                        }
-                    }}
+                    src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${iframeInitialTimeRef.current}`} 
                     style={{ width: "100%", height: "100%", border: "none", pointerEvents: 'auto', borderRadius: '12px' }} 
                     allow="autoplay; fullscreen; picture-in-picture" 
                   />
@@ -1848,7 +1844,7 @@ export default function MiniPlayer() {
                   <button onClick={handlePlayPauseToggle} className="w-[64px] h-[64px] rounded-full bg-white flex items-center justify-center text-black active:scale-95 transition-transform shadow-lg pointer-events-auto">
                      {(loading || isVideoLoading) ? <Loader2 size={26} className="animate-spin text-black" /> : (isPlaying ? <Pause fill="black" stroke="black" size={26} /> : <Play fill="black" stroke="black" size={28} className="translate-x-[2px]" />)}
                   </button>
-                  <button onClick={playNext} className="text-white active:opacity-50 pointer-events-auto"><SkipForward size={36} fill="white" stroke="white" /></button>
+                  <button id="next-song-btn" onClick={playNext} className="text-white active:opacity-50 pointer-events-auto"><SkipForward size={36} fill="white" stroke="white" /></button>
                   <button onClick={() => { setRepeatMode((prev) => (prev + 1) % 3); if(isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*'); }} className={`active:opacity-50 relative pointer-events-auto ${repeatMode > 0 ? 'text-[#1db954]' : 'text-white/70'}`}><Repeat size={24} />{repeatMode === 2 && <span className="absolute -top-1 -right-1 bg-[#1db954] text-black text-[9px] font-bold rounded-full w-3 h-3 flex items-center justify-center">1</span>}</button>
                 </div>
                 {!isLyricsFullScreen && (

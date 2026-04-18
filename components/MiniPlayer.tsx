@@ -270,26 +270,30 @@ export default function MiniPlayer() {
   
   const [audioUrl, setAudioUrl] = useState("");
   const[loading, setLoading] = useState(false);
-  const[progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const[duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(100);
+  const [duration, setDuration] = useState(0);
+  const[volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const[isUiHidden, setIsUiHidden] = useState(false); 
+  const [isUiHidden, setIsUiHidden] = useState(false); 
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState(0); 
-  const[showQueue, setShowQueue] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
   
-  // Touch Gestures State
-  const[dragState, setDragState] = useState<{ activeIndex: number | null, startY: number, currentY: number }>({ activeIndex: null, startY: 0, currentY: 0 });
+  // DIRECT DOM QUEUE DRAG & DROP STATE (ZERO RE-RENDERS)
+  const [dragActiveIndex, setDragActiveIndex] = useState<number | null>(null);
+  const dragRefs = useRef({ activeIndex: -1, startY: 0, currentY: 0 });
+  const autoScrollRef = useRef(0);
+  const scrollRAFRef = useRef<number | null>(null);
+  
   const[isQueueEditMode, setIsQueueEditMode] = useState(false);
   const [selectedQueueItems, setSelectedQueueItems] = useState<number[]>([]);
   
   const[miniSwipeY, setMiniSwipeY] = useState(0);
-  const[swipeX, setSwipeX] = useState(0); // Horizontal swipe
-  const[mainSwipeY, setMainSwipeY] = useState(0); // Vertical close
+  const[swipeX, setSwipeX] = useState(0); 
+  const[mainSwipeY, setMainSwipeY] = useState(0); 
   const[queueSwipeY, setQueueSwipeY] = useState(0);
   const[settingsSwipeY, setSettingsSwipeY] = useState(0);
 
@@ -303,14 +307,14 @@ export default function MiniPlayer() {
   const isNavigatingBackRef = useRef(false);
   
   const rapidKeyIdxRef = useRef(0);
-  const [spotifyId, setSpotifyId] = useState<string | null>(null);
+  const[spotifyId, setSpotifyId] = useState<string | null>(null);
   const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState<any[]>([]);
   const [syncType, setSyncType] = useState<string | null>(null);
-  const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
+  const[activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const [isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
   const [canvasData, setCanvasData] = useState<any>(null);
-  const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
+  const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
@@ -325,10 +329,11 @@ export default function MiniPlayer() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const queueContainerRef = useRef<HTMLDivElement>(null);
   const isSeekingRef = useRef(false);
-  const touchStartRef = useRef({ x: 0, y: 0 }); // Global Gesture Tracking
+  const touchStartY = useRef(0); 
+  const touchStartX = useRef(0);
   const[songDetails, setSongDetails] = useState<any>(null);
 
-  const[isVideoMode, setIsVideoMode] = useState(false);
+  const [isVideoMode, setIsVideoMode] = useState(false);
   const[ytVideoId, setYtVideoId] = useState<string | null>(null);
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const iframeInitialTimeRef = useRef<number>(0); 
@@ -341,13 +346,14 @@ export default function MiniPlayer() {
   const [isSessionRestored, setIsSessionRestored] = useState(false);
   const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   
-  const [selectedQuality, setSelectedQuality] = useState("320");
+  const[selectedQuality, setSelectedQuality] = useState("320");
   const [lineFontSize, setLineFontSize] = useState("Medium");
   const[cardFontSize, setCardFontSize] = useState("Medium");
   const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
   const [isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const[isWordSyncEnabled, setIsWordSyncEnabled] = useState(true);
   const[isMiniWordSyncEnabled, setIsMiniWordSyncEnabled] = useState(true);
+  const [syncFPS, setSyncFPS] = useState("30"); // FPS CONTROLLER
   const restoreTimeRef = useRef<number | null>(null);
 
   const isCanvasEnabledRef = useRef(true);
@@ -358,7 +364,7 @@ export default function MiniPlayer() {
   const isSongLiked = likedSongs.some((s: any) => s && s.id === currentSong?.id);
   const handleLikeClick = (e: any) => { e.stopPropagation(); toggleLikeSong(currentSong); };
 
-  // GLOBAL CSS & CONTEXT MENU BLOCKER (Strict Locks)
+  // GLOBAL PULL-TO-REFRESH & CONTEXT MENU KILLER
   useEffect(() => {
     const blockContext = (e: Event) => {
         const target = e.target as HTMLElement;
@@ -366,12 +372,29 @@ export default function MiniPlayer() {
             e.preventDefault();
         }
     };
+    
+    const blockRefresh = (e: TouchEvent) => {
+        if (e.touches.length > 1) return;
+        const target = e.target as HTMLElement;
+        const isScrollable = target.closest('.overflow-y-auto') || target.closest('.scrollbar-hide');
+        if (!isScrollable && (target.closest('.player-root') || target.closest('.player-modal'))) {
+            if (e.touches[0].clientY > touchStartY.current) {
+                // e.preventDefault(); // Optional: Strict prevent, but CSS overscroll usually handles it better
+            }
+        }
+    };
+
     window.addEventListener('contextmenu', blockContext);
-    // Inject global body lock
-    document.body.style.overscrollBehaviorY = 'none';
+    window.addEventListener('touchmove', blockRefresh, { passive: false });
+    
+    document.body.style.setProperty('overscroll-behavior-y', 'none', 'important');
+    document.documentElement.style.setProperty('overscroll-behavior-y', 'none', 'important');
+    
     return () => {
         window.removeEventListener('contextmenu', blockContext);
-        document.body.style.overscrollBehaviorY = 'auto';
+        window.removeEventListener('touchmove', blockRefresh);
+        document.body.style.removeProperty('overscroll-behavior-y');
+        document.documentElement.style.removeProperty('overscroll-behavior-y');
     };
   },[]);
 
@@ -389,7 +412,7 @@ export default function MiniPlayer() {
           if (displayImage) {
             const response = await fetch(displayImage); const blob = await response.blob();
             const file = new File([blob], 'cover.jpg', { type: blob.type });
-            if (navigator.canShare({ files: [file] })) shareData.files = [file];
+            if (navigator.canShare({ files:[file] })) shareData.files = [file];
           }
         } catch (e) {} 
         await navigator.share(shareData);
@@ -444,6 +467,7 @@ export default function MiniPlayer() {
        const l = localStorage.getItem('lyrics_enabled'); if (l !== null) { setIsLyricsEnabled(l === 'true'); isLyricsEnabledRef.current = l === 'true'; }
        const ws = localStorage.getItem('word_sync_enabled'); if (ws !== null) setIsWordSyncEnabled(ws === 'true');
        const mws = localStorage.getItem('mini_word_sync_enabled'); if (mws !== null) setIsMiniWordSyncEnabled(mws === 'true');
+       const fps = localStorage.getItem('sync_fps'); if (fps !== null) setSyncFPS(fps);
 
        const storedSong = localStorage.getItem('last_session_song');
        if (storedSong && !currentSong && !isSessionRestored) {
@@ -548,7 +572,7 @@ export default function MiniPlayer() {
            activeSet.add(s.id);
            return true;
         });
-        return forceClear ? validNew :[...prev, ...validNew];
+        return forceClear ? validNew : [...prev, ...validNew];
       });
     }
     fetchingRecsRef.current = false; setIsFetchingRecsUI(false);
@@ -693,7 +717,7 @@ export default function MiniPlayer() {
         if (idx !== -1) setUpcomingQueue(queue.slice(idx + 1));
       }
     }
-  },[queue]); 
+  }, [queue]); 
 
   // DYNAMIC AUDIO URL FETCH ENGINE
   useEffect(() => {
@@ -742,7 +766,7 @@ export default function MiniPlayer() {
         const json = await res.json();
         if (!isCurrent) return; 
 
-        let urls: any[] =[];
+        let urls: any[] = [];
         if (json.data?.[0]?.downloadUrl) {
           urls = generateAllQualities(json.data[0].downloadUrl);
           setSongDetails((prev: any) => prev?.id === json.data[0].id ? prev : json.data[0]); 
@@ -785,7 +809,7 @@ export default function MiniPlayer() {
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
-  },[isVideoMode, duration, upcomingQueue]);
+  }, [isVideoMode, duration, upcomingQueue]);
 
   const handlePlayPauseToggle = (e?: any) => {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -831,7 +855,7 @@ export default function MiniPlayer() {
     setIsVideoLoading(false);
   };
 
-  // CANVAS DEFERRED NETWORK OPTIMIZATION
+  // CANVAS DEFERRED NETWORK OPTIMIZATION (Wait for audio to play)
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
     let isCurrent = true;
@@ -1014,7 +1038,7 @@ export default function MiniPlayer() {
     }
   };
 
-  // ZERO-LAG 60FPS WORD SYNC ENGINE
+  // HYPER-OPTIMIZED 30/60FPS WORD SYNC ENGINE (Direct Memory CSS Painting)
   const activeWordsCache = useRef<any[]>([]);
   const currentSyncRef = useRef<number>(-1);
 
@@ -1022,82 +1046,92 @@ export default function MiniPlayer() {
     if (!isWordSyncEnabled || !isLyricsEnabled || isVideoMode || activeLyricIndex < 0 || !lyrics[activeLyricIndex]) return;
 
     let animationFrameId: number;
-    const updateProgress = () => {
+    let lastDrawTime = 0;
+    const fpsMs = syncFPS === '60' ? 16 : 33; // FPS Limitation for low-end CPUs
+
+    const updateProgress = (timestamp: number) => {
         if (audioRef.current) {
-            const currentTime = audioRef.current.currentTime + 0.4;
-            const currentLineTime = lyrics[activeLyricIndex].time;
-            let nextLineTime = lyrics[activeLyricIndex + 1]?.time;
-            if (!nextLineTime) nextLineTime = currentLineTime + 4;
+            if (!lastDrawTime) lastDrawTime = timestamp;
+            const elapsedFrame = timestamp - lastDrawTime;
 
-            const duration = nextLineTime - currentLineTime;
-            const elapsed = currentTime - currentLineTime;
-            const rawProgress = duration > 0 ? (elapsed / duration) * 100 : 100;
-            const boundedProgress = Math.max(0, Math.min(100, rawProgress));
+            if (elapsedFrame > fpsMs) {
+                lastDrawTime = timestamp - (elapsedFrame % fpsMs);
 
-            if (currentSyncRef.current !== activeLyricIndex) {
-                currentSyncRef.current = activeLyricIndex;
-                activeWordsCache.current =[];
+                const currentTime = audioRef.current.currentTime + 0.4;
+                const currentLineTime = lyrics[activeLyricIndex].time;
+                let nextLineTime = lyrics[activeLyricIndex + 1]?.time;
+                if (!nextLineTime) nextLineTime = currentLineTime + 4;
 
-                const buildCache = (container: HTMLElement | null, selector: string, isActive: boolean) => {
-                    if (!container || !isActive) return;
-                    const words = container.querySelectorAll(selector) as NodeListOf<HTMLElement>;
-                    if (!words.length) return;
-                    let totalChars = 0; words.forEach(w => totalChars += (w.textContent || '').length);
-                    if (totalChars === 0) return;
-                    let charAccumulator = 0;
-                    words.forEach((wordNode) => {
-                        const wordLen = (wordNode.textContent || '').length;
-                        const startPct = (charAccumulator / totalChars) * 100;
-                        const endPct = ((charAccumulator + wordLen) / totalChars) * 100;
-                        activeWordsCache.current.push({ node: wordNode, startPct, endPct, state: -1 });
-                        charAccumulator += wordLen;
-                    });
-                };
+                const duration = nextLineTime - currentLineTime;
+                const elapsed = currentTime - currentLineTime;
+                const rawProgress = duration > 0 ? (elapsed / duration) * 100 : 100;
+                const boundedProgress = Math.max(0, Math.min(100, rawProgress));
 
-                buildCache(fullActiveLyricRef.current, '.lyric-word', isWordSyncEnabled);
-                buildCache(activeLyricRef.current, '.lyric-word', isWordSyncEnabled);
-                buildCache(miniActiveLyricRef.current, '.lyric-word-mini', isMiniWordSyncEnabled);
-            }
+                if (currentSyncRef.current !== activeLyricIndex) {
+                    currentSyncRef.current = activeLyricIndex;
+                    activeWordsCache.current =[];
 
-            // STATE-DIFFING CACHE (Eliminates CPU Lag entirely)
-            activeWordsCache.current.forEach((w) => {
-                if (boundedProgress >= w.endPct) {
-                    if (w.state !== 2) {
-                        w.node.style.backgroundImage = 'none';
-                        w.node.style.webkitBackgroundClip = 'unset';
-                        w.node.style.webkitTextFillColor = 'white';
-                        w.state = 2;
-                    }
-                } else if (boundedProgress <= w.startPct) {
-                    if (w.state !== 0) {
-                        w.node.style.backgroundImage = 'none';
-                        w.node.style.webkitBackgroundClip = 'unset';
-                        w.node.style.webkitTextFillColor = 'rgba(255, 255, 255, 0.3)';
-                        w.state = 0;
-                    }
-                } else {
-                    w.state = 1;
-                    const localProgress = ((boundedProgress - w.startPct) / (w.endPct - w.startPct)) * 100;
-                    const gradient = `linear-gradient(to right, rgba(255,255,255,1) ${Math.max(0, localProgress - 20)}%, rgba(255,255,255,0.7) ${localProgress}%, rgba(255,255,255,0.3) ${Math.min(100, localProgress + 20)}%)`;
-                    w.node.style.backgroundImage = gradient;
-                    w.node.style.webkitBackgroundClip = 'text';
-                    w.node.style.webkitTextFillColor = 'transparent';
+                    const buildCache = (container: HTMLElement | null, selector: string, isActive: boolean) => {
+                        if (!container || !isActive) return;
+                        const words = container.querySelectorAll(selector) as NodeListOf<HTMLElement>;
+                        if (!words.length) return;
+                        let totalChars = 0; words.forEach(w => totalChars += (w.textContent || '').length);
+                        if (totalChars === 0) return;
+                        let charAccumulator = 0;
+                        words.forEach((wordNode) => {
+                            const wordLen = (wordNode.textContent || '').length;
+                            const startPct = (charAccumulator / totalChars) * 100;
+                            const endPct = ((charAccumulator + wordLen) / totalChars) * 100;
+                            activeWordsCache.current.push({ node: wordNode, startPct, endPct, state: -1 });
+                            charAccumulator += wordLen;
+                        });
+                    };
+
+                    buildCache(fullActiveLyricRef.current, '.lyric-word', isWordSyncEnabled);
+                    buildCache(activeLyricRef.current, '.lyric-word', isWordSyncEnabled);
+                    buildCache(miniActiveLyricRef.current, '.lyric-word-mini', isMiniWordSyncEnabled);
                 }
-            });
+
+                // STATE-DIFFING CACHE: Only updates DOM if state strictly changes, killing layout thrashing
+                activeWordsCache.current.forEach((w) => {
+                    if (boundedProgress >= w.endPct) {
+                        if (w.state !== 2) {
+                            w.node.style.backgroundImage = 'none';
+                            w.node.style.webkitBackgroundClip = 'unset';
+                            w.node.style.webkitTextFillColor = 'white';
+                            w.state = 2;
+                        }
+                    } else if (boundedProgress <= w.startPct) {
+                        if (w.state !== 0) {
+                            w.node.style.backgroundImage = 'none';
+                            w.node.style.webkitBackgroundClip = 'unset';
+                            w.node.style.webkitTextFillColor = 'rgba(255, 255, 255, 0.3)';
+                            w.state = 0;
+                        }
+                    } else {
+                        w.state = 1;
+                        const localProgress = ((boundedProgress - w.startPct) / (w.endPct - w.startPct)) * 100;
+                        const gradient = `linear-gradient(to right, rgba(255,255,255,1) ${Math.max(0, localProgress - 20)}%, rgba(255,255,255,0.7) ${localProgress}%, rgba(255,255,255,0.3) ${Math.min(100, localProgress + 20)}%)`;
+                        w.node.style.backgroundImage = gradient;
+                        w.node.style.webkitBackgroundClip = 'text';
+                        w.node.style.webkitTextFillColor = 'transparent';
+                    }
+                });
+            }
         }
         if (isPlaying) animationFrameId = requestAnimationFrame(updateProgress);
     };
 
     if (isPlaying) animationFrameId = requestAnimationFrame(updateProgress);
-    else updateProgress();
+    else requestAnimationFrame(updateProgress);
 
     return () => { if (animationFrameId) cancelAnimationFrame(animationFrameId); };
-  },[isWordSyncEnabled, isMiniWordSyncEnabled, isLyricsEnabled, isVideoMode, activeLyricIndex, lyrics, isPlaying]);
+  },[isWordSyncEnabled, isMiniWordSyncEnabled, isLyricsEnabled, isVideoMode, activeLyricIndex, lyrics, isPlaying, syncFPS]);
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
-  }, [isScrolledPastMain]);
+  },[isScrolledPastMain]);
 
   useEffect(() => {
     if (isSeekingRef.current) return; 
@@ -1148,48 +1182,91 @@ export default function MiniPlayer() {
     }
   };
 
-  // SPOTIFY FLUID TOUCH DRAG QUEUE ENGINE (WITH AUTO SCROLL)
+  // DIRECT DOM TOUCH DRAG QUEUE ENGINE (ZERO RE-RENDERS)
   const handleDragStart = (e: React.TouchEvent | React.MouseEvent, index: number) => {
     if (isQueueEditMode) return;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    setDragState({ activeIndex: index, startY: clientY, currentY: clientY });
+    dragRefs.current = { activeIndex: index, startY: clientY, currentY: clientY };
+    setDragActiveIndex(index);
+    
+    // Start Auto Scroll RAF
+    const autoScrollLoop = () => {
+        if (autoScrollRef.current !== 0 && queueContainerRef.current) {
+            queueContainerRef.current.scrollTop += autoScrollRef.current;
+            updateDragDOM(); // Force DOM update during scroll
+        }
+        scrollRAFRef.current = requestAnimationFrame(autoScrollLoop);
+    };
+    scrollRAFRef.current = requestAnimationFrame(autoScrollLoop);
+  };
+
+  const updateDragDOM = () => {
+    const { activeIndex, startY, currentY } = dragRefs.current;
+    if (activeIndex === -1) return;
+    
+    const diff = currentY - startY;
+    const ITEM_HEIGHT = 60;
+    const targetIndex = activeIndex + Math.round(diff / ITEM_HEIGHT);
+
+    const activeEl = document.getElementById(`queue-item-${activeIndex}`);
+    if (activeEl) activeEl.style.transform = `translateY(${diff}px) scale(1.02) translateZ(0)`;
+
+    for (let i = 0; i < upcomingQueue.length; i++) {
+        if (i === activeIndex) continue;
+        const el = document.getElementById(`queue-item-${i}`);
+        if (!el) continue;
+        
+        if (activeIndex < i && targetIndex >= i) el.style.transform = `translateY(-${ITEM_HEIGHT}px) translateZ(0)`;
+        else if (activeIndex > i && targetIndex <= i) el.style.transform = `translateY(${ITEM_HEIGHT}px) translateZ(0)`;
+        else el.style.transform = `translateZ(0)`;
+    }
   };
 
   const handleDragMove = useCallback((e: TouchEvent | MouseEvent) => {
-    if (dragState.activeIndex === null) return;
+    if (dragRefs.current.activeIndex === -1) return;
     e.preventDefault(); 
     const clientY = 'touches' in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
-    setDragState(prev => ({ ...prev, currentY: clientY }));
+    dragRefs.current.currentY = clientY;
+    updateDragDOM();
 
     if (queueContainerRef.current) {
-        const container = queueContainerRef.current;
-        const rect = container.getBoundingClientRect();
-        if (clientY < rect.top + 80) container.scrollTop -= 15;
-        else if (clientY > rect.bottom - 80) container.scrollTop += 15;
+        const rect = queueContainerRef.current.getBoundingClientRect();
+        if (clientY < rect.top + 80) autoScrollRef.current = -12;
+        else if (clientY > rect.bottom - 80) autoScrollRef.current = 12;
+        else autoScrollRef.current = 0;
     }
-  }, [dragState.activeIndex]);
+  },[]);
 
   const handleDragEnd = useCallback(() => {
-    if (dragState.activeIndex !== null) {
-      const ITEM_HEIGHT = 60;
-      const diff = dragState.currentY - dragState.startY;
-      const offset = Math.round(diff / ITEM_HEIGHT);
-      const newIndex = Math.max(0, Math.min(upcomingQueue.length - 1, dragState.activeIndex + offset));
+    if (dragRefs.current.activeIndex !== -1) {
+      if (scrollRAFRef.current) cancelAnimationFrame(scrollRAFRef.current);
+      autoScrollRef.current = 0;
 
-      if (newIndex !== dragState.activeIndex) {
+      const { activeIndex, startY, currentY } = dragRefs.current;
+      const diff = currentY - startY;
+      const newIndex = Math.max(0, Math.min(upcomingQueue.length - 1, activeIndex + Math.round(diff / 60)));
+
+      // Cleanup direct DOM styles immediately before React re-renders
+      upcomingQueue.forEach((_, i) => {
+          const el = document.getElementById(`queue-item-${i}`);
+          if (el) el.style.transform = '';
+      });
+
+      if (newIndex !== activeIndex) {
         setUpcomingQueue(prev => {
            const arr = [...prev];
-           const [moved] = arr.splice(dragState.activeIndex!, 1);
+           const [moved] = arr.splice(activeIndex, 1);
            arr.splice(newIndex, 0, moved);
            return arr;
         });
       }
     }
-    setDragState({ activeIndex: null, startY: 0, currentY: 0 });
-  },[dragState, upcomingQueue.length]);
+    dragRefs.current = { activeIndex: -1, startY: 0, currentY: 0 };
+    setDragActiveIndex(null);
+  }, [upcomingQueue]);
 
   useEffect(() => {
-    if (dragState.activeIndex !== null) {
+    if (dragActiveIndex !== null) {
        window.addEventListener('touchmove', handleDragMove, { passive: false });
        window.addEventListener('touchend', handleDragEnd);
        window.addEventListener('mousemove', handleDragMove);
@@ -1201,16 +1278,17 @@ export default function MiniPlayer() {
          window.removeEventListener('mouseup', handleDragEnd);
        };
     }
-  },[dragState.activeIndex, handleDragMove, handleDragEnd]);
+  },[dragActiveIndex, handleDragMove, handleDragEnd]);
 
   // SWIPE GESTURES FOR MENUS AND MINIPLAYER (BOTH HORIZONTAL & VERTICAL)
   const handleMiniTouchStart = (e: React.TouchEvent) => { 
-      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; 
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY; 
   };
   
   const handleMiniTouchMove = (e: React.TouchEvent) => { 
-      const diffX = e.touches[0].clientX - touchStartRef.current.x;
-      const diffY = e.touches[0].clientY - touchStartRef.current.y;
+      const diffX = e.touches[0].clientX - touchStartX.current;
+      const diffY = e.touches[0].clientY - touchStartY.current;
       
       if (Math.abs(diffX) > Math.abs(diffY)) {
           if (diffX > 0 && !isExpanded) setSwipeX(diffX);
@@ -1226,13 +1304,13 @@ export default function MiniPlayer() {
   };
 
   const createSwipeToClose = (setter: any, closer: any) => ({
-      onTouchStart: (e: React.TouchEvent) => { touchStartRef.current.y = e.touches[0].clientY; },
-      onTouchMove: (e: React.TouchEvent) => { const diff = e.touches[0].clientY - touchStartRef.current.y; if (diff > 0) setter(diff); },
+      onTouchStart: (e: React.TouchEvent) => { touchStartY.current = e.touches[0].clientY; },
+      onTouchMove: (e: React.TouchEvent) => { const diff = e.touches[0].clientY - touchStartY.current; if (diff > 0) setter(diff); },
       onTouchEnd: () => { setter((prev: number) => { if (prev > 100) closer(false); return 0; }); }
   });
 
   const handleMainTouchMove = (e: React.TouchEvent) => {
-      const diffY = e.touches[0].clientY - touchStartRef.current.y;
+      const diffY = e.touches[0].clientY - touchStartY.current;
       if (diffY > 0 && isScrolledPastMain === false) setMainSwipeY(diffY);
   };
   const handleMainTouchEnd = () => {
@@ -1493,28 +1571,16 @@ export default function MiniPlayer() {
     });
   }, [uniqueArtists]);
 
+  // FULLY DIRECT-DOM QUEUE RENDER
   const RenderedQueue = useMemo(() => {
     return upcomingQueue.map((track: any, index: number) => {
-      const isDragging = dragState.activeIndex === index;
-      let transform = 'translateZ(0)';
-      let zIndex = 1;
-
-      if (isDragging) {
-        transform = `translateY(${dragState.currentY - dragState.startY}px) scale(1.02) translateZ(0)`;
-        zIndex = 50;
-      } else if (dragState.activeIndex !== null) {
-        const diff = dragState.currentY - dragState.startY;
-        const targetIndex = dragState.activeIndex + Math.round(diff / 60);
-        if (dragState.activeIndex < index && targetIndex >= index) transform = `translateY(-60px) translateZ(0)`;
-        else if (dragState.activeIndex > index && targetIndex <= index) transform = `translateY(60px) translateZ(0)`;
-      }
-
+      const isDragging = dragActiveIndex === index;
       const isSelected = selectedQueueItems.includes(index);
 
       return (
         <div key={track.id + index} 
-          className={`flex items-center justify-between w-full group p-2 rounded-lg cursor-pointer relative bg-transparent will-change-transform ${isDragging ? 'shadow-2xl bg-white/10 transition-none' : 'hover:bg-white/5 transition-all duration-300 ease-[cubic-bezier(0.25,0.8,0.25,1)]'}`}
-          style={{ transform, zIndex }}
+          id={`queue-item-${index}`}
+          className={`flex items-center justify-between w-full group p-2 rounded-lg cursor-pointer relative bg-transparent will-change-transform ${isDragging ? 'shadow-2xl bg-white/10 transition-none z-50' : 'hover:bg-white/5 transition-transform duration-300 ease-[cubic-bezier(0.25,0.8,0.25,1)] z-[1]'}`}
         >
           {isQueueEditMode && (
             <div className="flex-shrink-0 mr-3 pl-1" onClick={(e) => {
@@ -1548,7 +1614,7 @@ export default function MiniPlayer() {
         </div>
       );
     });
-  },[upcomingQueue, dragState, selectedQueueItems, isQueueEditMode, setCurrentSong, setUpcomingQueue, setIsPlaying]);
+  },[upcomingQueue, dragActiveIndex, selectedQueueItems, isQueueEditMode, setCurrentSong, setUpcomingQueue, setIsPlaying]);
 
   const formatSleepTimerStr = (secs: number) => {
     const m = Math.floor(secs / 60); const s = secs % 60;
@@ -1561,7 +1627,7 @@ export default function MiniPlayer() {
     return {
         opacity: 1 - expandProgress,
         borderRadius: `${Math.max(6, 24 * expandProgress)}px`,
-        transition: 'none' // Stays completely static while fading out
+        transition: 'none' 
     };
   },[miniSwipeY, isExpanded]);
 
@@ -1619,7 +1685,7 @@ export default function MiniPlayer() {
           
           <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto transition-all duration-500" style={{ height: isLyricsFullScreen ? '100%' : undefined, minHeight: isLyricsFullScreen ? '100%' : '100dvh' }}>
             
-            <div onTouchStart={(e) => { touchStartRef.current.y = e.touches[0].clientY; }} onTouchMove={handleMainTouchMove} onTouchEnd={handleMainTouchEnd} className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4 cursor-grab active:cursor-grabbing`}>
+            <div onTouchStart={(e) => { touchStartY.current = e.touches[0].clientY; }} onTouchMove={handleMainTouchMove} onTouchEnd={handleMainTouchEnd} className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4 cursor-grab active:cursor-grabbing`}>
               <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md no-select-text">
                 <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {playContext?.type || 'App'}</span>
@@ -1773,10 +1839,18 @@ export default function MiniPlayer() {
                       
                       {isLyricsEnabled && (
                         <div className="flex flex-col gap-4 px-5 py-4 border-b border-white/5 bg-black/10">
-                          <span className="text-white/70 font-bold text-[13px] tracking-wide uppercase">Font Sizes</span>
                           
                           <div className="flex items-center justify-between">
-                            <span className="text-white/50 text-[13px] font-medium">Above Title (Mini)</span>
+                            <span className="text-white/50 text-[13px] font-medium">Anim Smoothness (FPS)</span>
+                            <div className="flex bg-white/5 rounded-lg p-1">
+                              {['30', '60'].map(fps => (
+                                <button key={`fps-${fps}`} onClick={() => { setSyncFPS(fps); localStorage.setItem('sync_fps', fps); }} className={`px-3 py-1 rounded-md text-[12px] font-bold transition-all ${syncFPS === fps ? 'bg-white/20 text-white shadow-sm' : 'text-white/50 hover:text-white'}`}>{fps}</button>
+                              ))}
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center justify-between">
+                            <span className="text-white/50 text-[13px] font-medium">Above Title (Mini) Size</span>
                             <div className="flex bg-white/5 rounded-lg p-1">
                               {['Small', 'Medium', 'Large'].map(sz => (
                                 <button key={`line-${sz}`} onClick={() => { setLineFontSize(sz); localStorage.setItem('line_font_size', sz); }} className={`px-3 py-1 rounded-md text-[12px] font-bold transition-all ${lineFontSize === sz ? 'bg-white/20 text-white shadow-sm' : 'text-white/50 hover:text-white'}`}>{sz}</button>
@@ -1785,7 +1859,7 @@ export default function MiniPlayer() {
                           </div>
                           
                           <div className="flex items-center justify-between">
-                            <span className="text-white/50 text-[13px] font-medium">Card / Fullscreen</span>
+                            <span className="text-white/50 text-[13px] font-medium">Card / Fullscreen Size</span>
                             <div className="flex bg-white/5 rounded-lg p-1">
                               {['Small', 'Medium', 'Large'].map(sz => (
                                 <button key={`card-${sz}`} onClick={() => { setCardFontSize(sz); localStorage.setItem('card_font_size', sz); }} className={`px-3 py-1 rounded-md text-[12px] font-bold transition-all ${cardFontSize === sz ? 'bg-white/20 text-white shadow-sm' : 'text-white/50 hover:text-white'}`}>{sz}</button>
@@ -1976,7 +2050,7 @@ export default function MiniPlayer() {
         </div>
       </div>
 
-      <div onTouchStart={handleMiniTouchStart} onTouchMove={handleMiniTouchMove} onTouchEnd={handleMiniTouchEnd} onClick={() => setIsExpanded(true)} className={`player-root fixed bottom-[65px] left-[8px] right-[8px] h-[56px] rounded-[6px] z-[99990] cursor-pointer overflow-hidden transition-all duration-[400ms] shadow-md no-select-text ${isExpanded ? 'opacity-0 pointer-events-none translate-y-6 scale-[0.98]' : 'opacity-100 scale-100'}`} style={{ backgroundColor: dominantColor, ...miniPlayerStyle }}>
+      <div onTouchStart={handleMiniTouchStart} onTouchMove={handleMiniTouchMove} onTouchEnd={handleMiniTouchEnd} onClick={() => setIsExpanded(true)} className={`player-root fixed bottom-[65px] left-[8px] right-[8px] h-[56px] rounded-[6px] z-[99990] cursor-pointer overflow-hidden transition-all duration-[400ms] shadow-md no-select-text ${isExpanded ? 'opacity-0 pointer-events-none translate-y-6 scale-[0.98]' : 'opacity-100 scale-100'}`} style={{ backgroundColor: dominantColor, transform: swipeX > 0 ? `translateX(${swipeX}px)` : undefined, ...miniPlayerStyle }}>
         <div className="absolute inset-0 bg-black/25 z-0 pointer-events-none" />
         <div className="relative z-10 w-full h-full flex items-center px-2">
           <div className="w-[40px] h-[40px] flex-shrink-0 rounded-[4px] shadow-sm overflow-hidden bg-[#282828] relative mr-3">

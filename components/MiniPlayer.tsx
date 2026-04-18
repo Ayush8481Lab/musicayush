@@ -236,7 +236,7 @@ const loadLameJS = () => new Promise((resolve, reject) => {
 const MarqueeText = React.memo(({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const [isOverflowing, setIsOverflowing] = useState(false);
+  const[isOverflowing, setIsOverflowing] = useState(false);
 
   useEffect(() => {
     const checkOverflow = () => { 
@@ -248,7 +248,7 @@ const MarqueeText = React.memo(({ text, className = "" }: { text: string, classN
     const timeouts =[setTimeout(checkOverflow, 100), setTimeout(checkOverflow, 500)];
     window.addEventListener('resize', checkOverflow);
     return () => { timeouts.forEach(clearTimeout); window.removeEventListener('resize', checkOverflow); };
-  }, [text]);
+  },[text]);
 
   return (
     <div ref={containerRef} className={`overflow-hidden whitespace-nowrap w-full flex items-center ${isOverflowing ? "mask-edges" : ""} ${className}`}>
@@ -268,22 +268,22 @@ export default function MiniPlayer() {
     playContext, likedSongs, toggleLikeSong 
   } = useAppContext();
   
-  const[audioUrl, setAudioUrl] = useState("");
-  const [loading, setLoading] = useState(false);
-  const[progress, setProgress] = useState(0);
+  const [audioUrl, setAudioUrl] = useState("");
+  const[loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
-  const [isScrolledPastMain, setIsScrolledPastMain] = useState(false);
+  const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   const[isUiHidden, setIsUiHidden] = useState(false); 
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState(0); 
-  const [showQueue, setShowQueue] = useState(false);
+  const[showQueue, setShowQueue] = useState(false);
   
   // Touch Gestures State
-  const [dragState, setDragState] = useState<{ activeIndex: number | null, startY: number, currentY: number }>({ activeIndex: null, startY: 0, currentY: 0 });
+  const[dragState, setDragState] = useState<{ activeIndex: number | null, startY: number, currentY: number }>({ activeIndex: null, startY: 0, currentY: 0 });
   const[isQueueEditMode, setIsQueueEditMode] = useState(false);
   const [selectedQueueItems, setSelectedQueueItems] = useState<number[]>([]);
   
@@ -323,26 +323,26 @@ export default function MiniPlayer() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const queueContainerRef = useRef<HTMLDivElement>(null);
   const isSeekingRef = useRef(false);
-  const [songDetails, setSongDetails] = useState<any>(null);
+  const[songDetails, setSongDetails] = useState<any>(null);
 
-  const[isVideoMode, setIsVideoMode] = useState(false);
+  const [isVideoMode, setIsVideoMode] = useState(false);
   const [ytVideoId, setYtVideoId] = useState<string | null>(null);
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const iframeInitialTimeRef = useRef<number>(0); 
   const videoStartTimeRef = useRef<number>(0);    
-  const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const[isVideoLoading, setIsVideoLoading] = useState(false);
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
 
   const fetchingRecsRef = useRef(false);
-  const [isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
+  const[isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
   const [isSessionRestored, setIsSessionRestored] = useState(false);
   const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   
   const [selectedQuality, setSelectedQuality] = useState("320");
-  const [lineFontSize, setLineFontSize] = useState("Medium");
+  const[lineFontSize, setLineFontSize] = useState("Medium");
   const[cardFontSize, setCardFontSize] = useState("Medium");
   const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
-  const [isLyricsEnabled, setIsLyricsEnabled] = useState(true);
+  const[isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const[isWordSyncEnabled, setIsWordSyncEnabled] = useState(true);
   const[isMiniWordSyncEnabled, setIsMiniWordSyncEnabled] = useState(true);
   const restoreTimeRef = useRef<number | null>(null);
@@ -369,7 +369,7 @@ export default function MiniPlayer() {
           if (displayImage) {
             const response = await fetch(displayImage); const blob = await response.blob();
             const file = new File([blob], 'cover.jpg', { type: blob.type });
-            if (navigator.canShare({ files: [file] })) shareData.files = [file];
+            if (navigator.canShare({ files:[file] })) shareData.files = [file];
           }
         } catch (e) {} 
         await navigator.share(shareData);
@@ -460,7 +460,7 @@ export default function MiniPlayer() {
     primaryArr.forEach((p: any) => { const full = allArr.find((a: any) => a.id === p.id) || p; map.set(p.id, { ...p, ...full, role: (full.role || "Primary Artist").replace(/_/g, ' ') }); });
     allArr.forEach((a: any) => { if (!map.has(a.id)) map.set(a.id, { ...a, role: (a.role || "Artist").replace(/_/g, ' ') }); });
     return Array.from(map.values());
-  }, [songDetails]);
+  },[songDetails]);
 
   const updateTop30Cache = useCallback((song: any, maxPercent: number) => {
     if (!song) return;
@@ -518,7 +518,7 @@ export default function MiniPlayer() {
 
       setUpcomingQueue(prev => {
         const activeSet = forceClear ? new Set([currentSong.id]) : new Set(prev.map((s: any) => s.id));
-        if (!forceClear) { existingIds.add(currentSong.id); historyQueue.forEach((h: any) => activeSet.add(h.id)); }
+        if (!forceClear) { activeSet.add(currentSong.id); historyQueue.forEach((h: any) => activeSet.add(h.id)); }
         
         const validNew = filtered.filter((s: any) => {
            if (activeSet.has(s.id)) return false;
@@ -556,7 +556,7 @@ export default function MiniPlayer() {
       if (seedVid) recTimer = setTimeout(() => fetchRecs(seedVid as string), 2500);
     }
     return () => { fetchingRecsRef.current = false; clearTimeout(recTimer); };
-  }, [upcomingQueue.length, ytVideoId, playContext?.type, historyQueue]);
+  },[upcomingQueue.length, ytVideoId, playContext?.type, historyQueue]);
 
   // MAIN TRACK CHANGE HOOK
   useEffect(() => {
@@ -569,7 +569,7 @@ export default function MiniPlayer() {
       if (!isNavigatingBackRef.current) {
           const trackToSave = { ...currentTrackRef.current, prefetchedYtId: ytVideoId || currentTrackRef.current.prefetchedYtId };
           setHistoryQueue(prev => {
-            const newHist = [trackToSave, ...prev].filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.id === v.id) === i);
+            const newHist =[trackToSave, ...prev].filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.id === v.id) === i);
             const sliced = newHist.slice(0, 20); localStorage.setItem('recent_songs', JSON.stringify(sliced)); return sliced;
           });
       }
@@ -827,7 +827,6 @@ export default function MiniPlayer() {
             }
           }
         }
-        // ONLY Fetch canvas if music is actually playing to save heavy network on low end devices
         if (isCanvasEnabledRef.current && isPlaying && !loading) {
           const res = await fetch(`https://ayush-gamma-coral.vercel.app/api/canvas?trackId=${spotifyId}`);
           if (res.ok) { const canvasJson = await res.json(); if (isCurrent && canvasJson?.canvasesList?.length > 0) setCanvasData(canvasJson.canvasesList[0]); }
@@ -836,7 +835,7 @@ export default function MiniPlayer() {
     };
     fetchExtras();
     return () => { isCurrent = false; };
-  },[spotifyId, spotifyUrl, isPlaying, loading]); // Added isPlaying and loading dependencies
+  },[spotifyId, spotifyUrl, isPlaying, loading]);
 
   useEffect(() => {
     if (!displayImage) return;
@@ -1015,7 +1014,6 @@ export default function MiniPlayer() {
             const rawProgress = duration > 0 ? (elapsed / duration) * 100 : 100;
             const boundedProgress = Math.max(0, Math.min(100, rawProgress));
 
-            // Only rebuild the heavy Node Cache if the line actually changed
             if (currentSyncRef.current !== activeLyricIndex) {
                 currentSyncRef.current = activeLyricIndex;
                 activeWordsCache.current =[];
@@ -1041,7 +1039,6 @@ export default function MiniPlayer() {
                 buildCache(miniActiveLyricRef.current, '.lyric-word-mini', isMiniWordSyncEnabled);
             }
 
-            // Lightning Fast Render Loop (No DOM Reads)
             activeWordsCache.current.forEach((w) => {
                 if (boundedProgress >= w.endPct) {
                     w.node.style.backgroundImage = 'none';
@@ -1072,7 +1069,7 @@ export default function MiniPlayer() {
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
-  }, [isScrolledPastMain]);
+  },[isScrolledPastMain]);
 
   useEffect(() => {
     if (isSeekingRef.current) return; 
@@ -1123,7 +1120,7 @@ export default function MiniPlayer() {
     }
   };
 
-  // SPOTIFY FLUID TOUCH DRAG QUEUE ENGINE (WITH AUTO SCROLL)
+  // SPOTIFY FLUID TOUCH DRAG QUEUE ENGINE
   const handleDragStart = (e: React.TouchEvent | React.MouseEvent, index: number) => {
     if (isQueueEditMode) return;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
@@ -1161,7 +1158,7 @@ export default function MiniPlayer() {
       }
     }
     setDragState({ activeIndex: null, startY: 0, currentY: 0 });
-  },[dragState, upcomingQueue.length]);
+  }, [dragState, upcomingQueue.length]);
 
   useEffect(() => {
     if (dragState.activeIndex !== null) {
@@ -1195,7 +1192,6 @@ export default function MiniPlayer() {
       onTouchEnd: () => { setter(prev => { if (prev > 100) closer(false); return 0; }); }
   });
 
-  // --- 20X FASTER NATIVE MP3 PACKER ENGINE (HTML Entities Decoded!) ---
   const executeMp3PackerDownload = async (url: string, quality: string) => {
     setDlState({ type: "music", status: "downloading", progress: 0, packStep: "Fetching Audio..." });
     try {
@@ -1520,7 +1516,7 @@ export default function MiniPlayer() {
         borderRadius: `${Math.max(6, 24 * expandProgress)}px`,
         transition: 'none'
     };
-  }, [miniSwipeY, isExpanded]);
+  },[miniSwipeY, isExpanded]);
 
   if (!currentSong) return null;
 
@@ -1905,7 +1901,7 @@ export default function MiniPlayer() {
                     <button onClick={() => {
                         if (selectedQueueItems.length === 0) return;
                         setUpcomingQueue(prev => {
-                            const arr = [...prev]; 
+                            const arr =[...prev]; 
                             const toMove = selectedQueueItems.map(idx => prev[idx]);
                             const remaining = arr.filter((_, i) => !selectedQueueItems.includes(i));
                             return[...toMove, ...remaining];

@@ -270,24 +270,26 @@ export default function MiniPlayer() {
   
   const [audioUrl, setAudioUrl] = useState("");
   const[loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const[progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const[duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
   const [isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const [isUiHidden, setIsUiHidden] = useState(false); 
+  const[isUiHidden, setIsUiHidden] = useState(false); 
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState(0); 
-  const [showQueue, setShowQueue] = useState(false);
+  const[showQueue, setShowQueue] = useState(false);
   
   // Touch Gestures State
-  const [dragState, setDragState] = useState<{ activeIndex: number | null, startY: number, currentY: number }>({ activeIndex: null, startY: 0, currentY: 0 });
+  const[dragState, setDragState] = useState<{ activeIndex: number | null, startY: number, currentY: number }>({ activeIndex: null, startY: 0, currentY: 0 });
   const[isQueueEditMode, setIsQueueEditMode] = useState(false);
   const [selectedQueueItems, setSelectedQueueItems] = useState<number[]>([]);
   
   const[miniSwipeY, setMiniSwipeY] = useState(0);
+  const[swipeX, setSwipeX] = useState(0); // Horizontal swipe
+  const[mainSwipeY, setMainSwipeY] = useState(0); // Vertical close
   const[queueSwipeY, setQueueSwipeY] = useState(0);
   const[settingsSwipeY, setSettingsSwipeY] = useState(0);
 
@@ -302,11 +304,11 @@ export default function MiniPlayer() {
   
   const rapidKeyIdxRef = useRef(0);
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
-  const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
+  const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState<any[]>([]);
   const [syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const[isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
+  const [isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
   const [canvasData, setCanvasData] = useState<any>(null);
   const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
@@ -323,11 +325,11 @@ export default function MiniPlayer() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const queueContainerRef = useRef<HTMLDivElement>(null);
   const isSeekingRef = useRef(false);
-  const touchStartY = useRef(0); // Gesture tracking reference
+  const touchStartRef = useRef({ x: 0, y: 0 }); // Global Gesture Tracking
   const[songDetails, setSongDetails] = useState<any>(null);
 
-  const [isVideoMode, setIsVideoMode] = useState(false);
-  const [ytVideoId, setYtVideoId] = useState<string | null>(null);
+  const[isVideoMode, setIsVideoMode] = useState(false);
+  const[ytVideoId, setYtVideoId] = useState<string | null>(null);
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const iframeInitialTimeRef = useRef<number>(0); 
   const videoStartTimeRef = useRef<number>(0);    
@@ -336,13 +338,13 @@ export default function MiniPlayer() {
 
   const fetchingRecsRef = useRef(false);
   const [isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
-  const[isSessionRestored, setIsSessionRestored] = useState(false);
+  const [isSessionRestored, setIsSessionRestored] = useState(false);
   const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   
   const [selectedQuality, setSelectedQuality] = useState("320");
   const [lineFontSize, setLineFontSize] = useState("Medium");
   const[cardFontSize, setCardFontSize] = useState("Medium");
-  const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
+  const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
   const [isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const[isWordSyncEnabled, setIsWordSyncEnabled] = useState(true);
   const[isMiniWordSyncEnabled, setIsMiniWordSyncEnabled] = useState(true);
@@ -355,6 +357,23 @@ export default function MiniPlayer() {
 
   const isSongLiked = likedSongs.some((s: any) => s && s.id === currentSong?.id);
   const handleLikeClick = (e: any) => { e.stopPropagation(); toggleLikeSong(currentSong); };
+
+  // GLOBAL CSS & CONTEXT MENU BLOCKER (Strict Locks)
+  useEffect(() => {
+    const blockContext = (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'IMG' || target.closest('.player-root') || target.closest('.player-modal')) {
+            e.preventDefault();
+        }
+    };
+    window.addEventListener('contextmenu', blockContext);
+    // Inject global body lock
+    document.body.style.overscrollBehaviorY = 'none';
+    return () => {
+        window.removeEventListener('contextmenu', blockContext);
+        document.body.style.overscrollBehaviorY = 'auto';
+    };
+  },[]);
 
   const handleShareSong = async () => {
     try {
@@ -529,7 +548,7 @@ export default function MiniPlayer() {
            activeSet.add(s.id);
            return true;
         });
-        return forceClear ? validNew : [...prev, ...validNew];
+        return forceClear ? validNew :[...prev, ...validNew];
       });
     }
     fetchingRecsRef.current = false; setIsFetchingRecsUI(false);
@@ -674,7 +693,7 @@ export default function MiniPlayer() {
         if (idx !== -1) setUpcomingQueue(queue.slice(idx + 1));
       }
     }
-  }, [queue]); 
+  },[queue]); 
 
   // DYNAMIC AUDIO URL FETCH ENGINE
   useEffect(() => {
@@ -766,7 +785,7 @@ export default function MiniPlayer() {
     };
     window.addEventListener('message', handleMsg);
     return () => window.removeEventListener('message', handleMsg);
-  }, [isVideoMode, duration, upcomingQueue]);
+  },[isVideoMode, duration, upcomingQueue]);
 
   const handlePlayPauseToggle = (e?: any) => {
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -1030,7 +1049,7 @@ export default function MiniPlayer() {
                         const wordLen = (wordNode.textContent || '').length;
                         const startPct = (charAccumulator / totalChars) * 100;
                         const endPct = ((charAccumulator + wordLen) / totalChars) * 100;
-                        activeWordsCache.current.push({ node: wordNode, startPct, endPct });
+                        activeWordsCache.current.push({ node: wordNode, startPct, endPct, state: -1 });
                         charAccumulator += wordLen;
                     });
                 };
@@ -1040,16 +1059,24 @@ export default function MiniPlayer() {
                 buildCache(miniActiveLyricRef.current, '.lyric-word-mini', isMiniWordSyncEnabled);
             }
 
+            // STATE-DIFFING CACHE (Eliminates CPU Lag entirely)
             activeWordsCache.current.forEach((w) => {
                 if (boundedProgress >= w.endPct) {
-                    w.node.style.backgroundImage = 'none';
-                    w.node.style.webkitBackgroundClip = 'unset';
-                    w.node.style.webkitTextFillColor = 'white';
+                    if (w.state !== 2) {
+                        w.node.style.backgroundImage = 'none';
+                        w.node.style.webkitBackgroundClip = 'unset';
+                        w.node.style.webkitTextFillColor = 'white';
+                        w.state = 2;
+                    }
                 } else if (boundedProgress <= w.startPct) {
-                    w.node.style.backgroundImage = 'none';
-                    w.node.style.webkitBackgroundClip = 'unset';
-                    w.node.style.webkitTextFillColor = 'rgba(255, 255, 255, 0.3)';
+                    if (w.state !== 0) {
+                        w.node.style.backgroundImage = 'none';
+                        w.node.style.webkitBackgroundClip = 'unset';
+                        w.node.style.webkitTextFillColor = 'rgba(255, 255, 255, 0.3)';
+                        w.state = 0;
+                    }
                 } else {
+                    w.state = 1;
                     const localProgress = ((boundedProgress - w.startPct) / (w.endPct - w.startPct)) * 100;
                     const gradient = `linear-gradient(to right, rgba(255,255,255,1) ${Math.max(0, localProgress - 20)}%, rgba(255,255,255,0.7) ${localProgress}%, rgba(255,255,255,0.3) ${Math.min(100, localProgress + 20)}%)`;
                     w.node.style.backgroundImage = gradient;
@@ -1159,7 +1186,7 @@ export default function MiniPlayer() {
       }
     }
     setDragState({ activeIndex: null, startY: 0, currentY: 0 });
-  }, [dragState, upcomingQueue.length]);
+  },[dragState, upcomingQueue.length]);
 
   useEffect(() => {
     if (dragState.activeIndex !== null) {
@@ -1176,22 +1203,42 @@ export default function MiniPlayer() {
     }
   },[dragState.activeIndex, handleDragMove, handleDragEnd]);
 
-  // SWIPE GESTURES FOR MENUS AND MINIPLAYER
-  const handleMiniTouchStart = (e: React.TouchEvent) => { touchStartY.current = e.touches[0].clientY; };
-  const handleMiniTouchMove = (e: React.TouchEvent) => { 
-      const diff = e.touches[0].clientY - touchStartY.current; 
-      if (diff < 0 && !isExpanded) setMiniSwipeY(diff); 
+  // SWIPE GESTURES FOR MENUS AND MINIPLAYER (BOTH HORIZONTAL & VERTICAL)
+  const handleMiniTouchStart = (e: React.TouchEvent) => { 
+      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; 
   };
+  
+  const handleMiniTouchMove = (e: React.TouchEvent) => { 
+      const diffX = e.touches[0].clientX - touchStartRef.current.x;
+      const diffY = e.touches[0].clientY - touchStartRef.current.y;
+      
+      if (Math.abs(diffX) > Math.abs(diffY)) {
+          if (diffX > 0 && !isExpanded) setSwipeX(diffX);
+      } else {
+          if (diffY < 0 && !isExpanded) setMiniSwipeY(diffY);
+      }
+  };
+
   const handleMiniTouchEnd = () => { 
+      if (swipeX > window.innerWidth * 0.4) { setCurrentSong(null); setIsPlaying(false); setIsExpanded(false); }
       if (miniSwipeY < -50 && !isExpanded) setIsExpanded(true); 
-      setMiniSwipeY(0); 
+      setSwipeX(0); setMiniSwipeY(0); 
   };
 
   const createSwipeToClose = (setter: any, closer: any) => ({
-      onTouchStart: (e: React.TouchEvent) => { touchStartY.current = e.touches[0].clientY; },
-      onTouchMove: (e: React.TouchEvent) => { const diff = e.touches[0].clientY - touchStartY.current; if (diff > 0) setter(diff); },
+      onTouchStart: (e: React.TouchEvent) => { touchStartRef.current.y = e.touches[0].clientY; },
+      onTouchMove: (e: React.TouchEvent) => { const diff = e.touches[0].clientY - touchStartRef.current.y; if (diff > 0) setter(diff); },
       onTouchEnd: () => { setter((prev: number) => { if (prev > 100) closer(false); return 0; }); }
   });
+
+  const handleMainTouchMove = (e: React.TouchEvent) => {
+      const diffY = e.touches[0].clientY - touchStartRef.current.y;
+      if (diffY > 0 && isScrolledPastMain === false) setMainSwipeY(diffY);
+  };
+  const handleMainTouchEnd = () => {
+      if (mainSwipeY > 100) setIsExpanded(false);
+      setMainSwipeY(0);
+  };
 
   const executeMp3PackerDownload = async (url: string, quality: string) => {
     setDlState({ type: "music", status: "downloading", progress: 0, packStep: "Fetching Audio..." });
@@ -1512,10 +1559,9 @@ export default function MiniPlayer() {
     if (miniSwipeY >= 0 || isExpanded) return {};
     const expandProgress = Math.min(Math.abs(miniSwipeY) / window.innerHeight, 1);
     return {
-        transform: `translateY(${miniSwipeY}px)`,
         opacity: 1 - expandProgress,
         borderRadius: `${Math.max(6, 24 * expandProgress)}px`,
-        transition: 'none'
+        transition: 'none' // Stays completely static while fading out
     };
   },[miniSwipeY, isExpanded]);
 
@@ -1525,8 +1571,8 @@ export default function MiniPlayer() {
     <>
       <style dangerouslySetInnerHTML={{__html: `
         * { -webkit-tap-highlight-color: transparent; }
-        .player-root, .player-modal { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
-        img, video, canvas { pointer-events: none; -webkit-touch-callout: none; user-select: none; }
+        .player-root, .player-modal { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none !important; touch-action: pan-x pan-y; }
+        img, video, canvas { pointer-events: none; -webkit-touch-callout: none !important; user-select: none; }
         @keyframes spotify-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
         .animate-spotify-marquee { animation: spotify-marquee 12s linear infinite; display: inline-block; white-space: nowrap; }
         .mask-edges { mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%); }
@@ -1537,8 +1583,8 @@ export default function MiniPlayer() {
         input[type=range]:focus { outline: none; }
         .mobile-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.2); }
         .mobile-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #fff; margin-top: -4px; box-shadow: 0 2px 4px rgba(0,0,0,0.4); border: 0; }
-        .no-select { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; pointer-events: none; }
-        .no-select-text { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+        .no-select { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none !important; pointer-events: none; }
+        .no-select-text { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none !important; }
       `}} />
 
       <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} 
@@ -1551,7 +1597,10 @@ export default function MiniPlayer() {
       />
 
       {/* EXPANDED PLAYER MAIN */}
-      <div className={`player-root fixed inset-0 z-[99999] text-white transition-all duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0 opacity-100 overflow-hidden" : "translate-y-full opacity-0 pointer-events-none"}`}>
+      <div 
+         className={`player-root fixed inset-0 z-[99999] text-white transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "overflow-hidden" : "pointer-events-none"}`}
+         style={{ transform: isExpanded ? (mainSwipeY > 0 ? `translateY(${mainSwipeY}px)` : 'translateY(0)') : (miniSwipeY < 0 ? `translateY(calc(100% + ${miniSwipeY}px))` : 'translateY(100%)') }}
+      >
         
         {isCanvasLoaded && !isScrolledPastMain && !showQueue && !isVideoMode && !isLyricsFullScreen && isCanvasEnabled && (
           <div className="absolute inset-0 z-10 cursor-pointer" onClick={() => setIsUiHidden(!isUiHidden)} />
@@ -1570,7 +1619,7 @@ export default function MiniPlayer() {
           
           <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto transition-all duration-500" style={{ height: isLyricsFullScreen ? '100%' : undefined, minHeight: isLyricsFullScreen ? '100%' : '100dvh' }}>
             
-            <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4`}>
+            <div onTouchStart={(e) => { touchStartRef.current.y = e.touches[0].clientY; }} onTouchMove={handleMainTouchMove} onTouchEnd={handleMainTouchEnd} className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4 cursor-grab active:cursor-grabbing`}>
               <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md no-select-text">
                 <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {playContext?.type || 'App'}</span>

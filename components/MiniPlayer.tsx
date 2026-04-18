@@ -1,3 +1,4 @@
+
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -369,6 +370,7 @@ export default function MiniPlayer() {
   const fullLyricsContainerRef = useRef<HTMLDivElement>(null);
   const fullActiveLyricRef = useRef<HTMLParagraphElement>(null);
   const miniActiveLyricRef = useRef<HTMLDivElement>(null);
+  const nextBtnRef = useRef<HTMLButtonElement>(null);
   
   const canvasVideoRef = useRef<HTMLVideoElement>(null);
   const playNextRef = useRef<() => void>(() => {});
@@ -555,7 +557,7 @@ export default function MiniPlayer() {
 
     fetchingRecsRef.current = true;
     setIsFetchingRecsUI(true);
-    setUpcomingQueue([]); // Clear queue explicitly to load related context
+    setUpcomingQueue([]); 
 
     try {
       let recs = await getCache(`recs_${targetVid}`);
@@ -592,7 +594,6 @@ export default function MiniPlayer() {
   useEffect(() => {
     let isSubscribed = true; let recTimer: any;
     
-    // Auto-fetch if queue is drying out (Infinite Playlists/Albums/Recs)
     if (upcomingQueue.length <= 3 && !fetchingRecsRef.current) {
       let seedVid = ytVideoId || currentSong?.prefetchedYtId;
       try {
@@ -845,6 +846,7 @@ export default function MiniPlayer() {
     return () => { isCurrent = false; };
   },[currentSong, selectedQuality]);
 
+  // ROBUST VIDEO AUTO-NEXT CLICKER
   useEffect(() => {
     const handleMsg = (e: MessageEvent) => {
       if (e.data?.type === 'YTP_TIME' && isVideoMode) {
@@ -856,15 +858,31 @@ export default function MiniPlayer() {
         } else if (duration > 0 && !isSeekingRef.current && isExpanded) {
            setProgress((e.data.time / duration) * 100);
         }
-      } else if (e.data?.type === 'YTP_STATE') {
-        if (e.data.state === 1) { audioRef.current?.pause(); setIsPlaying(true); } 
-        else if (e.data.state === 2) { setIsPlaying(false); } 
-        else if (e.data.state === 0 || String(e.data.state) === '0') { 
-            // Automatically click the next button securely when video ends
-            const btn = document.getElementById('next-song-btn');
-            if (btn) btn.click();
-            else playNextRef.current();
-        } 
+      } else {
+        // Broad capture of all YouTube End States
+        let stateCode = null;
+        if (e.data?.type === 'YTP_STATE') stateCode = e.data.state;
+        else if (e.data?.event === 'onStateChange') stateCode = e.data.info;
+        
+        if (stateCode !== null) {
+            if (stateCode === 1 || String(stateCode) === '1') { 
+                audioRef.current?.pause(); setIsPlaying(true); 
+            } else if (stateCode === 2 || String(stateCode) === '2') { 
+                setIsPlaying(false); 
+            } else if (stateCode === 0 || String(stateCode) === '0') { 
+                // VIDEO ENDED -> FORCE PHYSICAL CLICK
+                setTimeout(() => {
+                    if (nextBtnRef.current) nextBtnRef.current.click();
+                    else playNextRef.current();
+                }, 100);
+            }
+        } else if (e.data === 'ended' || e.data?.event === 'ended' || e.data?.type === 'ENDED') {
+            // Alternative HTML5/Custom Wrapper Ended Events
+            setTimeout(() => {
+                if (nextBtnRef.current) nextBtnRef.current.click();
+                else playNextRef.current();
+            }, 100);
+        }
       }
     };
     window.addEventListener('message', handleMsg);
@@ -1844,7 +1862,7 @@ export default function MiniPlayer() {
                   <button onClick={handlePlayPauseToggle} className="w-[64px] h-[64px] rounded-full bg-white flex items-center justify-center text-black active:scale-95 transition-transform shadow-lg pointer-events-auto">
                      {(loading || isVideoLoading) ? <Loader2 size={26} className="animate-spin text-black" /> : (isPlaying ? <Pause fill="black" stroke="black" size={26} /> : <Play fill="black" stroke="black" size={28} className="translate-x-[2px]" />)}
                   </button>
-                  <button id="next-song-btn" onClick={playNext} className="text-white active:opacity-50 pointer-events-auto"><SkipForward size={36} fill="white" stroke="white" /></button>
+                  <button ref={nextBtnRef} id="next-song-btn" onClick={playNext} className="text-white active:opacity-50 pointer-events-auto"><SkipForward size={36} fill="white" stroke="white" /></button>
                   <button onClick={() => { setRepeatMode((prev) => (prev + 1) % 3); if(isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*'); }} className={`active:opacity-50 relative pointer-events-auto ${repeatMode > 0 ? 'text-[#1db954]' : 'text-white/70'}`}><Repeat size={24} />{repeatMode === 2 && <span className="absolute -top-1 -right-1 bg-[#1db954] text-black text-[9px] font-bold rounded-full w-3 h-3 flex items-center justify-center">1</span>}</button>
                 </div>
                 {!isLyricsFullScreen && (

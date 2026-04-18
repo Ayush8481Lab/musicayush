@@ -323,7 +323,7 @@ export default function MiniPlayer() {
     playContext, likedSongs, toggleLikeSong 
   } = useAppContext();
   
-  const [audioUrl, setAudioUrl] = useState("");
+  const[audioUrl, setAudioUrl] = useState("");
   const[loading, setLoading] = useState(false);
   const[progress, setProgress] = useState(0);
   const[currentTime, setCurrentTime] = useState(0);
@@ -337,13 +337,11 @@ export default function MiniPlayer() {
   const[repeatMode, setRepeatMode] = useState(0); 
   const[showQueue, setShowQueue] = useState(false);
   
-  // Advanced Touch Drag Queue Setup
-  const [dragState, setDragState] = useState<{ activeIndex: number | null, startY: number, currentY: number, startScrollTop: number }>({ activeIndex: null, startY: 0, currentY: 0, startScrollTop: 0 });
-  const [dragScrollDiff, setDragScrollDiff] = useState(0);
+  // HIGH-PERFORMANCE DIRECT DOM DRAG STATE
+  const [dragActiveIndex, setDragActiveIndex] = useState<number | null>(null);
+  const dragRef = useRef({ activeIndex: -1, startY: 0, currentY: 0, startScrollTop: 0, scrollSpeed: 0, rafId: 0, targetIndex: -1 });
   const[isQueueEditMode, setIsQueueEditMode] = useState(false);
   const[selectedQueueItems, setSelectedQueueItems] = useState<number[]>([]); 
-  const scrollRafRef = useRef<number>(0);
-  const scrollSpeedRef = useRef<number>(0);
 
   // Sleep Timer Setup
   const[sleepTimer, setSleepTimer] = useState<number | 'end' | null>(null);
@@ -354,6 +352,8 @@ export default function MiniPlayer() {
   const maxListenRef = useRef<number>(0);
   const lastTimeUpdateRef = useRef<number>(0); 
   const isNavigatingBackRef = useRef(false);
+  const mediaMetadataSetRef = useRef(false);
+  const hasCachedCurrentSongRef = useRef(false);
   
   const rapidKeyIdxRef = useRef(0);
   const[spotifyId, setSpotifyId] = useState<string | null>(null);
@@ -382,7 +382,7 @@ export default function MiniPlayer() {
   const isSeekingRef = useRef(false);
   const[songDetails, setSongDetails] = useState<any>(null);
 
-  const [isVideoMode, setIsVideoMode] = useState(false);
+  const[isVideoMode, setIsVideoMode] = useState(false);
   const[ytVideoId, setYtVideoId] = useState<string | null>(null);
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const iframeInitialTimeRef = useRef<number>(0); 
@@ -398,7 +398,7 @@ export default function MiniPlayer() {
   const [selectedQuality, setSelectedQuality] = useState("320");
   const[lineFontSize, setLineFontSize] = useState("Medium");
   const[cardFontSize, setCardFontSize] = useState("Medium");
-  const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
+  const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
   const[isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const[isWordSyncEnabled, setIsWordSyncEnabled] = useState(true);
   const[isMiniWordSyncEnabled, setIsMiniWordSyncEnabled] = useState(true);
@@ -643,6 +643,8 @@ export default function MiniPlayer() {
     if (!currentSong) return;
     let isCurrent = true; let spotifyTimer: any;
     fetchingRecsRef.current = false;
+    mediaMetadataSetRef.current = false;
+    hasCachedCurrentSongRef.current = false;
     
     if (currentTrackRef.current && currentTrackRef.current.id !== currentSong.id) {
       updateTop30Cache(currentTrackRef.current, maxListenRef.current);
@@ -758,7 +760,7 @@ export default function MiniPlayer() {
     }
   }, [queue]); 
 
-  // DYNAMIC AUDIO STREAMING & BACKGROUND CACHING ENGINE
+  // DYNAMIC ZERO-LATENCY AUDIO STREAMING ENGINE
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true;
@@ -827,22 +829,8 @@ export default function MiniPlayer() {
           const match = urls.find((u: any) => u.quality === targetQ) || urls.find((u: any) => u.quality?.includes(selectedQuality));
           const finalUrl = match ? match.url : urls[urls.length - 1].url;
           
-          // INSTANT ZERO-LATENCY STREAMING
+          // INSTANT ZERO-LATENCY STREAMING (No Blob Wait)
           setAudioUrl(finalUrl);
-          
-          // SILENT BACKGROUND CACHING
-          (async () => {
-             try {
-                 const checkBlob = await getCache(`audio_${currentSong.id}_${selectedQuality}`);
-                 if (!checkBlob) {
-                     const audioRes = await fetch(finalUrl);
-                     if (audioRes.ok) {
-                         const blob = await audioRes.blob();
-                         await setCache(`audio_${currentSong.id}_${selectedQuality}`, blob, true);
-                     }
-                 }
-             } catch(e) {}
-          })();
         }
       } catch (err) {
         if (isCurrent && currentSong.downloadUrl?.length > 0) {
@@ -955,7 +943,7 @@ export default function MiniPlayer() {
     };
     fetchExtras();
     return () => { isCurrent = false; };
-  }, [spotifyId, spotifyUrl]);
+  },[spotifyId, spotifyUrl]);
 
   useEffect(() => {
     if (!displayImage) return;
@@ -974,7 +962,7 @@ export default function MiniPlayer() {
         setDominantColor(count > 0 ? `rgb(${Math.floor(r/count)}, ${Math.floor(g/count)}, ${Math.floor(b/count)})` : "rgb(83, 83, 83)");
       } catch (e) { setDominantColor("rgb(30, 30, 30)"); }
     };
-  }, [displayImage]);
+  },[displayImage]);
 
   useEffect(() => {
     if (audioRef.current && audioUrl) {
@@ -1118,6 +1106,20 @@ export default function MiniPlayer() {
         const currentPercent = (c / d) * 100;
         setProgress(currentPercent);
         if (currentPercent > maxListenRef.current) maxListenRef.current = currentPercent;
+
+        // SMART 100% CACHING ENGINE
+        if (currentPercent >= 98 && !hasCachedCurrentSongRef.current && audioUrl && !audioUrl.startsWith('blob:')) {
+            hasCachedCurrentSongRef.current = true;
+            (async () => {
+                try {
+                    const audioRes = await fetch(audioUrl);
+                    if (audioRes.ok) {
+                        const blob = await audioRes.blob();
+                        await setCache(`audio_${currentSong.id}_${selectedQuality}`, blob, true);
+                    }
+                } catch(e) {}
+            })();
+        }
       }
 
       if (c > 0 && Math.abs(c - (parseFloat(localStorage.getItem('last_session_time')||'0'))) > 2) localStorage.setItem('last_session_time', c.toString());
@@ -1156,7 +1158,6 @@ export default function MiniPlayer() {
                 if (!words.length) return;
                 
                 let totalChars = 0;
-                // Performance Cache to avoid calculating string lengths continuously
                 if (container.dataset.activeIdx !== activeLyricIndex.toString()) {
                     words.forEach(w => totalChars += (w.textContent || '').length);
                     container.dataset.totalChars = totalChars.toString();
@@ -1173,7 +1174,7 @@ export default function MiniPlayer() {
                     const wordStartPct = (charAccumulator / totalChars) * 100;
                     const wordEndPct = ((charAccumulator + wordLen) / totalChars) * 100;
                     
-                    let state = 0; // 0 = unread, 1 = reading, 2 = read
+                    let state = 0;
 
                     if (boundedProgress >= wordEndPct) {
                         state = 2;
@@ -1182,7 +1183,7 @@ export default function MiniPlayer() {
                     } else {
                         state = 1;
                         const localProgress = ((boundedProgress - wordStartPct) / (wordEndPct - wordStartPct)) * 100;
-                        const roundedProgress = Math.round(localProgress); // Smooth rounded integer to avoid layout thrashing
+                        const roundedProgress = Math.round(localProgress);
                         
                         if (wordNode._lastProg !== roundedProgress) {
                             wordNode._lastProg = roundedProgress;
@@ -1276,66 +1277,95 @@ export default function MiniPlayer() {
     }
   };
 
-  // SPOTIFY FLUID TOUCH DRAG QUEUE ENGINE (WITH BUTTERY SMOOTH AUTO SCROLL)
+  // SPOTIFY BUTTERY SMOOTH DIRECT DOM DRAG QUEUE ENGINE
+  const updateDOM = useCallback(() => {
+    if (!queueContainerRef.current) return;
+    const { activeIndex, startY, currentY, startScrollTop } = dragRef.current;
+    const diff = currentY - startY + (queueContainerRef.current.scrollTop - startScrollTop);
+    const targetIndex = Math.max(0, Math.min(upcomingQueue.length - 1, activeIndex + Math.round(diff / 60)));
+    dragRef.current.targetIndex = targetIndex;
+
+    const items = queueContainerRef.current.querySelectorAll('.queue-item');
+    items.forEach((item: any, i) => {
+        if (i === activeIndex) {
+            item.style.transform = `translateY(${diff}px) scale(1.02)`;
+            item.style.zIndex = '50';
+            item.style.transition = 'none';
+            item.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            item.style.boxShadow = '0 25px 50px -12px rgba(0, 0, 0, 0.5)';
+        } else {
+            let t = 0;
+            if (activeIndex < i && targetIndex >= i) t = -60;
+            else if (activeIndex > i && targetIndex <= i) t = 60;
+            item.style.transform = t !== 0 ? `translateY(${t}px)` : 'none';
+            item.style.zIndex = '1';
+            item.style.transition = 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
+            item.style.backgroundColor = 'transparent';
+            item.style.boxShadow = 'none';
+        }
+    });
+  }, [upcomingQueue.length]);
+
   const handleDragStart = (e: React.TouchEvent | React.MouseEvent, index: number) => {
     if (isQueueEditMode) return;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    setDragState({ activeIndex: index, startY: clientY, currentY: clientY, startScrollTop: queueContainerRef.current?.scrollTop || 0 });
+    dragRef.current = { activeIndex: index, startY: clientY, currentY: clientY, startScrollTop: queueContainerRef.current?.scrollTop || 0, scrollSpeed: 0, rafId: 0, targetIndex: index };
+    setDragActiveIndex(index);
+    
+    const scrollLoop = () => {
+        if (dragRef.current.scrollSpeed !== 0 && queueContainerRef.current) {
+            queueContainerRef.current.scrollTop += dragRef.current.scrollSpeed;
+            updateDOM();
+        }
+        dragRef.current.rafId = requestAnimationFrame(scrollLoop);
+    };
+    dragRef.current.rafId = requestAnimationFrame(scrollLoop);
   };
 
-  useEffect(() => {
-    if (dragState.activeIndex !== null) {
-        const scrollLoop = () => {
-            if (scrollSpeedRef.current !== 0 && queueContainerRef.current) {
-                queueContainerRef.current.scrollTop += scrollSpeedRef.current;
-                setDragScrollDiff(queueContainerRef.current.scrollTop - dragState.startScrollTop);
-            }
-            scrollRafRef.current = requestAnimationFrame(scrollLoop);
-        }
-        scrollRafRef.current = requestAnimationFrame(scrollLoop);
-        return () => cancelAnimationFrame(scrollRafRef.current);
-    } else {
-        setDragScrollDiff(0);
-    }
-  }, [dragState.activeIndex, dragState.startScrollTop]);
-
   const handleDragMove = useCallback((e: TouchEvent | MouseEvent) => {
-    if (dragState.activeIndex === null) return;
+    if (dragRef.current.activeIndex === -1) return;
     e.preventDefault(); 
     const clientY = 'touches' in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
-    setDragState(prev => ({ ...prev, currentY: clientY }));
+    dragRef.current.currentY = clientY;
 
     if (queueContainerRef.current) {
         const rect = queueContainerRef.current.getBoundingClientRect();
-        if (clientY < rect.top + 80) scrollSpeedRef.current = -8;
-        else if (clientY > rect.bottom - 80) scrollSpeedRef.current = 8;
-        else scrollSpeedRef.current = 0;
+        if (clientY < rect.top + 80) dragRef.current.scrollSpeed = -12;
+        else if (clientY > rect.bottom - 80) dragRef.current.scrollSpeed = 12;
+        else dragRef.current.scrollSpeed = 0;
     }
-  }, [dragState.activeIndex]);
+    updateDOM();
+  },[updateDOM]);
 
   const handleDragEnd = useCallback(() => {
-    scrollSpeedRef.current = 0;
-    if (dragState.activeIndex !== null) {
-      const ITEM_HEIGHT = 60;
-      const scrollDiff = (queueContainerRef.current?.scrollTop || 0) - dragState.startScrollTop;
-      const diff = dragState.currentY - dragState.startY + scrollDiff;
-      const offset = Math.round(diff / ITEM_HEIGHT);
-      const newIndex = Math.max(0, Math.min(upcomingQueue.length - 1, dragState.activeIndex + offset));
-
-      if (newIndex !== dragState.activeIndex) {
-        setUpcomingQueue(prev => {
-           const arr =[...prev];
-           const [moved] = arr.splice(dragState.activeIndex!, 1);
-           arr.splice(newIndex, 0, moved);
-           return arr;
+    cancelAnimationFrame(dragRef.current.rafId);
+    const { activeIndex, targetIndex } = dragRef.current;
+    
+    if (queueContainerRef.current) {
+        const items = queueContainerRef.current.querySelectorAll('.queue-item');
+        items.forEach((item: any) => {
+            item.style.transform = '';
+            item.style.zIndex = '';
+            item.style.transition = '';
+            item.style.backgroundColor = '';
+            item.style.boxShadow = '';
         });
-      }
     }
-    setDragState({ activeIndex: null, startY: 0, currentY: 0, startScrollTop: 0 });
-  },[dragState, upcomingQueue.length]);
+
+    if (activeIndex !== -1 && targetIndex !== -1 && activeIndex !== targetIndex) {
+      setUpcomingQueue(prev => {
+         const arr =[...prev];
+         const [moved] = arr.splice(activeIndex, 1);
+         arr.splice(targetIndex, 0, moved);
+         return arr;
+      });
+    }
+    dragRef.current.activeIndex = -1;
+    setDragActiveIndex(null);
+  },[]);
 
   useEffect(() => {
-    if (dragState.activeIndex !== null) {
+    if (dragActiveIndex !== null) {
        window.addEventListener('touchmove', handleDragMove, { passive: false });
        window.addEventListener('touchend', handleDragEnd);
        window.addEventListener('mousemove', handleDragMove);
@@ -1347,7 +1377,7 @@ export default function MiniPlayer() {
          window.removeEventListener('mouseup', handleDragEnd);
        };
     }
-  },[dragState.activeIndex, handleDragMove, handleDragEnd]);
+  },[dragActiveIndex, handleDragMove, handleDragEnd]);
 
   const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
   const handleTouchMove = (e: React.TouchEvent) => { const diff = e.touches[0].clientX - touchStartX.current; if (diff > 0 && !showQueue) setSwipeX(diff); };
@@ -1360,7 +1390,7 @@ export default function MiniPlayer() {
       await loadLameJS();
       setDlState(prev => ({...prev, packStep: "Downloading Media...", progress: 10}));
       
-      const [audioResp, imgResp] = await Promise.all([
+      const[audioResp, imgResp] = await Promise.all([
           fetch(url), fetch(displayImage || "https://via.placeholder.com/500")
       ]);
       const audioFileBuffer = await audioResp.arrayBuffer();
@@ -1381,14 +1411,13 @@ export default function MiniPlayer() {
       let samples = audioBuffer.getChannelData(0); 
       const buffer = new Int16Array(samples.length);
       
-      // OPTIMIZED 20X LOOP VECTORIZATION
       for (let i = 0, len = samples.length; i < len; i++) {
           let s = samples[i];
           buffer[i] = s < 0 ? s * 32768 : s * 32767;
       }
 
       const mp3Data =[];
-      const blockSize = 1152 * 500; // HUGE BLOCK CHUNKS FOR LIGHTNING SPEED
+      const blockSize = 1152 * 500; 
       let lastYield = Date.now();
       
       for (let i = 0; i < buffer.length; i += blockSize) {
@@ -1613,32 +1642,10 @@ export default function MiniPlayer() {
 
   const RenderedQueue = useMemo(() => {
     return upcomingQueue.map((track: any, index: number) => {
-      const isDragging = dragState.activeIndex === index;
-      let transform = 'none';
-      let zIndex = 1;
-      let transition = 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
-
-      if (isDragging) {
-        transform = `translateY(${dragState.currentY - dragState.startY + dragScrollDiff}px) scale(1.02)`;
-        zIndex = 50;
-        transition = 'none'; 
-      } else if (dragState.activeIndex !== null) {
-        const diff = dragState.currentY - dragState.startY + dragScrollDiff;
-        const targetIndex = dragState.activeIndex + Math.round(diff / 60);
-        
-        if (dragState.activeIndex < index && targetIndex >= index) {
-            transform = `translateY(-60px)`;
-        } else if (dragState.activeIndex > index && targetIndex <= index) {
-            transform = `translateY(60px)`;
-        }
-      }
-
       const isSelected = selectedQueueItems.includes(index);
-
       return (
-        <div key={track.id + index} 
-          className={`flex items-center justify-between w-full group p-2 rounded-lg cursor-pointer relative bg-transparent ${isDragging ? 'shadow-2xl bg-white/10' : 'hover:bg-white/5'}`}
-          style={{ transform, zIndex, transition }}
+        <div key={track.id + index} data-index={index}
+          className={`queue-item flex items-center justify-between w-full group p-2 rounded-lg cursor-pointer relative bg-transparent hover:bg-white/5`}
         >
           {isQueueEditMode && (
             <div className="flex-shrink-0 mr-3 pl-1" onClick={(e) => {
@@ -1684,7 +1691,7 @@ export default function MiniPlayer() {
         </div>
       );
     });
-  },[upcomingQueue, dragState, dragScrollDiff, selectedQueueItems, isQueueEditMode, setCurrentSong, setUpcomingQueue, setIsPlaying]);
+  },[upcomingQueue, selectedQueueItems, isQueueEditMode, setCurrentSong, setUpcomingQueue, setIsPlaying]);
 
   const formatSleepTimerStr = (secs: number) => {
     const m = Math.floor(secs / 60); const s = secs % 60;
@@ -1711,6 +1718,7 @@ export default function MiniPlayer() {
         .mobile-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #fff; margin-top: -4px; box-shadow: 0 2px 4px rgba(0,0,0,0.4); border: 0; }
         .no-select { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; pointer-events: none; }
         .no-select-text { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+        .queue-item { transform-origin: center; will-change: transform; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
       `}} />
 
       <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} 
@@ -1741,7 +1749,7 @@ export default function MiniPlayer() {
           
           <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto transition-all duration-500" style={{ height: isLyricsFullScreen ? '100%' : undefined, minHeight: isLyricsFullScreen ? '100%' : '100dvh' }}>
             
-            <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4`}>
+            <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full ${isLyricsFullScreen ? 'mt-2' : 'mt-4'}`}>
               <button onClick={() => { if (isLyricsFullScreen) setIsLyricsFullScreen(false); else setIsExpanded(false); }} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md no-select-text">
                 <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {playContext?.type || 'App'}</span>

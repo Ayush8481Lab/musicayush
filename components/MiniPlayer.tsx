@@ -236,7 +236,7 @@ const loadLameJS = () => new Promise((resolve, reject) => {
 const MarqueeText = React.memo(({ text, className = "" }: { text: string, className?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const[isOverflowing, setIsOverflowing] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
 
   useEffect(() => {
     const checkOverflow = () => { 
@@ -248,7 +248,7 @@ const MarqueeText = React.memo(({ text, className = "" }: { text: string, classN
     const timeouts =[setTimeout(checkOverflow, 100), setTimeout(checkOverflow, 500)];
     window.addEventListener('resize', checkOverflow);
     return () => { timeouts.forEach(clearTimeout); window.removeEventListener('resize', checkOverflow); };
-  },[text]);
+  }, [text]);
 
   return (
     <div ref={containerRef} className={`overflow-hidden whitespace-nowrap w-full flex items-center ${isOverflowing ? "mask-edges" : ""} ${className}`}>
@@ -277,23 +277,23 @@ export default function MiniPlayer() {
   const [isExpanded, setIsExpanded] = useState(false);
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const[isUiHidden, setIsUiHidden] = useState(false); 
+  const [isUiHidden, setIsUiHidden] = useState(false); 
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState(0); 
-  const[showQueue, setShowQueue] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
   
   // Touch Gestures State
-  const[dragState, setDragState] = useState<{ activeIndex: number | null, startY: number, currentY: number }>({ activeIndex: null, startY: 0, currentY: 0 });
+  const [dragState, setDragState] = useState<{ activeIndex: number | null, startY: number, currentY: number }>({ activeIndex: null, startY: 0, currentY: 0 });
   const[isQueueEditMode, setIsQueueEditMode] = useState(false);
   const [selectedQueueItems, setSelectedQueueItems] = useState<number[]>([]);
   
-  const [miniSwipeY, setMiniSwipeY] = useState(0);
+  const[miniSwipeY, setMiniSwipeY] = useState(0);
   const[queueSwipeY, setQueueSwipeY] = useState(0);
   const[settingsSwipeY, setSettingsSwipeY] = useState(0);
 
-  const [sleepTimer, setSleepTimer] = useState<number | 'end' | null>(null);
-  const [timerRemaining, setTimerRemaining] = useState<number | null>(null);
-  const [showTimerMenu, setShowTimerMenu] = useState(false);
+  const[sleepTimer, setSleepTimer] = useState<number | 'end' | null>(null);
+  const[timerRemaining, setTimerRemaining] = useState<number | null>(null);
+  const[showTimerMenu, setShowTimerMenu] = useState(false);
   
   const currentTrackRef = useRef<any>(null);
   const maxListenRef = useRef<number>(0);
@@ -302,11 +302,11 @@ export default function MiniPlayer() {
   
   const rapidKeyIdxRef = useRef(0);
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
-  const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
+  const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState<any[]>([]);
   const [syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const [isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
+  const[isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
   const [canvasData, setCanvasData] = useState<any>(null);
   const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
@@ -323,6 +323,7 @@ export default function MiniPlayer() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const queueContainerRef = useRef<HTMLDivElement>(null);
   const isSeekingRef = useRef(false);
+  const touchStartY = useRef(0); // Gesture tracking reference
   const[songDetails, setSongDetails] = useState<any>(null);
 
   const [isVideoMode, setIsVideoMode] = useState(false);
@@ -330,19 +331,19 @@ export default function MiniPlayer() {
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const iframeInitialTimeRef = useRef<number>(0); 
   const videoStartTimeRef = useRef<number>(0);    
-  const[isVideoLoading, setIsVideoLoading] = useState(false);
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
 
   const fetchingRecsRef = useRef(false);
-  const[isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
-  const [isSessionRestored, setIsSessionRestored] = useState(false);
+  const [isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
+  const[isSessionRestored, setIsSessionRestored] = useState(false);
   const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   
   const [selectedQuality, setSelectedQuality] = useState("320");
-  const[lineFontSize, setLineFontSize] = useState("Medium");
+  const [lineFontSize, setLineFontSize] = useState("Medium");
   const[cardFontSize, setCardFontSize] = useState("Medium");
   const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
-  const[isLyricsEnabled, setIsLyricsEnabled] = useState(true);
+  const [isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const[isWordSyncEnabled, setIsWordSyncEnabled] = useState(true);
   const[isMiniWordSyncEnabled, setIsMiniWordSyncEnabled] = useState(true);
   const restoreTimeRef = useRef<number | null>(null);
@@ -369,7 +370,7 @@ export default function MiniPlayer() {
           if (displayImage) {
             const response = await fetch(displayImage); const blob = await response.blob();
             const file = new File([blob], 'cover.jpg', { type: blob.type });
-            if (navigator.canShare({ files:[file] })) shareData.files = [file];
+            if (navigator.canShare({ files: [file] })) shareData.files = [file];
           }
         } catch (e) {} 
         await navigator.share(shareData);
@@ -569,7 +570,7 @@ export default function MiniPlayer() {
       if (!isNavigatingBackRef.current) {
           const trackToSave = { ...currentTrackRef.current, prefetchedYtId: ytVideoId || currentTrackRef.current.prefetchedYtId };
           setHistoryQueue(prev => {
-            const newHist =[trackToSave, ...prev].filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.id === v.id) === i);
+            const newHist = [trackToSave, ...prev].filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.id === v.id) === i);
             const sliced = newHist.slice(0, 20); localStorage.setItem('recent_songs', JSON.stringify(sliced)); return sliced;
           });
       }
@@ -722,7 +723,7 @@ export default function MiniPlayer() {
         const json = await res.json();
         if (!isCurrent) return; 
 
-        let urls: any[] = [];
+        let urls: any[] =[];
         if (json.data?.[0]?.downloadUrl) {
           urls = generateAllQualities(json.data[0].downloadUrl);
           setSongDetails((prev: any) => prev?.id === json.data[0].id ? prev : json.data[0]); 
@@ -1069,7 +1070,7 @@ export default function MiniPlayer() {
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
-  },[isScrolledPastMain]);
+  }, [isScrolledPastMain]);
 
   useEffect(() => {
     if (isSeekingRef.current) return; 
@@ -1120,7 +1121,7 @@ export default function MiniPlayer() {
     }
   };
 
-  // SPOTIFY FLUID TOUCH DRAG QUEUE ENGINE
+  // SPOTIFY FLUID TOUCH DRAG QUEUE ENGINE (WITH AUTO SCROLL)
   const handleDragStart = (e: React.TouchEvent | React.MouseEvent, index: number) => {
     if (isQueueEditMode) return;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
@@ -1176,9 +1177,9 @@ export default function MiniPlayer() {
   },[dragState.activeIndex, handleDragMove, handleDragEnd]);
 
   // SWIPE GESTURES FOR MENUS AND MINIPLAYER
-  const handleMiniTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientY; };
+  const handleMiniTouchStart = (e: React.TouchEvent) => { touchStartY.current = e.touches[0].clientY; };
   const handleMiniTouchMove = (e: React.TouchEvent) => { 
-      const diff = e.touches[0].clientY - touchStartX.current; 
+      const diff = e.touches[0].clientY - touchStartY.current; 
       if (diff < 0 && !isExpanded) setMiniSwipeY(diff); 
   };
   const handleMiniTouchEnd = () => { 
@@ -1187,9 +1188,9 @@ export default function MiniPlayer() {
   };
 
   const createSwipeToClose = (setter: any, closer: any) => ({
-      onTouchStart: (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientY; },
-      onTouchMove: (e: React.TouchEvent) => { const diff = e.touches[0].clientY - touchStartX.current; if (diff > 0) setter(diff); },
-      onTouchEnd: () => { setter(prev => { if (prev > 100) closer(false); return 0; }); }
+      onTouchStart: (e: React.TouchEvent) => { touchStartY.current = e.touches[0].clientY; },
+      onTouchMove: (e: React.TouchEvent) => { const diff = e.touches[0].clientY - touchStartY.current; if (diff > 0) setter(diff); },
+      onTouchEnd: () => { setter((prev: number) => { if (prev > 100) closer(false); return 0; }); }
   });
 
   const executeMp3PackerDownload = async (url: string, quality: string) => {

@@ -10,7 +10,7 @@ import { useAppContext } from "../context/AppContext";
 import { 
   Play, Pause, SkipForward, SkipBack, Loader2, ChevronDown, 
   MoreHorizontal, Shuffle, Repeat, Heart, ListMusic, 
-  MonitorPlay, Maximize2, Minimize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe, Settings2, Check, Share2, Download, Video, X, Server, Sparkles
+  MonitorPlay, Maximize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe, Settings2, Check, Share2, Download, Video, X, Server, Sparkles
 } from "lucide-react";
 
 // --- 5-HOUR INDEXEDDB CACHE ENGINE (Audio & APIs) ---
@@ -325,20 +325,21 @@ export default function MiniPlayer() {
   
   const [audioUrl, setAudioUrl] = useState("");
   const[loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const[progress, setProgress] = useState(0);
   const[currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const[duration, setDuration] = useState(0);
   const[volume, setVolume] = useState(100);
   const[isExpanded, setIsExpanded] = useState(false);
-  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const [isUiHidden, setIsUiHidden] = useState(false); 
+  const[isUiHidden, setIsUiHidden] = useState(false); 
   const[isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
-  const [showQueue, setShowQueue] = useState(false);
+  const[showQueue, setShowQueue] = useState(false);
   
   // Advanced Touch Drag Queue Setup
   const [dragState, setDragState] = useState<{ activeIndex: number | null, startY: number, currentY: number, startScrollTop: number }>({ activeIndex: null, startY: 0, currentY: 0, startScrollTop: 0 });
+  const [dragScrollDiff, setDragScrollDiff] = useState(0);
   const[isQueueEditMode, setIsQueueEditMode] = useState(false);
   const[selectedQueueItems, setSelectedQueueItems] = useState<number[]>([]); 
   const scrollRafRef = useRef<number>(0);
@@ -353,17 +354,16 @@ export default function MiniPlayer() {
   const maxListenRef = useRef<number>(0);
   const lastTimeUpdateRef = useRef<number>(0); 
   const isNavigatingBackRef = useRef(false);
-  const mediaMetadataSetRef = useRef(false);
   
   const rapidKeyIdxRef = useRef(0);
   const[spotifyId, setSpotifyId] = useState<string | null>(null);
   const[spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
   const[lyrics, setLyrics] = useState<any[]>([]);
-  const [syncType, setSyncType] = useState<string | null>(null);
-  const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
+  const[syncType, setSyncType] = useState<string | null>(null);
+  const[activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const[isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
   const[canvasData, setCanvasData] = useState<any>(null);
-  const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
+  const[isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLParagraphElement>(null);
@@ -383,7 +383,7 @@ export default function MiniPlayer() {
   const[songDetails, setSongDetails] = useState<any>(null);
 
   const [isVideoMode, setIsVideoMode] = useState(false);
-  const [ytVideoId, setYtVideoId] = useState<string | null>(null);
+  const[ytVideoId, setYtVideoId] = useState<string | null>(null);
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const iframeInitialTimeRef = useRef<number>(0); 
   const videoStartTimeRef = useRef<number>(0);    
@@ -399,7 +399,7 @@ export default function MiniPlayer() {
   const[lineFontSize, setLineFontSize] = useState("Medium");
   const[cardFontSize, setCardFontSize] = useState("Medium");
   const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
-  const [isLyricsEnabled, setIsLyricsEnabled] = useState(true);
+  const[isLyricsEnabled, setIsLyricsEnabled] = useState(true);
   const[isWordSyncEnabled, setIsWordSyncEnabled] = useState(true);
   const[isMiniWordSyncEnabled, setIsMiniWordSyncEnabled] = useState(true);
   const restoreTimeRef = useRef<number | null>(null);
@@ -643,7 +643,6 @@ export default function MiniPlayer() {
     if (!currentSong) return;
     let isCurrent = true; let spotifyTimer: any;
     fetchingRecsRef.current = false;
-    mediaMetadataSetRef.current = false;
     
     if (currentTrackRef.current && currentTrackRef.current.id !== currentSong.id) {
       updateTop30Cache(currentTrackRef.current, maxListenRef.current);
@@ -759,7 +758,7 @@ export default function MiniPlayer() {
     }
   }, [queue]); 
 
-  // DYNAMIC AUDIO URL FETCH ENGINE
+  // DYNAMIC AUDIO STREAMING & BACKGROUND CACHING ENGINE
   useEffect(() => {
     if (!currentSong) return;
     let isCurrent = true;
@@ -828,14 +827,22 @@ export default function MiniPlayer() {
           const match = urls.find((u: any) => u.quality === targetQ) || urls.find((u: any) => u.quality?.includes(selectedQuality));
           const finalUrl = match ? match.url : urls[urls.length - 1].url;
           
-          try {
-             const audioRes = await fetch(finalUrl);
-             if (audioRes.ok) {
-                 const blob = await audioRes.blob();
-                 await setCache(`audio_${currentSong.id}_${selectedQuality}`, blob, true);
-                 setAudioUrl(URL.createObjectURL(blob));
-             } else setAudioUrl(finalUrl);
-          } catch(e) { setAudioUrl(finalUrl); } // Fallback if CORS blocked Blob fetch
+          // INSTANT ZERO-LATENCY STREAMING
+          setAudioUrl(finalUrl);
+          
+          // SILENT BACKGROUND CACHING
+          (async () => {
+             try {
+                 const checkBlob = await getCache(`audio_${currentSong.id}_${selectedQuality}`);
+                 if (!checkBlob) {
+                     const audioRes = await fetch(finalUrl);
+                     if (audioRes.ok) {
+                         const blob = await audioRes.blob();
+                         await setCache(`audio_${currentSong.id}_${selectedQuality}`, blob, true);
+                     }
+                 }
+             } catch(e) {}
+          })();
         }
       } catch (err) {
         if (isCurrent && currentSong.downloadUrl?.length > 0) {
@@ -1053,15 +1060,14 @@ export default function MiniPlayer() {
     }
   },[]);
 
-  // MEDIA METADATA ENGINE (FOR NOTIFICATION)
-  const updateMediaSession = useCallback(() => {
+  // MEDIA METADATA ENGINE (FOR NOTIFICATION - FLAWLESS SYNC)
+  useEffect(() => {
     if ('mediaSession' in navigator && displayTitle) {
        try {
            navigator.mediaSession.metadata = new MediaMetadata({
               title: displayTitle, artist: displayArtists, album: playContext?.name || 'App',
               artwork: displayImage ?[{ src: displayImage, sizes: '512x512', type: 'image/jpeg' }] :[]
            });
-           mediaMetadataSetRef.current = true;
        } catch (e) {}
        
        navigator.mediaSession.setActionHandler('play', () => {
@@ -1083,10 +1089,6 @@ export default function MiniPlayer() {
        });
     }
   },[displayTitle, displayArtists, displayImage, playContext, currentSong]);
-
-  useEffect(() => {
-    updateMediaSession();
-  },[updateMediaSession]);
 
   useEffect(() => {
     if ('mediaSession' in navigator) {
@@ -1111,11 +1113,6 @@ export default function MiniPlayer() {
       lastTimeUpdateRef.current = now;
       
       setCurrentTime(c); setDuration(d || 0);
-
-      // Force update Android notification cache after audio reliably started playing
-      if (c > 3 && !mediaMetadataSetRef.current) {
-          updateMediaSession();
-      }
       
       if (d > 0 && !isSeekingRef.current) {
         const currentPercent = (c / d) * 100;
@@ -1231,7 +1228,7 @@ export default function MiniPlayer() {
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrolled = e.currentTarget.scrollTop > 100;
     if (scrolled !== isScrolledPastMain) setIsScrolledPastMain(scrolled);
-  }, [isScrolledPastMain]);
+  },[isScrolledPastMain]);
 
   useEffect(() => {
     if (isSeekingRef.current) return; 
@@ -1291,13 +1288,16 @@ export default function MiniPlayer() {
         const scrollLoop = () => {
             if (scrollSpeedRef.current !== 0 && queueContainerRef.current) {
                 queueContainerRef.current.scrollTop += scrollSpeedRef.current;
+                setDragScrollDiff(queueContainerRef.current.scrollTop - dragState.startScrollTop);
             }
             scrollRafRef.current = requestAnimationFrame(scrollLoop);
         }
         scrollRafRef.current = requestAnimationFrame(scrollLoop);
         return () => cancelAnimationFrame(scrollRafRef.current);
+    } else {
+        setDragScrollDiff(0);
     }
-  }, [dragState.activeIndex]);
+  }, [dragState.activeIndex, dragState.startScrollTop]);
 
   const handleDragMove = useCallback((e: TouchEvent | MouseEvent) => {
     if (dragState.activeIndex === null) return;
@@ -1307,8 +1307,8 @@ export default function MiniPlayer() {
 
     if (queueContainerRef.current) {
         const rect = queueContainerRef.current.getBoundingClientRect();
-        if (clientY < rect.top + 80) scrollSpeedRef.current = -12;
-        else if (clientY > rect.bottom - 80) scrollSpeedRef.current = 12;
+        if (clientY < rect.top + 80) scrollSpeedRef.current = -8;
+        else if (clientY > rect.bottom - 80) scrollSpeedRef.current = 8;
         else scrollSpeedRef.current = 0;
     }
   }, [dragState.activeIndex]);
@@ -1619,13 +1619,11 @@ export default function MiniPlayer() {
       let transition = 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
 
       if (isDragging) {
-        const scrollDiff = (queueContainerRef.current?.scrollTop || 0) - dragState.startScrollTop;
-        transform = `translateY(${dragState.currentY - dragState.startY + scrollDiff}px) scale(1.02)`;
+        transform = `translateY(${dragState.currentY - dragState.startY + dragScrollDiff}px) scale(1.02)`;
         zIndex = 50;
         transition = 'none'; 
       } else if (dragState.activeIndex !== null) {
-        const scrollDiff = (queueContainerRef.current?.scrollTop || 0) - dragState.startScrollTop;
-        const diff = dragState.currentY - dragState.startY + scrollDiff;
+        const diff = dragState.currentY - dragState.startY + dragScrollDiff;
         const targetIndex = dragState.activeIndex + Math.round(diff / 60);
         
         if (dragState.activeIndex < index && targetIndex >= index) {
@@ -1647,7 +1645,7 @@ export default function MiniPlayer() {
                e.stopPropagation();
                setSelectedQueueItems(prev => {
                    if (prev.includes(index)) return prev.filter(i => i !== index);
-                   return [...prev, index];
+                   return[...prev, index];
                });
             }}>
                <div className={`w-[22px] h-[22px] rounded-full border-[2px] flex items-center justify-center transition-colors ${isSelected ? 'bg-[#1db954] border-[#1db954]' : 'border-white/40'}`}>
@@ -1686,7 +1684,7 @@ export default function MiniPlayer() {
         </div>
       );
     });
-  },[upcomingQueue, dragState, selectedQueueItems, isQueueEditMode, setCurrentSong, setUpcomingQueue, setIsPlaying]);
+  },[upcomingQueue, dragState, dragScrollDiff, selectedQueueItems, isQueueEditMode, setCurrentSong, setUpcomingQueue, setIsPlaying]);
 
   const formatSleepTimerStr = (secs: number) => {
     const m = Math.floor(secs / 60); const s = secs % 60;
@@ -1744,7 +1742,7 @@ export default function MiniPlayer() {
           <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto transition-all duration-500" style={{ height: isLyricsFullScreen ? '100%' : undefined, minHeight: isLyricsFullScreen ? '100%' : '100dvh' }}>
             
             <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full mt-4`}>
-              <button onClick={() => setIsExpanded(false)} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><ChevronDown size={28} /></button>
+              <button onClick={() => { if (isLyricsFullScreen) setIsLyricsFullScreen(false); else setIsExpanded(false); }} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md no-select-text">
                 <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {playContext?.type || 'App'}</span>
                 <span className="text-[13px] font-bold text-white truncate w-full text-center mt-[2px]">{decodeEntities(playContext?.name || 'Music')}</span>
@@ -1755,8 +1753,7 @@ export default function MiniPlayer() {
             <div className={`flex-1 min-h-0 w-full flex items-center justify-center relative z-30 transition-all duration-500 ${isLyricsFullScreen ? 'px-0 py-0 flex-col items-stretch justify-start' : (isVideoMode ? 'px-4 py-2' : 'px-8 py-2')}`}>
               {isLyricsFullScreen && isLyricsEnabled ? (
                 <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden pointer-events-auto transition-colors duration-700 bg-transparent">
-                  <div className="absolute top-4 right-4 z-[60] bg-black/40 hover:bg-black/60 rounded-full transition-colors cursor-pointer backdrop-blur-md pointer-events-auto"><button onClick={(e) => { e.stopPropagation(); setIsLyricsFullScreen(false); }} className="p-2.5 text-white"><Minimize2 size={22} /></button></div>
-                  <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-16 pb-[30vh] flex flex-col gap-8 w-full h-full mask-edges-vertical" ref={fullLyricsContainerRef}>
+                  <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-4 pb-[30vh] flex flex-col gap-8 w-full h-full mask-edges-vertical" ref={fullLyricsContainerRef}>
                      {lyrics.length > 0 && (syncType !== "LINE_SYNCED" || isVideoMode) && (
                          <div className="flex items-center gap-3 mb-2 px-1 opacity-70">
                             <span className="px-2.5 py-[3px] bg-white/20 rounded text-[10px] font-bold text-white uppercase tracking-widest border border-white/20">Unsynced</span>
@@ -1777,30 +1774,30 @@ export default function MiniPlayer() {
               )}
             </div>
 
-            <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] mb-2 pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto`}>
+            <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto ${isLyricsFullScreen ? 'mb-0 pb-[max(0.5rem,env(safe-area-inset-bottom))]' : 'mb-2'}`}>
               
-              <div className={`transition-all duration-500 w-full relative overflow-hidden flex items-center justify-start mask-edges-vertical ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : 'mb-3 opacity-100 min-h-[75px]'}`}>
+              <div className={`transition-all duration-500 w-full relative overflow-hidden flex items-center justify-start mask-edges-vertical ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : (isLyricsFullScreen ? 'hidden' : 'mb-3 opacity-100 min-h-[75px]')}`}>
                 {RenderedMiniLyrics}
               </div>
 
-              <div className="flex items-center justify-between mb-5 drop-shadow-md w-full no-select-text">
+              <div className={`transition-all duration-500 flex items-center justify-between drop-shadow-md w-full no-select-text ${isLyricsFullScreen ? 'mb-2 scale-[0.9] origin-left' : 'mb-5'}`}>
                 <div className="flex items-center gap-3 overflow-hidden pr-4 flex-1 min-w-0 w-full max-w-full">
-                  {showTinyBanner && displayImage && (<img draggable={false} src={displayImage} className="w-[48px] h-[48px] rounded-md shadow-md flex-shrink-0 no-select pointer-events-none" alt="tiny cover" />)}
+                  {showTinyBanner && displayImage && !isLyricsFullScreen && (<img draggable={false} src={displayImage} className="w-[48px] h-[48px] rounded-md shadow-md flex-shrink-0 no-select pointer-events-none" alt="tiny cover" />)}
                   <div className="flex flex-col flex-1 min-w-0 w-full overflow-hidden">
                     <MarqueeText text={displayTitle} className="text-[22px] font-bold text-white tracking-tight drop-shadow-md w-full" />
                     <MarqueeText text={displayArtists} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md w-full" />
                   </div>
                 </div>
-                <button onClick={handleLikeClick} className="flex-shrink-0 ml-2 active:scale-75 transition-transform pointer-events-auto"><Heart size={26} fill={isSongLiked ? "#1db954" : "none"} color={isSongLiked ? "#1db954" : "white"} /></button>
+                {!isLyricsFullScreen && <button onClick={handleLikeClick} className="flex-shrink-0 ml-2 active:scale-75 transition-transform pointer-events-auto"><Heart size={26} fill={isSongLiked ? "#1db954" : "none"} color={isSongLiked ? "#1db954" : "white"} /></button>}
               </div>
 
-              <div className="w-full flex flex-col gap-1 mb-5 relative drop-shadow-md">
+              <div className={`w-full flex flex-col gap-1 relative drop-shadow-md ${isLyricsFullScreen ? 'mb-2' : 'mb-5'}`}>
                 <input type="range" min="0" max="100" value={duration > 0 ? progress : 0} onChange={handleSeekChange} onPointerDown={handleSeekStart} onPointerUp={handleSeekEnd} onTouchStart={handleSeekStart} onTouchEnd={handleSeekEnd} className="w-full mobile-slider relative z-10 pointer-events-auto" style={{ background: `linear-gradient(to right, #fff ${progress}%, rgba(255,255,255,0.2) ${progress}%)` }} />
                 <div className="flex items-center justify-between text-[11px] font-medium text-[#a7a7a7] mt-1 w-full pointer-events-none no-select-text"><span>{formatTime(currentTime)}</span><span>{formatTime(duration)}</span></div>
               </div>
 
-              <div className={`flex flex-col w-full transition-all duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 translate-y-6 pointer-events-none' : 'max-h-[140px] opacity-100 translate-y-0 pointer-events-auto'}`}>
-                <div className="flex items-center justify-between w-full mb-5 px-1 drop-shadow-md no-select-text">
+              <div className={`flex flex-col w-full transition-all duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] overflow-hidden ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 translate-y-6 pointer-events-none' : (isLyricsFullScreen ? 'max-h-[64px] opacity-100 translate-y-0 pointer-events-auto' : 'max-h-[140px] opacity-100 translate-y-0 pointer-events-auto')}`}>
+                <div className={`flex items-center justify-between w-full px-1 drop-shadow-md no-select-text ${isLyricsFullScreen ? 'mb-0' : 'mb-5'}`}>
                   <button onClick={() => { setIsShuffle(!isShuffle); if(isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*'); }} className={`active:opacity-50 pointer-events-auto ${isShuffle ? 'text-[#1db954]' : 'text-white'}`}><Shuffle size={24} /></button>
                   <button onClick={playPrev} className="text-white active:opacity-50 pointer-events-auto"><SkipBack size={36} fill="white" stroke="white" /></button>
                   <button onClick={handlePlayPauseToggle} className="w-[64px] h-[64px] rounded-full bg-white flex items-center justify-center text-black active:scale-95 transition-transform shadow-lg pointer-events-auto">
@@ -1809,10 +1806,12 @@ export default function MiniPlayer() {
                   <button onClick={playNext} className="text-white active:opacity-50 pointer-events-auto"><SkipForward size={36} fill="white" stroke="white" /></button>
                   <button onClick={() => { setRepeatMode((prev) => (prev + 1) % 3); if(isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*'); }} className={`active:opacity-50 relative pointer-events-auto ${repeatMode > 0 ? 'text-[#1db954]' : 'text-white/70'}`}><Repeat size={24} />{repeatMode === 2 && <span className="absolute -top-1 -right-1 bg-[#1db954] text-black text-[9px] font-bold rounded-full w-3 h-3 flex items-center justify-center">1</span>}</button>
                 </div>
-                <div className="flex items-center justify-between text-[#b3b3b3] w-full px-1 drop-shadow-md pointer-events-auto">
-                  <button onClick={toggleVideoMode} className={`active:opacity-50 transition-colors ${isVideoMode ? 'text-[#1db954]' : 'text-[#b3b3b3]'}`}>{isVideoLoading ? <Loader2 size={20} className="animate-spin" /> : <MonitorPlay size={20} />}</button>
-                  <div className="flex items-center gap-6"><button onClick={() => setShowQueue(true)} className="active:opacity-50 text-white"><ListMusic size={20} /></button></div>
-                </div>
+                {!isLyricsFullScreen && (
+                  <div className="flex items-center justify-between text-[#b3b3b3] w-full px-1 drop-shadow-md pointer-events-auto">
+                    <button onClick={toggleVideoMode} className={`active:opacity-50 transition-colors ${isVideoMode ? 'text-[#1db954]' : 'text-[#b3b3b3]'}`}>{isVideoLoading ? <Loader2 size={20} className="animate-spin" /> : <MonitorPlay size={20} />}</button>
+                    <div className="flex items-center gap-6"><button onClick={() => setShowQueue(true)} className="active:opacity-50 text-white"><ListMusic size={20} /></button></div>
+                  </div>
+                )}
               </div>
 
             </div>

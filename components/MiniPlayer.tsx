@@ -10,7 +10,7 @@ import { useAppContext } from "../context/AppContext";
 import { 
   Play, Pause, SkipForward, SkipBack, Loader2, ChevronDown, 
   MoreHorizontal, Shuffle, Repeat, Heart, ListMusic, 
-  MonitorPlay, Maximize2, Minimize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe, Settings2, Check, Share2, Download, Video, X, Server
+  MonitorPlay, Maximize2, Minimize2, Menu, Timer, Disc3, Calendar, Clock, Hash, Globe, Settings2, Check, Share2, Download, Video, X, Server, RefreshCw
 } from "lucide-react";
 
 // --- PRO AUTH & CACHE ENGINE ---
@@ -173,7 +173,7 @@ const generateAllQualities = (baseUrls: any[]) => {
   const sampleUrl = baseUrls[0].url || "";
   const match = sampleUrl.match(/_(\d+)\.(mp4|m4a|mp3|aac)/i);
   if (match) {
-    return ['12', '48', '96', '160', '320'].map(q => ({
+    return['12', '48', '96', '160', '320'].map(q => ({
       quality: `${q}kbps`,
       url: sampleUrl.replace(match[0], `_${q}.${match[2]}`),
       label: `${q}kbps`
@@ -268,28 +268,31 @@ export default function MiniPlayer() {
     playContext, likedSongs, toggleLikeSong 
   } = useAppContext();
   
-  const [audioUrl, setAudioUrl] = useState("");
-  const[loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const[currentTime, setCurrentTime] = useState(0);
+  const[audioUrl, setAudioUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const[progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
-  const[isExpanded, setIsExpanded] = useState(false);
-  const [dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
-  const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
-  const [isUiHidden, setIsUiHidden] = useState(false); 
+  const [isExpanded, setIsExpanded] = useState(false);
+  const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
+  const [isScrolledPastMain, setIsScrolledPastMain] = useState(false);
+  const[isUiHidden, setIsUiHidden] = useState(false); 
   const [isShuffle, setIsShuffle] = useState(false);
-  const[repeatMode, setRepeatMode] = useState(0); 
+  const [repeatMode, setRepeatMode] = useState(0); 
   const [showQueue, setShowQueue] = useState(false);
   
-  // Advanced Touch Drag Queue Setup
+  // Touch Gestures State
   const [dragState, setDragState] = useState<{ activeIndex: number | null, startY: number, currentY: number }>({ activeIndex: null, startY: 0, currentY: 0 });
   const[isQueueEditMode, setIsQueueEditMode] = useState(false);
-  const [selectedQueueItems, setSelectedQueueItems] = useState<number[]>([]); // Preserves exactly tap order
+  const [selectedQueueItems, setSelectedQueueItems] = useState<number[]>([]);
+  
+  const [miniSwipeY, setMiniSwipeY] = useState(0);
+  const[queueSwipeY, setQueueSwipeY] = useState(0);
+  const[settingsSwipeY, setSettingsSwipeY] = useState(0);
 
-  // Sleep Timer Setup
-  const[sleepTimer, setSleepTimer] = useState<number | 'end' | null>(null);
-  const[timerRemaining, setTimerRemaining] = useState<number | null>(null);
+  const [sleepTimer, setSleepTimer] = useState<number | 'end' | null>(null);
+  const [timerRemaining, setTimerRemaining] = useState<number | null>(null);
   const [showTimerMenu, setShowTimerMenu] = useState(false);
   
   const currentTrackRef = useRef<any>(null);
@@ -300,11 +303,11 @@ export default function MiniPlayer() {
   const rapidKeyIdxRef = useRef(0);
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
   const [spotifyUrl, setSpotifyUrl] = useState<string | null>(null);
-  const[lyrics, setLyrics] = useState<any[]>([]);
+  const [lyrics, setLyrics] = useState<any[]>([]);
   const [syncType, setSyncType] = useState<string | null>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const [isLyricsFullScreen, setIsLyricsFullScreen] = useState(false);
-  const[canvasData, setCanvasData] = useState<any>(null);
+  const [canvasData, setCanvasData] = useState<any>(null);
   const [isCanvasLoaded, setIsCanvasLoaded] = useState(false);
   
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
@@ -317,14 +320,12 @@ export default function MiniPlayer() {
   const playNextRef = useRef<() => void>(() => {});
   const playPrevRef = useRef<() => void>(() => {});
   const isVideoModeRef = useRef<boolean>(false);
-  const [swipeX, setSwipeX] = useState(0);
-  const touchStartX = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const queueContainerRef = useRef<HTMLDivElement>(null);
   const isSeekingRef = useRef(false);
-  const[songDetails, setSongDetails] = useState<any>(null);
+  const [songDetails, setSongDetails] = useState<any>(null);
 
-  const [isVideoMode, setIsVideoMode] = useState(false);
+  const[isVideoMode, setIsVideoMode] = useState(false);
   const [ytVideoId, setYtVideoId] = useState<string | null>(null);
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const iframeInitialTimeRef = useRef<number>(0); 
@@ -436,9 +437,9 @@ export default function MiniPlayer() {
           } catch(e) {}
        } else setIsSessionRestored(true);
     }
-  }, [currentSong, isSessionRestored, setCurrentSong, setUpcomingQueue]);
+  },[currentSong, isSessionRestored, setCurrentSong, setUpcomingQueue]);
 
-  useEffect(() => { isCanvasEnabledRef.current = isCanvasEnabled; }, [isCanvasEnabled]);
+  useEffect(() => { isCanvasEnabledRef.current = isCanvasEnabled; },[isCanvasEnabled]);
   useEffect(() => { isLyricsEnabledRef.current = isLyricsEnabled; if (!isLyricsEnabled) setIsLyricsFullScreen(false); }, [isLyricsEnabled]);
   useEffect(() => { if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong)); }, [currentSong]);
   useEffect(() => { if (upcomingQueue && upcomingQueue.length > 0) localStorage.setItem('last_session_queue', JSON.stringify(upcomingQueue)); }, [upcomingQueue]);
@@ -484,38 +485,65 @@ export default function MiniPlayer() {
     return null;
   };
 
-  useEffect(() => {
-    let isSubscribed = true; let recTimer: any;
-    const fetchRecs = async (vid: string, retries = 5) => {
-      if (!vid || fetchingRecsRef.current) return;
-      fetchingRecsRef.current = true; setIsFetchingRecsUI(true);
-      const attemptFetch = async (retriesLeft: number): Promise<any[]> => {
-        try {
-           const res = await fetch(`https://ayushmind.vercel.app/api/rec?vid=${vid}`);
-           if (!res.ok) throw new Error("Rec API Failed");
-           return (await res.json()).recommendations ||[];
-        } catch (e) {
-           if (retriesLeft > 0 && isSubscribed) { await new Promise(r => setTimeout(r, 2000)); return attemptFetch(retriesLeft - 1); }
-           return[];
-        }
-      };
-      const recs = await attemptFetch(retries);
-      if (isSubscribed && recs.length > 0) {
-        const formatted = recs.map((r: any) => ({
-          id: r["Perma URL"] ? r["Perma URL"].split('/').pop() : Math.random().toString(),
-          title: r.Title, name: r.Title, artists: r.Artists, image: r.Banner,
-          downloadUrl:[{ url: r.Stream, quality: "320kbps" }], url: r["Perma URL"],
-          spotifyUrl: r.Spotify, isRecommendation: true
-        }));
-        setUpcomingQueue(prev => {
-          const existingIds = new Set(prev.map((s: any) => s.id));
-          existingIds.add(currentSong.id); historyQueue.forEach((h: any) => existingIds.add(h.id));
-          return[...prev, ...formatted.filter((s: any) => !existingIds.has(s.id))];
-        });
+  const fetchRecs = async (vid: string, forceClear: boolean = false, retries = 5) => {
+    if (!vid || fetchingRecsRef.current) return;
+    fetchingRecsRef.current = true; setIsFetchingRecsUI(true);
+    
+    const attemptFetch = async (retriesLeft: number): Promise<any[]> => {
+      try {
+         const res = await fetch(`https://ayushmind.vercel.app/api/rec?vid=${vid}`);
+         if (!res.ok) throw new Error("Rec API Failed");
+         return (await res.json()).recommendations ||[];
+      } catch (e) {
+         if (retriesLeft > 0) { await new Promise(r => setTimeout(r, 2000)); return attemptFetch(retriesLeft - 1); }
+         return[];
       }
-      fetchingRecsRef.current = false; if (isSubscribed) setIsFetchingRecsUI(false);
     };
+    
+    const recs = await attemptFetch(retries);
+    if (recs.length > 0) {
+      const formatted = recs.map((r: any) => ({
+        id: r["Perma URL"] ? r["Perma URL"].split('/').pop() : Math.random().toString(),
+        title: decodeEntities(r.Title), name: decodeEntities(r.Title), artists: decodeEntities(r.Artists), image: r.Banner,
+        downloadUrl:[{ url: r.Stream, quality: "320kbps" }], url: r["Perma URL"],
+        spotifyUrl: r.Spotify, isRecommendation: true
+      }));
 
+      // STRICT FILTERING: Eliminate slow/reverb/lofi AND duplicates
+      const filtered = formatted.filter((s: any) => {
+         const titleL = s.title.toLowerCase();
+         if (titleL.includes('slow') || titleL.includes('reverb') || titleL.includes('lofi') || titleL.includes('lo-fi')) return false;
+         return true;
+      });
+
+      setUpcomingQueue(prev => {
+        const activeSet = forceClear ? new Set([currentSong.id]) : new Set(prev.map((s: any) => s.id));
+        if (!forceClear) { existingIds.add(currentSong.id); historyQueue.forEach((h: any) => activeSet.add(h.id)); }
+        
+        const validNew = filtered.filter((s: any) => {
+           if (activeSet.has(s.id)) return false;
+           // Also double-check name similarity to prevent "Remix" duplicates
+           const isDupName = prev.some((p:any) => p.name.toLowerCase() === s.name.toLowerCase());
+           if (isDupName && !forceClear) return false;
+           activeSet.add(s.id);
+           return true;
+        });
+        return forceClear ? validNew : [...prev, ...validNew];
+      });
+    }
+    fetchingRecsRef.current = false; setIsFetchingRecsUI(false);
+  };
+
+  const handleRebuildQueue = (e: any) => {
+      e.stopPropagation();
+      setUpcomingQueue([]);
+      if (ytVideoId || currentSong?.prefetchedYtId) {
+          fetchRecs(ytVideoId || currentSong.prefetchedYtId, true);
+      }
+  };
+
+  useEffect(() => {
+    let recTimer: any;
     if (['Home', 'Search', 'Library', 'External Link', 'Recommendation'].includes(playContext?.type) && upcomingQueue.length <= 3 && !fetchingRecsRef.current) {
       let seedVid = ytVideoId || currentSong?.prefetchedYtId;
       try {
@@ -527,7 +555,7 @@ export default function MiniPlayer() {
       } catch (e) {}
       if (seedVid) recTimer = setTimeout(() => fetchRecs(seedVid as string), 2500);
     }
-    return () => { isSubscribed = false; fetchingRecsRef.current = false; clearTimeout(recTimer); };
+    return () => { fetchingRecsRef.current = false; clearTimeout(recTimer); };
   }, [upcomingQueue.length, ytVideoId, playContext?.type, historyQueue]);
 
   // MAIN TRACK CHANGE HOOK
@@ -595,11 +623,9 @@ export default function MiniPlayer() {
       try {
          const auth = await getAuthData();
          if (auth && auth.accessToken) {
-             // 1. Fetch AK47 (Limit 25 priority)
              const authRes = await fetch(`https://ak47ayush.vercel.app/search?q=${encodeURIComponent(query)}&CID=${auth.clientId}&token=${auth.accessToken}&limit=25&offset=0`);
              if (authRes.ok) {
                  const authJson = await authRes.json();
-                 // Deep inspection of the { search_query: "...", results: [...] } JSON format
                  if (authJson.results && Array.isArray(authJson.results) && authJson.results.length > 0) {
                      const match = performAK47Matching(authJson.results, instantTitle, searchArtist);
                      if (match) {
@@ -607,7 +633,7 @@ export default function MiniPlayer() {
                         if (sId) {
                             setSpotifyId(sId); setSpotifyUrl(match.spotify_url);
                             if (typeof window !== "undefined") { localStorage.setItem(cacheKey, match.spotify_url); localStorage.setItem(cacheKey + '_id', sId); }
-                            return; // Found exact match via primary AK47, exit fallback!
+                            return; 
                         }
                      }
                  }
@@ -615,7 +641,6 @@ export default function MiniPlayer() {
          }
       } catch (e) {}
 
-      // 2. Fallback to RapidAPI only if AK47 failed or found zero match
       const searchUrl = `https://${RAPID_API_HOST}/search?q=${encodeURIComponent(query)}&type=tracks&offset=0&limit=25&numberOfTopResults=5`;
       for (let attempt = 0; attempt < RAPID_KEYS.length; attempt++) {
         try {
@@ -786,6 +811,7 @@ export default function MiniPlayer() {
     setIsVideoLoading(false);
   };
 
+  // CANVAS DEFERRED NETWORK OPTIMIZATION
   useEffect(() => {
     if (!spotifyId || !spotifyUrl) return;
     let isCurrent = true;
@@ -796,12 +822,13 @@ export default function MiniPlayer() {
           if (lyricsRes.ok) {
             const lyricsJson = await lyricsRes.json();
             if (isCurrent && lyricsJson.lines) { 
-                setLyrics(lyricsJson.lines.map((l: any) => ({ time: parseTimeTag(l.timeTag), words: l.words }))); 
+                setLyrics(lyricsJson.lines.map((l: any) => ({ time: parseTimeTag(l.timeTag), words: decodeEntities(l.words) }))); 
                 if(!currentSong?.isProFallback) setSyncType(lyricsJson.syncType);
             }
           }
         }
-        if (isCanvasEnabledRef.current) {
+        // ONLY Fetch canvas if music is actually playing to save heavy network on low end devices
+        if (isCanvasEnabledRef.current && isPlaying && !loading) {
           const res = await fetch(`https://ayush-gamma-coral.vercel.app/api/canvas?trackId=${spotifyId}`);
           if (res.ok) { const canvasJson = await res.json(); if (isCurrent && canvasJson?.canvasesList?.length > 0) setCanvasData(canvasJson.canvasesList[0]); }
         }
@@ -809,7 +836,7 @@ export default function MiniPlayer() {
     };
     fetchExtras();
     return () => { isCurrent = false; };
-  }, [spotifyId, spotifyUrl]);
+  },[spotifyId, spotifyUrl, isPlaying, loading]); // Added isPlaying and loading dependencies
 
   useEffect(() => {
     if (!displayImage) return;
@@ -851,10 +878,9 @@ export default function MiniPlayer() {
 
     if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
     
-    // EXACT LOOP SINGLE FIX: Play once, instantly unclick loop button
     if (repeatMode === 2 && audioRef.current) { 
       audioRef.current.currentTime = 0; 
-      setRepeatMode(0); // Unclick loop!
+      setRepeatMode(0);
       const p = audioRef.current.play(); 
       if (p!==undefined) p.catch(()=>{}); 
       return; 
@@ -903,13 +929,7 @@ export default function MiniPlayer() {
       const d = audioRef.current.duration;
       const c = audioRef.current.currentTime;
       if (d > 0 && c >= 0 && c <= d && !isNaN(d) && !isNaN(c)) {
-        try { 
-           navigator.mediaSession.setPositionState({ 
-             duration: d, 
-             playbackRate: audioRef.current.playbackRate || 1, 
-             position: c 
-           }); 
-        } catch(e) {}
+        try { navigator.mediaSession.setPositionState({ duration: d, playbackRate: audioRef.current.playbackRate || 1, position: c }); } catch(e) {}
       }
     }
   },[]);
@@ -933,18 +953,12 @@ export default function MiniPlayer() {
        navigator.mediaSession.setActionHandler('previoustrack', () => playPrevRef.current());
        navigator.mediaSession.setActionHandler('nexttrack', () => playNextRef.current());
        navigator.mediaSession.setActionHandler('seekto', (details) => {
-          if (details.seekTime !== undefined && audioRef.current) {
-            audioRef.current.currentTime = details.seekTime; setCurrentTime(details.seekTime); syncPosition();
-          }
+          if (details.seekTime !== undefined && audioRef.current) { audioRef.current.currentTime = details.seekTime; setCurrentTime(details.seekTime); syncPosition(); }
        });
     }
   },[displayTitle, displayArtists, displayImage, playContext, currentSong]);
 
-  useEffect(() => {
-    if ('mediaSession' in navigator) {
-       navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
-    }
-  }, [isPlaying]);
+  useEffect(() => { if ('mediaSession' in navigator) { navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused'; } }, [isPlaying]);
 
   const handleTimeUpdate = () => {
     if (audioRef.current && !isVideoMode) {
@@ -981,11 +995,12 @@ export default function MiniPlayer() {
     }
   };
 
-  // FLICKER-FREE WORD SYNC ENGINE
+  // ZERO-LAG 60FPS WORD SYNC ENGINE
+  const activeWordsCache = useRef<any[]>([]);
+  const currentSyncRef = useRef<number>(-1);
+
   useEffect(() => {
-    if (!isWordSyncEnabled || !isLyricsEnabled || isVideoMode || activeLyricIndex < 0 || !lyrics[activeLyricIndex]) {
-        return;
-    }
+    if (!isWordSyncEnabled || !isLyricsEnabled || isVideoMode || activeLyricIndex < 0 || !lyrics[activeLyricIndex]) return;
 
     let animationFrameId: number;
     const updateProgress = () => {
@@ -1000,47 +1015,50 @@ export default function MiniPlayer() {
             const rawProgress = duration > 0 ? (elapsed / duration) * 100 : 100;
             const boundedProgress = Math.max(0, Math.min(100, rawProgress));
 
-            const processContainer = (container: HTMLElement | null, selector: string, activeSyncEnabled: boolean) => {
-                if (!container || !activeSyncEnabled) return;
-                const words = container.querySelectorAll(selector) as NodeListOf<HTMLElement>;
-                if (!words.length) return;
-                
-                let totalChars = 0;
-                words.forEach(w => totalChars += (w.textContent || '').length);
-                if (totalChars === 0) return;
-                
-                let charAccumulator = 0;
-                words.forEach((wordNode) => {
-                    const wordLen = (wordNode.textContent || '').length;
-                    const wordStartPct = (charAccumulator / totalChars) * 100;
-                    const wordEndPct = ((charAccumulator + wordLen) / totalChars) * 100;
-                    
-                    if (boundedProgress >= wordEndPct) {
-                        wordNode.style.backgroundImage = 'none';
-                        wordNode.style.webkitBackgroundClip = 'unset';
-                        wordNode.style.webkitTextFillColor = 'white';
-                        wordNode.style.color = 'white';
-                    } else if (boundedProgress <= wordStartPct) {
-                        wordNode.style.backgroundImage = 'none';
-                        wordNode.style.webkitBackgroundClip = 'unset';
-                        wordNode.style.webkitTextFillColor = 'rgba(255, 255, 255, 0.3)';
-                        wordNode.style.color = 'rgba(255, 255, 255, 0.3)';
-                    } else {
-                        const localProgress = ((boundedProgress - wordStartPct) / (wordEndPct - wordStartPct)) * 100;
-                        const gradient = `linear-gradient(to right, rgba(255,255,255,1) ${Math.max(0, localProgress - 20)}%, rgba(255,255,255,0.7) ${localProgress}%, rgba(255,255,255,0.3) ${Math.min(100, localProgress + 20)}%)`;
-                        
-                        wordNode.style.backgroundImage = gradient;
-                        wordNode.style.webkitBackgroundClip = 'text';
-                        wordNode.style.webkitTextFillColor = 'transparent';
-                        wordNode.style.color = 'transparent';
-                    }
-                    charAccumulator += wordLen;
-                });
-            };
+            // Only rebuild the heavy Node Cache if the line actually changed
+            if (currentSyncRef.current !== activeLyricIndex) {
+                currentSyncRef.current = activeLyricIndex;
+                activeWordsCache.current =[];
 
-            processContainer(fullActiveLyricRef.current, '.lyric-word', isWordSyncEnabled);
-            processContainer(activeLyricRef.current, '.lyric-word', isWordSyncEnabled);
-            processContainer(miniActiveLyricRef.current, '.lyric-word-mini', isMiniWordSyncEnabled);
+                const buildCache = (container: HTMLElement | null, selector: string, isActive: boolean) => {
+                    if (!container || !isActive) return;
+                    const words = container.querySelectorAll(selector) as NodeListOf<HTMLElement>;
+                    if (!words.length) return;
+                    let totalChars = 0; words.forEach(w => totalChars += (w.textContent || '').length);
+                    if (totalChars === 0) return;
+                    let charAccumulator = 0;
+                    words.forEach((wordNode) => {
+                        const wordLen = (wordNode.textContent || '').length;
+                        const startPct = (charAccumulator / totalChars) * 100;
+                        const endPct = ((charAccumulator + wordLen) / totalChars) * 100;
+                        activeWordsCache.current.push({ node: wordNode, startPct, endPct });
+                        charAccumulator += wordLen;
+                    });
+                };
+
+                buildCache(fullActiveLyricRef.current, '.lyric-word', isWordSyncEnabled);
+                buildCache(activeLyricRef.current, '.lyric-word', isWordSyncEnabled);
+                buildCache(miniActiveLyricRef.current, '.lyric-word-mini', isMiniWordSyncEnabled);
+            }
+
+            // Lightning Fast Render Loop (No DOM Reads)
+            activeWordsCache.current.forEach((w) => {
+                if (boundedProgress >= w.endPct) {
+                    w.node.style.backgroundImage = 'none';
+                    w.node.style.webkitBackgroundClip = 'unset';
+                    w.node.style.webkitTextFillColor = 'white';
+                } else if (boundedProgress <= w.startPct) {
+                    w.node.style.backgroundImage = 'none';
+                    w.node.style.webkitBackgroundClip = 'unset';
+                    w.node.style.webkitTextFillColor = 'rgba(255, 255, 255, 0.3)';
+                } else {
+                    const localProgress = ((boundedProgress - w.startPct) / (w.endPct - w.startPct)) * 100;
+                    const gradient = `linear-gradient(to right, rgba(255,255,255,1) ${Math.max(0, localProgress - 20)}%, rgba(255,255,255,0.7) ${localProgress}%, rgba(255,255,255,0.3) ${Math.min(100, localProgress + 20)}%)`;
+                    w.node.style.backgroundImage = gradient;
+                    w.node.style.webkitBackgroundClip = 'text';
+                    w.node.style.webkitTextFillColor = 'transparent';
+                }
+            });
         }
         if (isPlaying) animationFrameId = requestAnimationFrame(updateProgress);
     };
@@ -1070,7 +1088,10 @@ export default function MiniPlayer() {
     }
   },[activeLyricIndex, isLyricsFullScreen]);
 
+  const isUnsynced = syncType !== "LINE_SYNCED" || isVideoMode;
+
   const handleLyricClick = (time: number) => {
+    if (isUnsynced) return;
     if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_SEEK', time: time }, '*');
     else if (audioRef.current && duration > 0) { audioRef.current.currentTime = time; setCurrentTime(time); syncPosition(); }
   };
@@ -1078,7 +1099,7 @@ export default function MiniPlayer() {
   const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value); setProgress(val);
     const newTime = (val / 100) * duration; setCurrentTime(newTime);
-    if (isLyricsEnabled && syncType === "LINE_SYNCED" && lyrics.length > 0) {
+    if (isLyricsEnabled && !isUnsynced && lyrics.length > 0) {
       let activeIdx = -1;
       const offsetTime = newTime + 0.4; 
       for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].time <= offsetTime) activeIdx = i; else break; }
@@ -1140,7 +1161,7 @@ export default function MiniPlayer() {
       }
     }
     setDragState({ activeIndex: null, startY: 0, currentY: 0 });
-  }, [dragState, upcomingQueue.length]);
+  },[dragState, upcomingQueue.length]);
 
   useEffect(() => {
     if (dragState.activeIndex !== null) {
@@ -1157,9 +1178,22 @@ export default function MiniPlayer() {
     }
   },[dragState.activeIndex, handleDragMove, handleDragEnd]);
 
-  const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
-  const handleTouchMove = (e: React.TouchEvent) => { const diff = e.touches[0].clientX - touchStartX.current; if (diff > 0 && !showQueue) setSwipeX(diff); };
-  const handleTouchEnd = () => { if (swipeX > window.innerWidth * 0.45 && !showQueue) { setCurrentSong(null); setIsPlaying(false); setIsExpanded(false); } setSwipeX(0); };
+  // SWIPE GESTURES FOR MENUS AND MINIPLAYER
+  const handleMiniTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientY; };
+  const handleMiniTouchMove = (e: React.TouchEvent) => { 
+      const diff = e.touches[0].clientY - touchStartX.current; 
+      if (diff < 0 && !isExpanded) setMiniSwipeY(diff); 
+  };
+  const handleMiniTouchEnd = () => { 
+      if (miniSwipeY < -50 && !isExpanded) setIsExpanded(true); 
+      setMiniSwipeY(0); 
+  };
+
+  const createSwipeToClose = (setter: any, closer: any) => ({
+      onTouchStart: (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientY; },
+      onTouchMove: (e: React.TouchEvent) => { const diff = e.touches[0].clientY - touchStartX.current; if (diff > 0) setter(diff); },
+      onTouchEnd: () => { setter(prev => { if (prev > 100) closer(false); return 0; }); }
+  });
 
   // --- 20X FASTER NATIVE MP3 PACKER ENGINE (HTML Entities Decoded!) ---
   const executeMp3PackerDownload = async (url: string, quality: string) => {
@@ -1168,7 +1202,7 @@ export default function MiniPlayer() {
       await loadLameJS();
       setDlState(prev => ({...prev, packStep: "Downloading Media...", progress: 10}));
       
-      const [audioResp, imgResp] = await Promise.all([
+      const[audioResp, imgResp] = await Promise.all([
           fetch(url), fetch(displayImage || "https://via.placeholder.com/500")
       ]);
       const audioFileBuffer = await audioResp.arrayBuffer();
@@ -1189,21 +1223,18 @@ export default function MiniPlayer() {
       let samples = audioBuffer.getChannelData(0); 
       const buffer = new Int16Array(samples.length);
       
-      // OPTIMIZED 20X LOOP VECTORIZATION
       for (let i = 0, len = samples.length; i < len; i++) {
-          let s = samples[i];
-          buffer[i] = s < 0 ? s * 32768 : s * 32767;
+          let s = samples[i]; buffer[i] = s < 0 ? s * 32768 : s * 32767;
       }
 
       const mp3Data =[];
-      const blockSize = 1152 * 500; // HUGE BLOCK CHUNKS FOR LIGHTNING SPEED
+      const blockSize = 1152 * 500; 
       let lastYield = Date.now();
       
       for (let i = 0; i < buffer.length; i += blockSize) {
           const chunk = buffer.subarray(i, i + blockSize);
           const mp3buf = mp3encoder.encodeBuffer(chunk);
           if (mp3buf.length > 0) mp3Data.push(mp3buf);
-          
           const now = Date.now();
           if (now - lastYield > 250) { 
               const pct = 40 + Math.floor((i / buffer.length) * 50);
@@ -1224,8 +1255,7 @@ export default function MiniPlayer() {
       const cleanAlbum = decodeEntities(songDetails?.album?.name || displayTitle);
 
       const taggedBuffer = NativeID3.tag({
-          audio: mp3ArrayBuffer, image: coverBuffer,
-          title: cleanTitle, artist: cleanArtist, album: cleanAlbum
+          audio: mp3ArrayBuffer, image: coverBuffer, title: cleanTitle, artist: cleanArtist, album: cleanAlbum
       });
 
       setDlState(prev => ({...prev, progress: 100, packStep: "Complete!"}));
@@ -1340,18 +1370,18 @@ export default function MiniPlayer() {
 
   // MEMOIZED FLICKER-FREE LYRICS ABOVE TITLE
   const RenderedMiniLyrics = useMemo(() => {
-    if (!isLyricsEnabled || isLyricsFullScreen || syncType !== "LINE_SYNCED" || lyrics.length === 0 || isVideoMode) return null;
+    if (!isLyricsEnabled || isLyricsFullScreen || lyrics.length === 0) return null;
+    if (isUnsynced) return <span className="absolute left-0 w-full text-left pr-2 no-select-text font-extrabold drop-shadow-xl text-white/50 text-[14px]">Music Playing</span>;
+
     return (
        <div className="relative w-full h-full flex justify-start items-center">
          {lyrics.map((line: any, idx: number) => {
             const diff = idx - activeLyricIndex;
             if (Math.abs(diff) > 1) return null;
-            
             let transform = '', op = 0;
             if (diff === 0) { transform = 'translateY(0px) scale(1)'; op = 1; }
             else if (diff > 0) { transform = 'translateY(35px) scale(0.9)'; op = 0; } 
             else { return null; } 
-            
             return (
                <div key={idx} 
                      ref={diff === 0 ? miniActiveLyricRef : null}
@@ -1369,7 +1399,7 @@ export default function MiniPlayer() {
          })}
        </div>
     );
-  },[lyrics, activeLyricIndex, isLyricsEnabled, isLyricsFullScreen, syncType, isVideoMode, isMiniWordSyncEnabled, lineFontSize]);
+  },[lyrics, activeLyricIndex, isLyricsEnabled, isLyricsFullScreen, isUnsynced, isMiniWordSyncEnabled, lineFontSize]);
 
   const RenderedLyrics = useMemo(() => {
     if (!isLyricsEnabled) return null;
@@ -1380,7 +1410,7 @@ export default function MiniPlayer() {
       
       const fzClass = getCardFontSizeClass(isPast, isFuture, isLyricsFullScreen);
       const activeClasses = `text-white ${fzClass} font-black drop-shadow-2xl leading-tight opacity-100`;
-      const pastClasses = `text-white/50 ${fzClass} font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2`;
+      const pastClasses = `text-white/50 ${fzClass} font-bold leading-tight opacity-50 -translate-y-2`;
       const futureClasses = `text-black/80 ${fzClass} font-black drop-shadow-md leading-tight opacity-70 translate-y-3`;
 
       const cleanupStyles = !isActive ? { backgroundImage: 'none', WebkitBackgroundClip: 'unset', WebkitTextFillColor: 'unset', color: '' } : {};
@@ -1389,8 +1419,8 @@ export default function MiniPlayer() {
         <p key={idx} 
            ref={isActive ? (isLyricsFullScreen ? fullActiveLyricRef : activeLyricRef) : null} 
            onClick={() => handleLyricClick(line.time)} 
-           className={`cursor-pointer transition-all duration-[800ms] ease-out origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses}`} style={cleanupStyles}>
-           {isWordSyncEnabled ? (
+           className={`transition-all duration-[800ms] ease-out origin-left no-select-text transform ${isActive ? activeClasses : isPast ? pastClasses : futureClasses} ${!isUnsynced ? 'cursor-pointer hover:text-white/80' : ''}`} style={cleanupStyles}>
+           {isWordSyncEnabled && !isUnsynced ? (
               (line.words || '♪').split(' ').map((word: string, wIdx: number, arr: any[]) => (
                   <span key={wIdx} className="lyric-word inline">{word}{wIdx < arr.length - 1 ? ' ' : ''}</span>
               ))
@@ -1400,7 +1430,7 @@ export default function MiniPlayer() {
         </p>
       )
     });
-  },[lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled, cardFontSize, isWordSyncEnabled]);
+  },[lyrics, activeLyricIndex, isLyricsFullScreen, isLyricsEnabled, cardFontSize, isWordSyncEnabled, isUnsynced]);
 
   const RenderedArtists = useMemo(() => {
     return uniqueArtists.map((artist: any) => {
@@ -1422,39 +1452,30 @@ export default function MiniPlayer() {
   const RenderedQueue = useMemo(() => {
     return upcomingQueue.map((track: any, index: number) => {
       const isDragging = dragState.activeIndex === index;
-      let transform = 'none';
+      let transform = 'translateZ(0)';
       let zIndex = 1;
-      let transition = 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
 
       if (isDragging) {
-        transform = `translateY(${dragState.currentY - dragState.startY}px) scale(1.02)`;
+        transform = `translateY(${dragState.currentY - dragState.startY}px) scale(1.02) translateZ(0)`;
         zIndex = 50;
-        transition = 'none'; 
       } else if (dragState.activeIndex !== null) {
         const diff = dragState.currentY - dragState.startY;
         const targetIndex = dragState.activeIndex + Math.round(diff / 60);
-        
-        if (dragState.activeIndex < index && targetIndex >= index) {
-            transform = `translateY(-60px)`;
-        } else if (dragState.activeIndex > index && targetIndex <= index) {
-            transform = `translateY(60px)`;
-        }
+        if (dragState.activeIndex < index && targetIndex >= index) transform = `translateY(-60px) translateZ(0)`;
+        else if (dragState.activeIndex > index && targetIndex <= index) transform = `translateY(60px) translateZ(0)`;
       }
 
       const isSelected = selectedQueueItems.includes(index);
 
       return (
         <div key={track.id + index} 
-          className={`flex items-center justify-between w-full group p-2 rounded-lg cursor-pointer relative bg-transparent ${isDragging ? 'shadow-2xl bg-white/10' : 'hover:bg-white/5'}`}
-          style={{ transform, zIndex, transition }}
+          className={`flex items-center justify-between w-full group p-2 rounded-lg cursor-pointer relative bg-transparent will-change-transform ${isDragging ? 'shadow-2xl bg-white/10 transition-none' : 'hover:bg-white/5 transition-all duration-300 ease-[cubic-bezier(0.25,0.8,0.25,1)]'}`}
+          style={{ transform, zIndex }}
         >
           {isQueueEditMode && (
             <div className="flex-shrink-0 mr-3 pl-1" onClick={(e) => {
                e.stopPropagation();
-               setSelectedQueueItems(prev => {
-                   if (prev.includes(index)) return prev.filter(i => i !== index);
-                   return [...prev, index];
-               });
+               setSelectedQueueItems(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
             }}>
                <div className={`w-[22px] h-[22px] rounded-full border-[2px] flex items-center justify-center transition-colors ${isSelected ? 'bg-[#1db954] border-[#1db954]' : 'border-white/40'}`}>
                   {isSelected && <Check size={14} className="text-black stroke-[3px]" />}
@@ -1463,16 +1484,8 @@ export default function MiniPlayer() {
           )}
 
           <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0" onClick={() => { 
-             if(isQueueEditMode) {
-                 setSelectedQueueItems(prev => {
-                     if (prev.includes(index)) return prev.filter(i => i !== index);
-                     return [...prev, index];
-                 });
-                 return;
-             }
-             setCurrentSong(track); 
-             setUpcomingQueue((prev: any) => prev.filter((_: any, i: number) => i !== index)); 
-             setIsPlaying(true); 
+             if(isQueueEditMode) { setSelectedQueueItems(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]); return; }
+             setCurrentSong(track); setUpcomingQueue((prev: any) => prev.filter((_: any, i: number) => i !== index)); setIsPlaying(true); 
           }}>
             <div className="w-[44px] h-[44px] flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">
                <img draggable={false} src={getImageUrl(track.image) || "https://via.placeholder.com/150"} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />
@@ -1484,8 +1497,7 @@ export default function MiniPlayer() {
           </div>
 
           {!isQueueEditMode && (
-             <div className="flex-shrink-0 px-3 py-2 cursor-grab active:cursor-grabbing text-white/50 touch-none" 
-                  onPointerDown={(e) => { e.stopPropagation(); handleDragStart(e, index); }}>
+             <div className="flex-shrink-0 px-3 py-2 cursor-grab active:cursor-grabbing text-white/50 touch-none" onPointerDown={(e) => { e.stopPropagation(); handleDragStart(e, index); }}>
                  <Menu size={20} />
              </div>
           )}
@@ -1499,13 +1511,24 @@ export default function MiniPlayer() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  const miniPlayerStyle = useMemo(() => {
+    if (miniSwipeY >= 0 || isExpanded) return {};
+    const expandProgress = Math.min(Math.abs(miniSwipeY) / window.innerHeight, 1);
+    return {
+        transform: `translateY(${miniSwipeY}px)`,
+        opacity: 1 - expandProgress,
+        borderRadius: `${Math.max(6, 24 * expandProgress)}px`,
+        transition: 'none'
+    };
+  }, [miniSwipeY, isExpanded]);
+
   if (!currentSong) return null;
 
   return (
     <>
       <style dangerouslySetInnerHTML={{__html: `
         * { -webkit-tap-highlight-color: transparent; }
-        .player-root { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
+        .player-root, .player-modal { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
         img, video, canvas { pointer-events: none; -webkit-touch-callout: none; user-select: none; }
         @keyframes spotify-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
         .animate-spotify-marquee { animation: spotify-marquee 12s linear infinite; display: inline-block; white-space: nowrap; }
@@ -1530,6 +1553,7 @@ export default function MiniPlayer() {
         }} 
       />
 
+      {/* EXPANDED PLAYER MAIN */}
       <div className={`player-root fixed inset-0 z-[99999] text-white transition-all duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0 opacity-100 overflow-hidden" : "translate-y-full opacity-0 pointer-events-none"}`}>
         
         {isCanvasLoaded && !isScrolledPastMain && !showQueue && !isVideoMode && !isLyricsFullScreen && isCanvasEnabled && (
@@ -1621,7 +1645,10 @@ export default function MiniPlayer() {
             {isLyricsEnabled && lyrics.length > 0 && !isLyricsFullScreen && (
               <div className="rounded-2xl p-6 w-full mx-auto shadow-2xl relative overflow-hidden transition-colors duration-500 border border-white/10" style={{ backgroundColor: dominantColor }}>
                 <div className="absolute inset-0 bg-black/5 z-0 pointer-events-none" />
-                <div className="relative z-10 flex items-center justify-between mb-6 sticky top-0 bg-transparent no-select-text"><h3 className="text-white font-bold text-[18px]">Lyrics</h3><button onClick={() => setIsLyricsFullScreen(true)} className="p-2 text-white/80 hover:text-white rounded-full bg-black/30 pointer-events-auto"><Maximize2 size={16} /></button></div>
+                <div className="relative z-10 flex items-center justify-between mb-6 sticky top-0 bg-transparent no-select-text">
+                  <div className="flex items-center gap-2"><h3 className="text-white font-bold text-[18px]">Lyrics</h3>{isUnsynced && <span className="bg-white/10 px-2 py-0.5 rounded-full text-[10px] font-bold text-white/70 uppercase tracking-widest border border-white/5">Unsynced</span>}</div>
+                  <button onClick={() => setIsLyricsFullScreen(true)} className="p-2 text-white/80 hover:text-white rounded-full bg-black/30 pointer-events-auto"><Maximize2 size={16} /></button>
+                </div>
                 <div className="relative z-10 flex flex-col gap-5 max-h-[300px] overflow-y-auto scrollbar-hide pb-10" ref={lyricsContainerRef}>{RenderedLyrics}</div>
               </div>
             )}
@@ -1656,9 +1683,10 @@ export default function MiniPlayer() {
         </div>
 
         {/* --- SETTINGS MENU --- */}
-        <div className={`absolute inset-0 z-[100000] bg-black/60 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto flex flex-col justify-end ${showSettingsMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowSettingsMenu(false)}>
-          <div className={`w-full bg-[#121212] rounded-t-[28px] transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] shadow-2xl border-t border-white/10 flex flex-col max-h-[85vh] ${showSettingsMenu ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}>
-             <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0">
+        <div className={`player-modal absolute inset-0 z-[100000] bg-black/60 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto flex flex-col justify-end ${showSettingsMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowSettingsMenu(false)}>
+          <div {...createSwipeToClose(setSettingsSwipeY, setShowSettingsMenu)} className={`w-full bg-[#121212] rounded-t-[28px] transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] shadow-2xl border-t border-white/10 flex flex-col max-h-[85vh] ${showSettingsMenu ? 'translate-y-0' : 'translate-y-full'}`} style={{ transform: showSettingsMenu ? `translateY(${settingsSwipeY > 0 ? settingsSwipeY : 0}px)` : 'translateY(100%)', transition: settingsSwipeY > 0 ? 'none' : undefined }} onClick={e => e.stopPropagation()}>
+             <div className="flex flex-col items-center pt-3 pb-1 cursor-grab active:cursor-grabbing"><div className="w-10 h-1.5 bg-white/20 rounded-full" /></div>
+             <div className="flex items-center justify-between px-6 pb-4 flex-shrink-0">
                  <h3 className="text-white font-extrabold text-[22px] flex items-center gap-2"><Settings2 size={24}/> Settings</h3>
                  <button onClick={() => setShowSettingsMenu(false)} className="text-white/60 p-2 hover:text-white bg-white/5 rounded-full"><ChevronDown size={20} /></button>
              </div>
@@ -1749,7 +1777,7 @@ export default function MiniPlayer() {
         </div>
 
         {/* --- ADVANCED DOWNLOAD MANAGER MODAL --- */}
-        <div className={`absolute inset-0 z-[100005] bg-black/80 backdrop-blur-md transition-opacity duration-300 flex items-center justify-center p-6 ${dlState.type !== null ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} onClick={() => setDlState({ type: null, status: "idle" })}>
+        <div className={`player-modal absolute inset-0 z-[100005] bg-black/80 backdrop-blur-md transition-opacity duration-300 flex items-center justify-center p-6 ${dlState.type !== null ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} onClick={() => setDlState({ type: null, status: "idle" })}>
            <div className={`w-full max-w-sm bg-[#181818] rounded-2xl shadow-2xl border border-white/10 p-6 flex flex-col gap-4 transform transition-transform duration-500 ${dlState.type !== null ? 'scale-100 translate-y-0' : 'scale-95 translate-y-8'}`} onClick={e => e.stopPropagation()}>
               <h3 className="text-xl font-bold text-white flex items-center justify-between">
                 {dlState.type === "video" ? "Download Video" : "Download Music"}
@@ -1817,7 +1845,7 @@ export default function MiniPlayer() {
 
         {/* TIMER MENU OVERLAY */}
         {showTimerMenu && (
-          <div className="absolute inset-0 z-[100010] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm pointer-events-auto" onClick={() => setShowTimerMenu(false)}>
+          <div className="player-modal absolute inset-0 z-[100010] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm pointer-events-auto" onClick={() => setShowTimerMenu(false)}>
              <div className="w-full max-w-sm bg-[#282828] rounded-2xl p-6 shadow-2xl flex flex-col gap-2 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
                 <h4 className="text-white font-bold text-lg mb-2 flex justify-between items-center">Sleep Timer <button onClick={() => setShowTimerMenu(false)} className="text-white/50 hover:text-white"><X size={20}/></button></h4>
                 {[5, 15, 30, 45, 60].map(mins => (
@@ -1836,15 +1864,19 @@ export default function MiniPlayer() {
         )}
 
         {/* QUEUE OVERLAY */}
-        <div className={`absolute inset-0 z-[60] bg-[#121212] transition-transform duration-300 flex flex-col pointer-events-auto ${showQueue ? 'translate-y-0' : 'translate-y-full'}`}>
-          <div className="flex items-center justify-between px-5 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 sticky top-0 bg-[#121212] z-20 shadow-md no-select-text">
+        <div className={`player-modal absolute inset-0 z-[60] bg-[#121212] transition-transform duration-300 flex flex-col pointer-events-auto ${showQueue ? 'translate-y-0' : 'translate-y-full'}`} style={{ transform: showQueue ? `translateY(${queueSwipeY > 0 ? queueSwipeY : 0}px)` : 'translateY(100%)', transition: queueSwipeY > 0 ? 'none' : undefined }}>
+          <div {...createSwipeToClose(setQueueSwipeY, setShowQueue)} className="w-full bg-[#121212] flex flex-col items-center pt-3 pb-1 cursor-grab active:cursor-grabbing"><div className="w-10 h-1.5 bg-white/20 rounded-full" /></div>
+          <div className="flex items-center justify-between px-5 pb-4 sticky top-0 bg-[#121212] z-20 shadow-md no-select-text">
             <button onClick={() => { setShowQueue(false); setIsQueueEditMode(false); }} className="p-2 -ml-2 text-white/80 active:opacity-50"><ChevronDown size={28} /></button>
             <span className="text-[15px] font-bold text-white">Queue</span>
-            {isQueueEditMode ? (
-               <button onClick={() => { setIsQueueEditMode(false); setSelectedQueueItems([]); }} className="text-[14px] font-bold text-[#1db954] active:opacity-50">Done</button>
-            ) : (
-               <button onClick={() => setIsQueueEditMode(true)} className="text-[14px] font-medium text-white/80 active:opacity-50">Edit</button>
-            )}
+            <div className="flex items-center gap-3">
+               <button onClick={handleRebuildQueue} className="text-white/80 active:opacity-50"><RefreshCw size={18} /></button>
+               {isQueueEditMode ? (
+                  <button onClick={() => { setIsQueueEditMode(false); setSelectedQueueItems([]); }} className="text-[14px] font-bold text-[#1db954] active:opacity-50">Done</button>
+               ) : (
+                  <button onClick={() => setIsQueueEditMode(true)} className="text-[14px] font-medium text-white/80 active:opacity-50">Edit</button>
+               )}
+            </div>
           </div>
           
           <div className="flex-1 overflow-y-auto px-5 pb-32 no-select-text relative scrollbar-hide" ref={queueContainerRef}>
@@ -1898,7 +1930,7 @@ export default function MiniPlayer() {
         </div>
       </div>
 
-      <div onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onClick={() => setIsExpanded(true)} className={`fixed bottom-[65px] left-[8px] right-[8px] h-[56px] rounded-[6px] z-[99990] cursor-pointer overflow-hidden transition-all duration-[400ms] shadow-md no-select-text ${isExpanded ? 'opacity-0 pointer-events-none translate-y-6 scale-[0.98]' : 'opacity-100 translate-y-0 scale-100'}`} style={{ backgroundColor: dominantColor, transform: swipeX > 0 ? `translateX(${swipeX}px)` : undefined, transition: swipeX === 0 && !isExpanded ? 'transform 0.4s ease-out, opacity 0.4s' : 'none' }}>
+      <div onTouchStart={handleMiniTouchStart} onTouchMove={handleMiniTouchMove} onTouchEnd={handleMiniTouchEnd} onClick={() => setIsExpanded(true)} className={`player-root fixed bottom-[65px] left-[8px] right-[8px] h-[56px] rounded-[6px] z-[99990] cursor-pointer overflow-hidden transition-all duration-[400ms] shadow-md no-select-text ${isExpanded ? 'opacity-0 pointer-events-none translate-y-6 scale-[0.98]' : 'opacity-100 scale-100'}`} style={{ backgroundColor: dominantColor, ...miniPlayerStyle }}>
         <div className="absolute inset-0 bg-black/25 z-0 pointer-events-none" />
         <div className="relative z-10 w-full h-full flex items-center px-2">
           <div className="w-[40px] h-[40px] flex-shrink-0 rounded-[4px] shadow-sm overflow-hidden bg-[#282828] relative mr-3">

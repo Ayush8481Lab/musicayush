@@ -338,7 +338,7 @@ export default function MiniPlayer() {
   const[showQueue, setShowQueue] = useState(false);
   
   // HIGH-PERFORMANCE DIRECT DOM DRAG STATE
-  const [dragActiveIndex, setDragActiveIndex] = useState<number | null>(null);
+  const[dragActiveIndex, setDragActiveIndex] = useState<number | null>(null);
   const dragRef = useRef({ activeIndex: -1, startY: 0, currentY: 0, startScrollTop: 0, scrollSpeed: 0, rafId: 0, targetIndex: -1 });
   const[isQueueEditMode, setIsQueueEditMode] = useState(false);
   const[selectedQueueItems, setSelectedQueueItems] = useState<number[]>([]); 
@@ -748,7 +748,7 @@ export default function MiniPlayer() {
     
     spotifyTimer = setTimeout(() => { fetchSpotifyMatch(); }, 1500);
     return () => { isCurrent = false; clearTimeout(spotifyTimer); };
-  }, [currentSong]);
+  },[currentSong]);
 
   useEffect(() => {
     if (queue && queue.length > 0) {
@@ -973,12 +973,26 @@ export default function MiniPlayer() {
   },[isPlaying, audioUrl, volume, isVideoMode]);
 
   useEffect(() => {
-    if (canvasVideoRef.current) {
-      if (isPlaying && !isScrolledPastMain && isExpanded && !showQueue && !isVideoMode && !isLyricsFullScreen && isCanvasEnabled) {
-        const p = canvasVideoRef.current.play(); if (p !== undefined) p.catch(() => {});
-      } else canvasVideoRef.current.pause();
+    let timeoutId: any;
+    const video = canvasVideoRef.current;
+    if (!video) return;
+
+    const shouldPlay = isPlaying && !isScrolledPastMain && isExpanded && !showQueue && !isVideoMode && !isLyricsFullScreen && isCanvasEnabled;
+
+    if (shouldPlay) {
+      if (video.paused) {
+        timeoutId = setTimeout(() => {
+          const p = video.play();
+          if (p !== undefined) p.catch(() => {});
+        }, 150);
+      }
+    } else {
+      if (!video.paused) {
+        video.pause();
+      }
     }
-  },[isPlaying, isScrolledPastMain, isCanvasLoaded, isExpanded, showQueue, isVideoMode, isLyricsFullScreen, isCanvasEnabled]);
+    return () => clearTimeout(timeoutId);
+  },[isPlaying, isScrolledPastMain, isCanvasLoaded, isExpanded, showQueue, isVideoMode, isLyricsFullScreen, isCanvasEnabled, canvasData]);
 
   const playNext = () => {
     if (sleepTimer === 'end') { setIsPlaying(false); setSleepTimer(null); if (audioRef.current) audioRef.current.pause(); return; }
@@ -1739,7 +1753,7 @@ export default function MiniPlayer() {
         
         {canvasData?.canvasUrl && !isVideoMode && isCanvasEnabled && (
           <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 ${isCanvasLoaded && !isScrolledPastMain && !showQueue && !isLyricsFullScreen ? 'opacity-100' : 'opacity-0'}`}>
-            <video ref={canvasVideoRef} src={canvasData.canvasUrl} autoPlay loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover" />
+            <video ref={canvasVideoRef} src={canvasData.canvasUrl} loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover" />
             <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/70 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
             <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/30 transition-opacity duration-500 ${isUiHidden ? 'opacity-100' : 'opacity-0'}`} />
           </div>
@@ -1772,7 +1786,18 @@ export default function MiniPlayer() {
                 </div>
               ) : isVideoMode && ytVideoId ? (
                 <div className="w-full aspect-video max-w-[600px] max-h-[50vh] relative bg-black shadow-[0_15px_40px_rgba(0,0,0,0.5)] rounded-[12px] transition-all duration-500 overflow-hidden mx-auto pointer-events-auto" style={{ transform: 'translateZ(0)' }}>
-                  <iframe ref={videoIframeRef} src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${iframeInitialTimeRef.current}`} style={{ width: "100%", height: "100%", border: "none", pointerEvents: 'auto', borderRadius: '12px' }} allow="autoplay; fullscreen; picture-in-picture" />
+                  <iframe 
+                    ref={videoIframeRef} 
+                    src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${iframeInitialTimeRef.current}`} 
+                    onLoad={() => {
+                        if (isPlaying && isVideoMode) {
+                            videoIframeRef.current?.contentWindow?.postMessage({ type: 'MUSIC_PLAY' }, '*');
+                            setTimeout(() => { videoIframeRef.current?.contentWindow?.postMessage({ type: 'MUSIC_PLAY' }, '*'); }, 500);
+                        }
+                    }}
+                    style={{ width: "100%", height: "100%", border: "none", pointerEvents: 'auto', borderRadius: '12px' }} 
+                    allow="autoplay; fullscreen; picture-in-picture" 
+                  />
                 </div>
               ) : (
                 <div className={`relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isCanvasLoaded && isCanvasEnabled ? 'opacity-0 scale-75 pointer-events-none hidden' : 'opacity-100 scale-100 block'}`} style={{ width: '100%', aspectRatio: '1/1', maxWidth: '380px', maxHeight: '50vh' }}>

@@ -1,100 +1,133 @@
-import { Metadata } from "next";
-import { Suspense } from "react";
-import PlaySongClient from "./PlaySongClient"; // Normal import!
+"use client";
+import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
 
-// Flexible TypeScript Props
-type Props = {
-  params: any;
-  searchParams?: any;
+// Robust Artist Extractor
+const extractArtistsText = (data: any) => {
+  if (!data) return "Unknown Artist";
+  if (typeof data === "string") return data;
+  if (typeof data.artists === "string") return data.artists; // Fix for Recommendation API
+  let names: string[] =[];
+  if (data?.artists?.primary && Array.isArray(data.artists.primary)) names = data.artists.primary.map((a: any) => a.name);
+  else if (Array.isArray(data?.artists)) names = data.artists.map((a: any) => a.name || a);
+  else if (data?.primaryArtists) names = typeof data.primaryArtists === 'string' ? data.primaryArtists.split(',') : data.primaryArtists.map((a:any)=>a.name);
+  else if (data?.singers) names = typeof data.singers === 'string' ? data.singers.split(',') : data.singers;
+  else return "Unknown Artist";
+  return Array.from(new Set(names)).join(", ");
 };
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const resolvedParams = await Promise.resolve(params);
-  const slug = resolvedParams?.slug || "unknown";
-  const id = resolvedParams?.id || "unknown";
+type AppContextType = {
+  language: string;
+  setLanguage: (lang: string) => void;
   
-  const link = `https://www.jiosaavn.com/song/${slug}/${id}`;
-  const shareUrl = `https://musicayush.vercel.app/play/song/${slug}/${id}`;
-  const fallbackImage = "https://images.unsplash.com/photo-1614680376593-902f74cf0d41?q=80&w=1000&auto=format&fit=crop";
+  currentSong: any;
+  setCurrentSong: (song: any) => void;
+  
+  isPlaying: boolean;
+  setIsPlaying: (play: boolean) => void;
+  
+  queue: any[];
+  setQueue: (queue: any[]) => void;
+  
+  upcomingQueue: any[];
+  setUpcomingQueue: React.Dispatch<React.SetStateAction<any[]>>;
+  
+  historyQueue: any[];
+  setHistoryQueue: React.Dispatch<React.SetStateAction<any[]>>;
+  
+  playContext: { type: string; name: string };
+  setPlayContext: (context: { type: string; name: string }) => void;
 
-  try {
-    const res = await fetch(
-      `https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(link)}`,
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          "Accept": "application/json"
-        },
-        // Fix for WhatsApp: Allow caching so the response is fast enough
-        next: { revalidate: 3600 } 
-      }
-    );
-    
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && json.data && json.data.length > 0) {
-        const song = json.data[0];
-        
-        const title = song.name ? song.name.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'") : "Shared Song";
-        const artist = song.primaryArtists || "Unknown Artist";
-        const description = `Listen to ${title} by ${artist} on My Music App.`;
-        
-        let imageUrl = song.image?.[song.image.length - 1]?.link || song.image?.[0]?.link || song.image;
-        if (typeof imageUrl === 'string') {
-          imageUrl = imageUrl.replace("150x150", "500x500").replace("50x50", "500x500");
-        }
+  likedSongs: any[];
+  toggleLikeSong: (song: any) => void;
+  
+  likedPlaylists: any[];
+  toggleLikePlaylist: (playlist: any) => void;
+};
 
-        return {
-          metadataBase: new URL("https://musicayush.vercel.app"),
-          title: `${title} | Music App`,
-          description: description,
-          openGraph: {
-            title: title,
-            description: description,
-            url: shareUrl,
-            siteName: "Music App",
-            images:[{ url: imageUrl || fallbackImage, width: 500, height: 500, alt: title, type: "image/jpeg" }],
-            type: "music.song",
-          },
-          twitter: {
-            card: "summary_large_image",
-            title: title,
-            description: description,
-            images:[imageUrl || fallbackImage],
-          },
-        };
-      }
-    }
-  } catch (err) {
-    console.error("Metadata fetch error:", err);
-  }
+const AppContext = createContext<AppContextType | undefined>(undefined);
 
-  // Safe Fallback
-  return {
-    metadataBase: new URL("https://musicayush.vercel.app"),
-    title: "Play Song - Music App",
-    description: "Listen to ad-free music on My Music App.",
-    openGraph: {
-      title: "Play Song - Music App",
-      description: "Listen to ad-free music on My Music App.",
-      url: shareUrl,
-      siteName: "Music App",
-      images:[{ url: fallbackImage, width: 800, height: 600, alt: "Music App", type: "image/jpeg" }],
-      type: "website",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: "Play Song - Music App",
-      description: "Listen to ad-free music on My Music App.",
-      images: [fallbackImage],
-    },
+export function AppProvider({ children }: { children: ReactNode }) {
+  const [language, setLanguage] = useState("hindi");
+  const [currentSong, setCurrentSong] = useState<any>(null);
+  const[isPlaying, setIsPlaying] = useState(false);
+  
+  const [queue, setQueue] = useState<any[]>([]);
+  const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
+  const[historyQueue, setHistoryQueue] = useState<any[]>([]);
+  
+  const [playContext, setPlayContext] = useState({ type: "Track", name: "Single Track" });
+
+  const [likedSongs, setLikedSongs] = useState<any[]>([]);
+  const [likedPlaylists, setLikedPlaylists] = useState<any[]>([]);
+
+  useEffect(() => {
+    try {
+       const recent = JSON.parse(localStorage.getItem('recent_songs') || '[]').filter(Boolean);
+       if (recent.length > 0) setHistoryQueue(recent);
+       
+       const storedLikedSongs = JSON.parse(localStorage.getItem('liked_songs') || '[]').filter(Boolean);
+       if (storedLikedSongs.length > 0) setLikedSongs(storedLikedSongs);
+
+       const storedLikedPlaylists = JSON.parse(localStorage.getItem('liked_playlists') || '[]').filter(Boolean);
+       if (storedLikedPlaylists.length > 0) setLikedPlaylists(storedLikedPlaylists);
+    } catch(e) {}
+  },[]);
+
+  // Automatically deduplicate queue whenever it updates
+  useEffect(() => {
+    setUpcomingQueue(prev => {
+      return prev.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+    });
+  }, [upcomingQueue.length]);
+
+  const toggleLikeSong = (song: any) => {
+    if (!song || !song.id) return;
+
+    const artistStr = extractArtistsText(song);
+    const normalizedSong = { 
+      ...song, 
+      artists: artistStr, 
+      primaryArtists: artistStr, 
+      singers: artistStr 
+    };
+
+    setLikedSongs(prev => {
+      const exists = prev.find(s => s && s.id === normalizedSong.id);
+      const newList = exists ? prev.filter(s => s && s.id !== normalizedSong.id) : [normalizedSong, ...prev];
+      localStorage.setItem('liked_songs', JSON.stringify(newList));
+      return newList;
+    });
   };
-}
 
-export default function Page() {
+  const toggleLikePlaylist = (playlist: any) => {
+    if (!playlist || !playlist.id) return;
+    setLikedPlaylists(prev => {
+      const exists = prev.find(p => p && p.id === playlist.id);
+      const newList = exists ? prev.filter(p => p && p.id !== playlist.id) :[playlist, ...prev];
+      localStorage.setItem('liked_playlists', JSON.stringify(newList));
+      return newList;
+    });
+  };
+
   return (
-    <Suspense fallback={null}>
-      <PlaySongClient />
-    </Suspense>
+    <AppContext.Provider value={{ 
+      language, setLanguage, 
+      currentSong, setCurrentSong, 
+      isPlaying, setIsPlaying, 
+      queue, setQueue,
+      upcomingQueue, setUpcomingQueue,
+      historyQueue, setHistoryQueue,
+      playContext, setPlayContext,
+      likedSongs, toggleLikeSong,
+      likedPlaylists, toggleLikePlaylist
+    }}>
+      {children}
+    </AppContext.Provider>
   );
 }
+
+export function useAppContext() {
+  const context = useContext(AppContext);
+  if (!context) throw new Error("useAppContext must be used within AppProvider");
+  return context;
+    }

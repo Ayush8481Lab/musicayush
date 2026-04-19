@@ -11,15 +11,19 @@ export async function generateMetadata(
   parent: ResolvingMetadata
 ): Promise<Metadata> {
   const { slug, id } = params;
-  const link = `https://www.jiosaavn.com/song/${slug}/${id}`;
+
+  let cleanId = decodeURIComponent(id);
+  if (cleanId.includes("&token=")) cleanId = cleanId.split("&token=")[0];
+  if (cleanId.includes("?token=")) cleanId = cleanId.split("?token=")[0];
+
+  const link = `https://www.jiosaavn.com/song/${slug}/${cleanId}`;
   
-  // 1. Guaranteed Fallback Values for WhatsApp
   let title = "Play Song | MusicAyush";
   let description = "Listen to your favorite songs on MusicAyush.";
-  let imageUrl = "https://images.unsplash.com/photo-1614680376593-902f74cf0d41?q=80&w=500&auto=format&fit=crop"; // Placeholder image if API fails
+  // Removed the Spotify picture! Now uses a plain green fallback generator
+  let imageUrl = "https://ui-avatars.com/api/?name=Music+Ayush&background=1db954&color=fff&size=500"; 
   
   try {
-    // Force the server to not cache this, fetching fresh details
     const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(link)}`, { cache: 'no-store' });
     const json = await res.json();
 
@@ -33,29 +37,29 @@ export async function generateMetadata(
     }
 
     if (song) {
-      title = `${song.name} | MusicAyush`;
+      title = `${song.name || 'Unknown Song'} | MusicAyush`;
       const artists = song.primaryArtists || song.singers || "Unknown Artist";
-      description = `Listen to ${song.name} by ${artists}`;
+      description = `Listen to ${song.name || 'this track'} by ${artists}`;
       
-      if (Array.isArray(song.image)) {
-        imageUrl = song.image[song.image.length - 1]?.link || song.image[0]?.link;
+      // FIXED IMAGE EXTRACTION: Some API versions use 'url' instead of 'link'. This catches both.
+      if (Array.isArray(song.image) && song.image.length > 0) {
+        const imgObj = song.image[song.image.length - 1] || song.image[0];
+        imageUrl = imgObj?.link || imgObj?.url || imgObj || imageUrl;
       } else if (typeof song.image === 'string') {
         imageUrl = song.image;
       }
     }
   } catch (error) {
     console.error("Metadata Fetch Error:", error);
-    // Even if it errors, we will still pass the fallback values below to WhatsApp
   }
 
-  // 2. Return the strict OpenGraph tags WhatsApp looks for
   return {
     title,
     description,
     openGraph: {
       title,
       description,
-      url: `https://musicayush.vercel.app/play/song/${slug}/${id}`,
+      url: `https://musicayush.vercel.app/play/song/${slug}/${cleanId}`,
       siteName: "MusicAyush",
       images:[
         {

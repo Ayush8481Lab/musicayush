@@ -1,8 +1,21 @@
 import { Metadata } from "next";
-import { Suspense } from "react";
-import PlaySongClient from "./PlaySongClient";
+import dynamic from "next/dynamic";
 
-// Safe dynamic props that work across all Next.js versions without crashing
+// 🚨 THIS IS THE MAGIC FIX 🚨
+// This disables Server-Side Rendering (SSR) for the audio player.
+// It stops 'useAppContext' from crashing the server and deleting your Meta Tags.
+const PlaySongClient = dynamic(() => import("./PlaySongClient"), { 
+  ssr: false,
+  loading: () => (
+    <div className="flex min-h-screen w-full items-center justify-center bg-[#121212]">
+      <p className="text-[#1db954] font-bold text-lg tracking-wide animate-pulse">
+        Loading Track Data...
+      </p>
+    </div>
+  )
+});
+
+// Safe dynamic props that work across all Next.js versions
 export async function generateMetadata({ params }: any): Promise<Metadata> {
   const resolvedParams = await Promise.resolve(params);
   const slug = resolvedParams?.slug || "unknown";
@@ -17,7 +30,7 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
       `https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(link)}`,
       {
         headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
           "Accept": "application/json"
         },
         cache: "no-store" 
@@ -29,7 +42,6 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
       if (json.success && json.data && json.data.length > 0) {
         const song = json.data[0];
         
-        // Clean up the text
         const title = song.name ? song.name.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'") : "Shared Song";
         const artist = song.primaryArtists || "Unknown Artist";
         const description = `Listen to ${title} by ${artist} on My Music App.`;
@@ -39,8 +51,8 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
           imageUrl = imageUrl.replace("150x150", "500x500").replace("50x50", "500x500");
         }
 
-        // Return perfectly formatted OpenGraph Meta Tags!
         return {
+          metadataBase: new URL("https://musicayush.vercel.app"),
           title: `${title} | Music App`,
           description: description,
           openGraph: {
@@ -64,8 +76,9 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
     console.error("Metadata fetch error:", err);
   }
 
-  // Fallback if the API fails
+  // --- SAFE FALLBACK ---
   return {
+    metadataBase: new URL("https://musicayush.vercel.app"),
     title: "Play Song - Music App",
     description: "Listen to ad-free music on My Music App.",
     openGraph: {
@@ -86,15 +99,6 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 }
 
 export default function Page() {
-  return (
-    <Suspense fallback={
-      <div className="flex min-h-screen w-full items-center justify-center bg-[#121212]">
-        <p className="text-[#1db954] font-bold text-lg tracking-wide animate-pulse">
-          Starting Track...
-        </p>
-      </div>
-    }>
-      <PlaySongClient />
-    </Suspense>
-  );
+  // Now rendering the dynamically loaded client component
+  return <PlaySongClient />;
 }

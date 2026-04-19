@@ -20,9 +20,8 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
     let song = json?.data?.[0] || json?.[0] || json?.data || json;
 
     if (song && song.name) {
-      const title = `${song.name} | MusicAyush`;
       
-      // BULLETPROOF ARTIST EXTRACTION (Supports API v3 & v4)
+      // 1. EXTRACT ALL ARTISTS (Comma separated)
       let artists = "Unknown Artist";
       if (song.artists && Array.isArray(song.artists.primary)) {
         artists = song.artists.primary.map((a: any) => a.name).join(", ");
@@ -34,21 +33,30 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
         artists = song.singers;
       }
 
-      const description = `Listen to ${song.name} by ${artists}`;
+      // 2. EXTRACT LANGUAGE AND ALBUM
+      const lang = song.language ? song.language.charAt(0).toUpperCase() + song.language.slice(1) : "Unknown";
       
-      // BULLETPROOF IMAGE EXTRACTION (Checks for .url AND .link)
+      let albumName = "Unknown Album";
+      if (song.album && typeof song.album === "object" && song.album.name) {
+        albumName = song.album.name;
+      } else if (typeof song.album === "string") {
+        albumName = song.album;
+      }
+
+      // 3. YOUR CUSTOM FORMATTED TITLE AND DESCRIPTION
+      const title = `${song.name} - ${artists} - Listen on Music@8481`;
+      const description = `Listen to ${song.name} on ${lang} Music album ${albumName} by ${artists} - play or Download only Music@8481 Developed By Ayush@8481`;
+      
+      // Extract highest quality image
       let imgUrl = "https://ui-avatars.com/api/?name=Music+Ayush&background=1db954&color=fff&size=500";
-      
       if (Array.isArray(song.image) && song.image.length > 0) {
-        const bestImg = song.image[song.image.length - 1]; // Grabs highest quality
+        const bestImg = song.image[song.image.length - 1];
         imgUrl = bestImg?.url || bestImg?.link || imgUrl;
       } else if (song.image && typeof song.image === "object") {
         imgUrl = song.image.url || song.image.link || imgUrl;
       } else if (typeof song.image === "string") {
         imgUrl = song.image;
       }
-
-      // Ensure WhatsApp accepts the image by forcing https
       imgUrl = imgUrl.replace("http://", "https://");
 
       return {
@@ -58,7 +66,7 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
           title,
           description,
           url: `https://musicayush.vercel.app/play/song/${slug}/${cleanId}`,
-          siteName: "MusicAyush",
+          siteName: "Music@8481",
           images:[{ url: imgUrl, width: 500, height: 500 }],
           type: "music.song",
         },
@@ -74,9 +82,10 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
     console.error("Metadata Fetch Error:", error);
   }
 
+  // Fallback if the API fails
   return {
-    title: "Play Song | MusicAyush",
-    description: "Listen to your favorite songs on MusicAyush.",
+    title: "Play on Music@8481",
+    description: "Listen or Download only on Music@8481 Developed By Ayush@8481",
   };
 }
 

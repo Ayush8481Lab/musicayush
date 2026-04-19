@@ -1,11 +1,8 @@
 import { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { Suspense } from "react";
+import PlaySongClient from "./PlaySongClient"; // Normal import!
 
-// Disable SSR for the player so Context doesn't crash the server
-const PlaySongClient = dynamic(() => import("./PlaySongClient"), { ssr: false });
-
-// Flexible TypeScript Props to prevent Vercel Build Type Errors
+// Flexible TypeScript Props
 type Props = {
   params: any;
   searchParams?: any;
@@ -28,7 +25,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
           "Accept": "application/json"
         },
-        cache: "no-store" 
+        // Fix for WhatsApp: Allow caching so the response is fast enough
+        next: { revalidate: 3600 } 
       }
     );
     
@@ -55,7 +53,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
             description: description,
             url: shareUrl,
             siteName: "Music App",
-            images:[{ url: imageUrl || fallbackImage, width: 500, height: 500, alt: title }],
+            images:[{ url: imageUrl || fallbackImage, width: 500, height: 500, alt: title, type: "image/jpeg" }],
             type: "music.song",
           },
           twitter: {
@@ -81,7 +79,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description: "Listen to ad-free music on My Music App.",
       url: shareUrl,
       siteName: "Music App",
-      images:[{ url: fallbackImage, width: 800, height: 600, alt: "Music App" }],
+      images:[{ url: fallbackImage, width: 800, height: 600, alt: "Music App", type: "image/jpeg" }],
       type: "website",
     },
     twitter: {
@@ -95,7 +93,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default function Page() {
   return (
-    // The Suspense Boundary is strictly required by Next.js when using useSearchParams()
     <Suspense fallback={null}>
       <PlaySongClient />
     </Suspense>

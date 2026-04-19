@@ -5,7 +5,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useAppContext } from "../../../../../context/AppContext";
 import { Loader2 } from "lucide-react";
 
-export default function PlaySongEndpoint() {
+export default function PlaySongClient() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -53,7 +53,7 @@ export default function PlaySongEndpoint() {
           }
 
           setPlayContext({ type: "External Link", name: "Shared Track" });
-          setQueue([song]); // Sets queue to exactly this song (will prompt Recs automatically)
+          setQueue([song]); 
           setCurrentSong(song);
           setIsPlaying(true);
         }

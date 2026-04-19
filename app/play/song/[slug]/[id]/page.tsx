@@ -1,29 +1,31 @@
 import { Metadata } from "next";
+import { Suspense } from "react";
 import PlaySongClient from "./PlaySongClient";
 
 type Props = {
-  params: Promise<{ slug: string; id: string }>;
+  // Safely handles both Next.js 13/14 (object) and Next.js 15 (Promise)
+  params: Promise<{ slug: string; id: string }> | { slug: string; id: string };
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { slug, id } = await params;
+  // Safely resolve the params (Fixes crash on newer Next.js versions)
+  const resolvedParams = await Promise.resolve(params);
+  const { slug, id } = resolvedParams;
   
   const link = `https://www.jiosaavn.com/song/${slug}/${id}`;
   const shareUrl = `https://musicayush.vercel.app/play/song/${slug}/${id}`;
   
-  // Default fallback image if the API fails
+  // High-quality fallback image so WhatsApp NEVER shows a blank square
   const fallbackImage = "https://images.unsplash.com/photo-1614680376593-902f74cf0d41?q=80&w=1000&auto=format&fit=crop";
 
   try {
     const res = await fetch(
       `https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(link)}`,
       {
-        // Add headers so the API doesn't block Vercel's server fetch
         headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
           "Accept": "application/json"
         },
-        // Don't cache this aggressively during debugging
         cache: "no-store" 
       }
     );
@@ -72,9 +74,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     console.error("Metadata fetch error:", err);
   }
 
-  // --- ROBUST FALLBACK ---
-  // If the API fails, Next.js will use this. 
-  // It guarantees that WhatsApp and Meta Tag Checkers NEVER see "Missing" tags.
+  // --- SAFE FALLBACK ---
   return {
     title: "Play Song - Music App",
     description: "Listen to ad-free music on My Music App.",
@@ -107,6 +107,17 @@ function decodeHTMLEntities(text: string) {
   return text.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 }
 
+// 🚨 THIS IS THE CRITICAL FIX: The <Suspense> wrapper 🚨
 export default function Page() {
-  return <PlaySongClient />;
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen w-full items-center justify-center bg-[#121212]">
+        <p className="text-[#1db954] font-bold text-lg tracking-wide animate-pulse">
+          Loading Metadata...
+        </p>
+      </div>
+    }>
+      <PlaySongClient />
+    </Suspense>
+  );
 }

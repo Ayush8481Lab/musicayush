@@ -1,21 +1,10 @@
 import { Metadata } from "next";
 import dynamic from "next/dynamic";
 
-// 🚨 THIS IS THE MAGIC FIX 🚨
-// This disables Server-Side Rendering (SSR) for the audio player.
-// It stops 'useAppContext' from crashing the server and deleting your Meta Tags.
-const PlaySongClient = dynamic(() => import("./PlaySongClient"), { 
-  ssr: false,
-  loading: () => (
-    <div className="flex min-h-screen w-full items-center justify-center bg-[#121212]">
-      <p className="text-[#1db954] font-bold text-lg tracking-wide animate-pulse">
-        Loading Track Data...
-      </p>
-    </div>
-  )
-});
+// 🚨 Build Error Fixed: Simplified dynamic import. 
+// No JSX here, so Vercel's compiler won't crash!
+const PlaySongClient = dynamic(() => import("./PlaySongClient"), { ssr: false });
 
-// Safe dynamic props that work across all Next.js versions
 export async function generateMetadata({ params }: any): Promise<Metadata> {
   const resolvedParams = await Promise.resolve(params);
   const slug = resolvedParams?.slug || "unknown";
@@ -76,7 +65,7 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
     console.error("Metadata fetch error:", err);
   }
 
-  // --- SAFE FALLBACK ---
+  // Safe Fallback
   return {
     metadataBase: new URL("https://musicayush.vercel.app"),
     title: "Play Song - Music App",
@@ -99,6 +88,5 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 }
 
 export default function Page() {
-  // Now rendering the dynamically loaded client component
   return <PlaySongClient />;
 }

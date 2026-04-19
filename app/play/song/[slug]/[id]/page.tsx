@@ -1,11 +1,17 @@
 import { Metadata } from "next";
 import dynamic from "next/dynamic";
+import { Suspense } from "react";
 
-// 🚨 Build Error Fixed: Simplified dynamic import. 
-// No JSX here, so Vercel's compiler won't crash!
+// Disable SSR for the player so Context doesn't crash the server
 const PlaySongClient = dynamic(() => import("./PlaySongClient"), { ssr: false });
 
-export async function generateMetadata({ params }: any): Promise<Metadata> {
+// Flexible TypeScript Props to prevent Vercel Build Type Errors
+type Props = {
+  params: any;
+  searchParams?: any;
+};
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const resolvedParams = await Promise.resolve(params);
   const slug = resolvedParams?.slug || "unknown";
   const id = resolvedParams?.id || "unknown";
@@ -56,7 +62,7 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
             card: "summary_large_image",
             title: title,
             description: description,
-            images: [imageUrl || fallbackImage],
+            images:[imageUrl || fallbackImage],
           },
         };
       }
@@ -88,5 +94,10 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 }
 
 export default function Page() {
-  return <PlaySongClient />;
+  return (
+    // The Suspense Boundary is strictly required by Next.js when using useSearchParams()
+    <Suspense fallback={null}>
+      <PlaySongClient />
+    </Suspense>
+  );
 }

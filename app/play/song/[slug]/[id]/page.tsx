@@ -1,4 +1,3 @@
-// page.tsx
 import { Metadata, ResolvingMetadata } from "next";
 import PlaySongClient from "./PlaySongClient";
 
@@ -7,14 +6,13 @@ type Props = {
   searchParams: { [key: string]: string | string[] | undefined };
 };
 
-// This function tells Next.js to generate Open Graph tags dynamically
+// Generates the Meta Tags for WhatsApp/Social Media
 export async function generateMetadata(
-  { params, searchParams }: Props,
+  { params }: Props,
   parent: ResolvingMetadata
 ): Promise<Metadata> {
   const { slug, id } = params;
 
-  // Replicate your ID cleaning logic for the server fetch
   let cleanId = id;
   if (id && id.includes("&token=")) {
     cleanId = id.split("&token=")[0];
@@ -29,12 +27,10 @@ export async function generateMetadata(
     if (json.success && json.data && json.data.length > 0) {
       const song = json.data[0];
       
-      // Get the highest quality image available (JioSaavn API usually returns an array of images)
       const imageUrl = Array.isArray(song.image) 
         ? song.image[song.image.length - 1]?.link || song.image[0]?.link 
         : song.image;
 
-      // Artist name fallback
       const artists = song.primaryArtists || song.singers || "Unknown Artist";
 
       return {
@@ -48,7 +44,7 @@ export async function generateMetadata(
           images:[
             {
               url: imageUrl,
-              width: 500, // Good size for WhatsApp previews
+              width: 500,
               height: 500,
               alt: song.name,
             },
@@ -67,14 +63,13 @@ export async function generateMetadata(
     console.error("Error fetching metadata:", error);
   }
 
-  // Fallback if the fetch fails
   return {
     title: "Play Song | MusicAyush",
     description: "Listen to your favorite songs on MusicAyush.",
   };
 }
 
-// Render the Client Component and pass the params down
+// Renders the Client Component
 export default function PlaySongPage({ params }: Props) {
   return <PlaySongClient slug={params.slug} id={params.id} />;
 }

@@ -23,16 +23,32 @@ export default function PlaySongClient({ slug, id }: PlaySongClientProps) {
         return;
       }
 
-      // Next.js automatically separates search parameters. 'id' is just "AD0zfk0Dc2M"
-      const videoId = searchParams?.get("token");
-      const spotifyId = searchParams?.get("signature");
+      let cleanId = id;
+      let videoId = searchParams?.get("token") || "";
+      let spotifyId = searchParams?.get("signature") || "";
+
+      // EXTREMELY ROBUST PARSING: Catches the tokens even if WhatsApp/Next.js malforms the URL
+      const fullIdStr = decodeURIComponent(id);
+      if (fullIdStr.includes("&token=") || fullIdStr.includes("?token=")) {
+        const separator = fullIdStr.includes("?token=") ? "?token=" : "&token=";
+        const parts = fullIdStr.split(separator);
+        cleanId = parts[0];
+        const rest = parts[1];
+        if (rest && (rest.includes("&signature=") || rest.includes("?signature="))) {
+          const subSeparator = rest.includes("?signature=") ? "?signature=" : "&signature=";
+          const subParts = rest.split(subSeparator);
+          if (!videoId) videoId = subParts[0];
+          if (!spotifyId) spotifyId = subParts[1];
+        } else {
+          if (!videoId) videoId = rest;
+        }
+      }
 
       try {
-        const link = `https://www.jiosaavn.com/song/${slug}/${id}`;
+        const link = `https://www.jiosaavn.com/song/${slug}/${cleanId}`;
         const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(link)}`);
         const json = await res.json();
         
-        // Defensive check: API might return data as an array, an object, or directly
         let song = null;
         if (json.success && json.data && json.data.length > 0) {
           song = json.data[0];
@@ -43,6 +59,7 @@ export default function PlaySongClient({ slug, id }: PlaySongClientProps) {
         }
 
         if (song) {
+          // Attaching the Video ID is crucial for your player to actually play the audio!
           if (videoId) song.prefetchedYtId = videoId;
           if (spotifyId) {
             song.spotifyId = spotifyId;
@@ -54,10 +71,10 @@ export default function PlaySongClient({ slug, id }: PlaySongClientProps) {
           setCurrentSong(song);
           setIsPlaying(true);
 
-          // Give the player 500ms to mount/register before redirecting to home
+          // We wait slightly longer (800ms) to ensure the global audio player state catches the YtId
           setTimeout(() => {
             router.push("/");
-          }, 500);
+          }, 800);
 
         } else {
           setError("Song could not be loaded from the API.");
@@ -71,7 +88,6 @@ export default function PlaySongClient({ slug, id }: PlaySongClientProps) {
     fetchAndPlay();
   },[id, slug, searchParams, setCurrentSong, setIsPlaying, router, setPlayContext, setQueue]);
 
-  // If it fails, we show an error instead of silently kicking the user to the home page
   if (error) {
     return (
       <div className="flex min-h-screen w-full flex-col items-center justify-center bg-[#121212] gap-4">

@@ -10,6 +10,9 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 
   const link = `https://www.jiosaavn.com/song/${slug}/${cleanId}`;
   
+  // The default image for fallback and when no song image is available
+  const defaultImage = "https://raw.githubusercontent.com/Ayush8481Lab/musicayush/refs/heads/main/app/android-chrome-512x512.png";
+  
   try {
     const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(link)}`, {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
@@ -44,11 +47,11 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
       }
 
       // 3. YOUR CUSTOM FORMATTED TITLE AND DESCRIPTION
-      const title = `${song.name} Song By- ${artists} - Listen on Music@8481`;
+      const title = `${song.name} - ${artists} - Listen on Music@8481`;
       const description = `Listen to ${song.name} on ${lang} Music album ${albumName} by ${artists} - play or Download only Music@8481 Developed By Ayush@8481`;
       
-      // Extract highest quality image
-      let imgUrl = "https://ui-avatars.com/api/?name=Music+Ayush&background=1db954&color=fff&size=500";
+      // Extract highest quality image, using your provided default as a fallback
+      let imgUrl = defaultImage;
       if (Array.isArray(song.image) && song.image.length > 0) {
         const bestImg = song.image[song.image.length - 1];
         imgUrl = bestImg?.url || bestImg?.link || imgUrl;
@@ -82,12 +85,25 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
     console.error("Metadata Fetch Error:", error);
   }
 
-  // Fallback if the API fails
+  // Fallback if the API fails or only the domain is shared
   return {
+    metadataBase: new URL("https://musicayush.vercel.app"),
     title: "Play on Music@8481",
     description: "Listen or Download only on Music@8481 Developed By Ayush@8481",
-    images:[{ url: https://raw.githubusercontent.com/Ayush8481Lab/musicayush/refs/heads/main/app/android-chrome-512x512.png, width: 500, height: 500 }],
-    
+    openGraph: {
+      title: "Play on Music@8481",
+      description: "Listen or Download only on Music@8481 Developed By Ayush@8481",
+      url: "https://musicayush.vercel.app",
+      siteName: "Music@8481",
+      images:[{ url: defaultImage, width: 512, height: 512 }],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: "Play on Music@8481",
+      description: "Listen or Download only on Music@8481 Developed By Ayush@8481",
+      images: [defaultImage],
+    },
   };
 }
 

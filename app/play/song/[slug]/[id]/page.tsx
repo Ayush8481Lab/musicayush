@@ -1,133 +1,79 @@
 "use client";
-import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
 
-// Robust Artist Extractor
-const extractArtistsText = (data: any) => {
-  if (!data) return "Unknown Artist";
-  if (typeof data === "string") return data;
-  if (typeof data.artists === "string") return data.artists; // Fix for Recommendation API
-  let names: string[] =[];
-  if (data?.artists?.primary && Array.isArray(data.artists.primary)) names = data.artists.primary.map((a: any) => a.name);
-  else if (Array.isArray(data?.artists)) names = data.artists.map((a: any) => a.name || a);
-  else if (data?.primaryArtists) names = typeof data.primaryArtists === 'string' ? data.primaryArtists.split(',') : data.primaryArtists.map((a:any)=>a.name);
-  else if (data?.singers) names = typeof data.singers === 'string' ? data.singers.split(',') : data.singers;
-  else return "Unknown Artist";
-  return Array.from(new Set(names)).join(", ");
-};
+import { useEffect } from "react";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useAppContext } from "../../../../../context/AppContext";
+import { Loader2 } from "lucide-react";
 
-type AppContextType = {
-  language: string;
-  setLanguage: (lang: string) => void;
-  
-  currentSong: any;
-  setCurrentSong: (song: any) => void;
-  
-  isPlaying: boolean;
-  setIsPlaying: (play: boolean) => void;
-  
-  queue: any[];
-  setQueue: (queue: any[]) => void;
-  
-  upcomingQueue: any[];
-  setUpcomingQueue: React.Dispatch<React.SetStateAction<any[]>>;
-  
-  historyQueue: any[];
-  setHistoryQueue: React.Dispatch<React.SetStateAction<any[]>>;
-  
-  playContext: { type: string; name: string };
-  setPlayContext: (context: { type: string; name: string }) => void;
+export default function PlaySongEndpoint() {
+const router = useRouter();
+const params = useParams();
+const searchParams = useSearchParams();
+const { setCurrentSong, setIsPlaying, setPlayContext, setQueue } = useAppContext();
 
-  likedSongs: any[];
-  toggleLikeSong: (song: any) => void;
-  
-  likedPlaylists: any[];
-  toggleLikePlaylist: (playlist: any) => void;
-};
+useEffect(() => {
+const fetchAndPlay = async () => {
+const slug = params?.slug as string;
+const id = params?.id as string;
 
-const AppContext = createContext<AppContextType | undefined>(undefined);
+if (!id || !slug) {
+    router.push("/");
+    return;
+  }
 
-export function AppProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguage] = useState("hindi");
-  const [currentSong, setCurrentSong] = useState<any>(null);
-  const[isPlaying, setIsPlaying] = useState(false);
-  
-  const [queue, setQueue] = useState<any[]>([]);
-  const [upcomingQueue, setUpcomingQueue] = useState<any[]>([]);
-  const[historyQueue, setHistoryQueue] = useState<any[]>([]);
-  
-  const [playContext, setPlayContext] = useState({ type: "Track", name: "Single Track" });
+  let videoId = searchParams?.get("token");
+  let spotifyId = searchParams?.get("signature");
 
-  const [likedSongs, setLikedSongs] = useState<any[]>([]);
-  const [likedPlaylists, setLikedPlaylists] = useState<any[]>([]);
+  let cleanId = id;
+  if (id.includes("&token=")) {
+     const parts = id.split("&token=");
+     cleanId = parts[0];
+     const rest = parts[1];
+     if (rest.includes("&signature=")) {
+        const subParts = rest.split("&signature=");
+        videoId = subParts[0];
+        spotifyId = subParts[1];
+     } else {
+        videoId = rest;
+     }
+  }
 
-  useEffect(() => {
-    try {
-       const recent = JSON.parse(localStorage.getItem('recent_songs') || '[]').filter(Boolean);
-       if (recent.length > 0) setHistoryQueue(recent);
-       
-       const storedLikedSongs = JSON.parse(localStorage.getItem('liked_songs') || '[]').filter(Boolean);
-       if (storedLikedSongs.length > 0) setLikedSongs(storedLikedSongs);
+  try {
+    const link = `https://www.jiosaavn.com/song/${slug}/${cleanId}`;
+    const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(link)}`);
+    const json = await res.json();
+    
+    if (json.success && json.data && json.data.length > 0) {
+      const song = json.data[0];
+      
+      if (videoId) song.prefetchedYtId = videoId;
+      if (spotifyId) {
+        song.spotifyId = spotifyId;
+        song.spotifyUrl = `https://open.spotify.com/track/${spotifyId}`;
+      }
 
-       const storedLikedPlaylists = JSON.parse(localStorage.getItem('liked_playlists') || '[]').filter(Boolean);
-       if (storedLikedPlaylists.length > 0) setLikedPlaylists(storedLikedPlaylists);
-    } catch(e) {}
-  },[]);
-
-  // Automatically deduplicate queue whenever it updates
-  useEffect(() => {
-    setUpcomingQueue(prev => {
-      return prev.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
-    });
-  }, [upcomingQueue.length]);
-
-  const toggleLikeSong = (song: any) => {
-    if (!song || !song.id) return;
-
-    const artistStr = extractArtistsText(song);
-    const normalizedSong = { 
-      ...song, 
-      artists: artistStr, 
-      primaryArtists: artistStr, 
-      singers: artistStr 
-    };
-
-    setLikedSongs(prev => {
-      const exists = prev.find(s => s && s.id === normalizedSong.id);
-      const newList = exists ? prev.filter(s => s && s.id !== normalizedSong.id) : [normalizedSong, ...prev];
-      localStorage.setItem('liked_songs', JSON.stringify(newList));
-      return newList;
-    });
-  };
-
-  const toggleLikePlaylist = (playlist: any) => {
-    if (!playlist || !playlist.id) return;
-    setLikedPlaylists(prev => {
-      const exists = prev.find(p => p && p.id === playlist.id);
-      const newList = exists ? prev.filter(p => p && p.id !== playlist.id) :[playlist, ...prev];
-      localStorage.setItem('liked_playlists', JSON.stringify(newList));
-      return newList;
-    });
-  };
-
-  return (
-    <AppContext.Provider value={{ 
-      language, setLanguage, 
-      currentSong, setCurrentSong, 
-      isPlaying, setIsPlaying, 
-      queue, setQueue,
-      upcomingQueue, setUpcomingQueue,
-      historyQueue, setHistoryQueue,
-      playContext, setPlayContext,
-      likedSongs, toggleLikeSong,
-      likedPlaylists, toggleLikePlaylist
-    }}>
-      {children}
-    </AppContext.Provider>
-  );
-}
-
-export function useAppContext() {
-  const context = useContext(AppContext);
-  if (!context) throw new Error("useAppContext must be used within AppProvider");
-  return context;
+      setPlayContext({ type: "External Link", name: "Shared Track" });
+      setQueue([song]); // Sets queue to exactly this song (will prompt Recs automatically)
+      setCurrentSong(song);
+      setIsPlaying(true);
     }
+  } catch (err) {
+    console.error("Deep Link Error:", err);
+  } finally {
+    router.push("/");
+  }
+};
+
+fetchAndPlay();
+
+},[params, searchParams, setCurrentSong, setIsPlaying, router, setPlayContext, setQueue]);
+
+return (
+<div className="flex min-h-screen w-full items-center justify-center bg-[#121212]">
+<div className="flex flex-col items-center gap-5">
+<Loader2 className="animate-spin text-[#1db954]" size={48} />
+<p className="text-white/80 font-bold text-lg tracking-wide">Starting Track...</p>
+</div>
+</div>
+);
+}

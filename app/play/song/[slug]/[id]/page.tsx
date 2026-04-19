@@ -1,4 +1,4 @@
-import { Metadata, ResolvingMetadata } from "next";
+ import { Metadata, ResolvingMetadata } from "next";
 import PlaySongClient from "./PlaySongClient";
 
 type Props = {

@@ -1,51 +1,58 @@
 import { Metadata } from "next";
 import PlaySongClient from "./PlaySongClient";
 
-// In Next.js 15+, params must be a Promise
 type Props = {
   params: Promise<{ slug: string; id: string }>;
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  // 1. AWAIT the params (Crucial for newer Next.js versions)
   const { slug, id } = await params;
-
-  // Next.js automatically strips search queries (?token=) from params.id
-  // So 'id' is already clean!
+  
   const link = `https://www.jiosaavn.com/song/${slug}/${id}`;
+  const shareUrl = `https://musicayush.vercel.app/play/song/${slug}/${id}`;
+  
+  // Default fallback image if the API fails
+  const fallbackImage = "https://images.unsplash.com/photo-1614680376593-902f74cf0d41?q=80&w=1000&auto=format&fit=crop";
 
   try {
     const res = await fetch(
-      `https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(link)}`
+      `https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(link)}`,
+      {
+        // Add headers so the API doesn't block Vercel's server fetch
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json"
+        },
+        // Don't cache this aggressively during debugging
+        cache: "no-store" 
+      }
     );
+    
     const json = await res.json();
 
     if (json.success && json.data && json.data.length > 0) {
       const song = json.data[0];
       
-      const title = song.name ? decodeHTMLEntities(song.name) : "Unknown Song";
+      const title = song.name ? decodeHTMLEntities(song.name) : "Shared Song";
       const artist = song.primaryArtists || "Unknown Artist";
-      const description = `Listen to ${title} by ${artist} on My Music App`;
+      const description = `Listen to ${title} by ${artist} on My Music App.`;
       
-      // Get the highest quality image available
       let imageUrl = song.image?.[song.image.length - 1]?.link || song.image?.[0]?.link || song.image;
-      
-      // JioSaavn trick: force 500x500 high-quality image if possible
       if (typeof imageUrl === 'string') {
         imageUrl = imageUrl.replace("150x150", "500x500").replace("50x50", "500x500");
       }
 
       return {
-        title: title,
+        title: `${title} | Music App`,
         description: description,
         openGraph: {
           title: title,
           description: description,
-          url: `https://musicayush.vercel.app/play/song/${slug}/${id}`,
+          url: shareUrl,
           siteName: "Music App",
           images:[
             {
-              url: imageUrl, 
+              url: imageUrl || fallbackImage,
               width: 500,
               height: 500,
               alt: title,
@@ -57,7 +64,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
           card: "summary_large_image",
           title: title,
           description: description,
-          images: [imageUrl],
+          images: [imageUrl || fallbackImage],
         },
       };
     }
@@ -65,15 +72,38 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     console.error("Metadata fetch error:", err);
   }
 
-  // Fallback metadata if API fails or times out
+  // --- ROBUST FALLBACK ---
+  // If the API fails, Next.js will use this. 
+  // It guarantees that WhatsApp and Meta Tag Checkers NEVER see "Missing" tags.
   return {
     title: "Play Song - Music App",
-    description: "Listen to the best tracks on My Music App",
+    description: "Listen to ad-free music on My Music App.",
+    openGraph: {
+      title: "Play Song - Music App",
+      description: "Listen to ad-free music on My Music App.",
+      url: shareUrl,
+      siteName: "Music App",
+      images:[
+        {
+          url: fallbackImage,
+          width: 800,
+          height: 600,
+          alt: "Music App",
+        },
+      ],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: "Play Song - Music App",
+      description: "Listen to ad-free music on My Music App.",
+      images: [fallbackImage],
+    },
   };
 }
 
-// Simple helper to clean up weird characters in song titles (like &quot;)
 function decodeHTMLEntities(text: string) {
+  if (!text) return "";
   return text.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 }
 

@@ -86,6 +86,8 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
   return {
     title: "Play on Music@8481",
     description: "Listen or Download only on Music@8481 Developed By Ayush@8481",
+    images:"https://raw.githubusercontent.com/Ayush8481Lab/musicayush/refs/heads/main/app/android-chrome-512x512.png",
+    
   };
 }
 

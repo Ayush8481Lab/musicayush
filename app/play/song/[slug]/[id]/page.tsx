@@ -1,4 +1,4 @@
-import { Metadata } from "next";
+ import { Metadata } from "next";
 import PlaySongClient from "./PlaySongClient";
 
 // "any" bypasses the Vercel TypeScript build errors entirely

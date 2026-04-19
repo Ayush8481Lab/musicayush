@@ -1,9 +1,7 @@
- import { Metadata } from "next";
+import { Metadata } from "next";
 import PlaySongClient from "./PlaySongClient";
 
-// "any" bypasses the Vercel TypeScript build errors entirely
 export async function generateMetadata({ params }: any): Promise<Metadata> {
-  // Await params for Next.js 15+ compatibility
   const resolvedParams = await params;
   const slug = resolvedParams?.slug;
   let cleanId = resolvedParams?.id || "";
@@ -14,8 +12,8 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
   
   try {
     const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${encodeURIComponent(link)}`, {
-      // Adding a User-Agent so your API doesn't block the server fetch
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+      cache: "no-store" 
     });
     const json = await res.json();
     
@@ -23,16 +21,35 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 
     if (song && song.name) {
       const title = `${song.name} | MusicAyush`;
-      const artists = song.primaryArtists || song.singers || "Unknown Artist";
+      
+      // BULLETPROOF ARTIST EXTRACTION (Supports API v3 & v4)
+      let artists = "Unknown Artist";
+      if (song.artists && Array.isArray(song.artists.primary)) {
+        artists = song.artists.primary.map((a: any) => a.name).join(", ");
+      } else if (Array.isArray(song.primaryArtists)) {
+        artists = song.primaryArtists.map((a: any) => a.name).join(", ");
+      } else if (typeof song.primaryArtists === "string" && song.primaryArtists) {
+        artists = song.primaryArtists;
+      } else if (typeof song.singers === "string" && song.singers) {
+        artists = song.singers;
+      }
+
       const description = `Listen to ${song.name} by ${artists}`;
       
-      // Grabs the highest quality image for WhatsApp OpenGraph
+      // BULLETPROOF IMAGE EXTRACTION (Checks for .url AND .link)
       let imgUrl = "https://ui-avatars.com/api/?name=Music+Ayush&background=1db954&color=fff&size=500";
-      if (Array.isArray(song.image)) {
-        imgUrl = song.image[song.image.length - 1]?.link || song.image[0]?.link || imgUrl;
+      
+      if (Array.isArray(song.image) && song.image.length > 0) {
+        const bestImg = song.image[song.image.length - 1]; // Grabs highest quality
+        imgUrl = bestImg?.url || bestImg?.link || imgUrl;
+      } else if (song.image && typeof song.image === "object") {
+        imgUrl = song.image.url || song.image.link || imgUrl;
       } else if (typeof song.image === "string") {
         imgUrl = song.image;
       }
+
+      // Ensure WhatsApp accepts the image by forcing https
+      imgUrl = imgUrl.replace("http://", "https://");
 
       return {
         title,
@@ -57,7 +74,6 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
     console.error("Metadata Fetch Error:", error);
   }
 
-  // Fallback if the API fails
   return {
     title: "Play Song | MusicAyush",
     description: "Listen to your favorite songs on MusicAyush.",
@@ -65,7 +81,6 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 }
 
 export default async function PlaySongPage({ params, searchParams }: any) {
-  // Await promises to ensure Next.js 14/15 compatibility
   const resolvedParams = await params;
   const resolvedSearchParams = await searchParams;
 

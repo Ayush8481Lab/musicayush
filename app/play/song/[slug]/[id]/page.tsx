@@ -44,7 +44,7 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
       }
 
       // 3. YOUR CUSTOM FORMATTED TITLE AND DESCRIPTION
-      const title = `${song.name} - ${artists} - Listen on Music@8481`;
+      const title = `${song.name} Song By- ${artists} - Listen on Music@8481`;
       const description = `Listen to ${song.name} on ${lang} Music album ${albumName} by ${artists} - play or Download only Music@8481 Developed By Ayush@8481`;
       
       // Extract highest quality image

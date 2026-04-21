@@ -8,9 +8,6 @@ import {
 import { useAppContext } from "../../context/AppContext";
 import { useRouter } from "next/navigation";
 
-// ==========================================
-// 1. AUTH & CACHE ENGINE
-// ==========================================
 const AUTH_STORAGE_KEY = 'spotify_app_auth';
 let ongoingAuthPromise: Promise<any> | null = null;
 
@@ -44,9 +41,6 @@ export const getAuthData = async () => {
   return await fetchNewAuthToken();
 };
 
-// ==========================================
-// 2. UTILITIES
-// ==========================================
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/500x500?text=Music";
   if (typeof img === "string") return img.replace("50x50", "500x500").replace("150x150", "500x500");
@@ -79,10 +73,6 @@ const getMatchScore = (t: string, q: string) => {
   return 0;
 };
 
-// ==========================================
-// 3. UI COMPONENTS (Ping-Pong Marquee + Strict UI)
-// ==========================================
-
 const PingPongMarquee = ({ text, className, isCentered = false }: { text: string, className: string, isCentered?: boolean }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
@@ -94,11 +84,8 @@ const PingPongMarquee = ({ text, className, isCentered = false }: { text: string
       if (containerRef.current && textRef.current) {
         const cWidth = containerRef.current.clientWidth;
         const sWidth = textRef.current.scrollWidth;
-        if (sWidth > cWidth) {
-          setDistance(sWidth - cWidth);
-        } else {
-          setDistance(0);
-        }
+        if (sWidth > cWidth) setDistance(sWidth - cWidth);
+        else setDistance(0);
       }
     };
     checkOverflow();
@@ -120,7 +107,7 @@ const PingPongMarquee = ({ text, className, isCentered = false }: { text: string
   );
 };
 
-interface CardProps { item: any; onClick: (item: any, type: string) => void; tabType?: string; isPro?: boolean; }
+interface CardProps { item: any; onClick: (item: any, type: string) => void; tabType?: string; }
 
 const TopHeroCard = ({ item, onClick }: CardProps) => {
   const type = item.type || "song";
@@ -137,7 +124,7 @@ const TopHeroCard = ({ item, onClick }: CardProps) => {
         <img draggable={false} src={getImageUrl(item.image)} alt={title} className="w-full h-full object-cover pointer-events-none" />
       </div>
       <div className="flex flex-col flex-1 justify-center h-full min-w-0">
-        <span className="text-[10px] sm:text-[12px] font-bold uppercase tracking-widest text-emerald-400 mb-1 sm:mb-2">Top Match</span>
+        <span className="text-[10px] sm:text-[12px] font-bold uppercase tracking-widest text-emerald-400 mb-1 sm:mb-2">Top Result</span>
         <PingPongMarquee text={title} className="text-2xl sm:text-4xl font-black text-white leading-tight" />
         <PingPongMarquee text={subtitle} className="text-white/50 font-semibold text-sm sm:text-lg mt-1" />
       </div>
@@ -148,7 +135,7 @@ const TopHeroCard = ({ item, onClick }: CardProps) => {
   );
 };
 
-const TrackRow = forwardRef<HTMLDivElement, CardProps>(({ item, onClick, isPro }, ref) => {
+const TrackRow = forwardRef<HTMLDivElement, CardProps>(({ item, onClick }, ref) => {
   const title = decodeEntities(item.title || item.name || item.song_name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, item.type || "song"));
   return (
@@ -163,10 +150,7 @@ const TrackRow = forwardRef<HTMLDivElement, CardProps>(({ item, onClick, isPro }
         </div>
       </div>
       <div className="flex flex-col flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <PingPongMarquee text={title} className="text-[15px] sm:text-[16px] font-bold text-white/90" />
-          {isPro && <Sparkles size={14} className="text-purple-400 flex-shrink-0" />}
-        </div>
+        <PingPongMarquee text={title} className="text-[15px] sm:text-[16px] font-bold text-white/90" />
         <PingPongMarquee text={subtitle} className="text-[13px] text-white/50 font-medium mt-0.5" />
       </div>
     </div>
@@ -197,16 +181,14 @@ const MediaGridCard = forwardRef<HTMLDivElement, CardProps>(({ item, tabType, on
 });
 MediaGridCard.displayName = "MediaGridCard";
 
-// ==========================================
-// 4. MAIN SEARCH PAGE
-// ==========================================
 export default function SearchPage() {
   const { setCurrentSong, setIsPlaying, setPlayContext, setQueue } = useAppContext() as any;
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionTimer = useRef<NodeJS.Timeout | null>(null);
   const searchActiveRef = useRef<boolean>(false);
-  const CACHE_KEY = "search_page_cache_v9_foryou";
+  const recognitionRef = useRef<any>(null); // Storing Voice Recognition Instance
+  const CACHE_KEY = "search_page_cache_v10_foryou";
 
   const [isRestored, setIsRestored] = useState(false);
   const[query, setQuery] = useState("");
@@ -237,7 +219,6 @@ export default function SearchPage() {
     { id: "artists", label: "Artists", icon: User }
   ];
 
-  // --- Hydration & Caching ---
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { getAuthData(); },[]);
   
@@ -264,7 +245,6 @@ export default function SearchPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[query, debouncedQuery, activeTab, allData, results, page, hasMore, isRestored]);
 
-  // --- Strict Suggestions Engine ---
   useEffect(() => {
     if (suggestionTimer.current) clearTimeout(suggestionTimer.current);
     if (!query.trim() || query === debouncedQuery || searchActiveRef.current) { 
@@ -299,11 +279,19 @@ export default function SearchPage() {
     if (e.key === 'Enter') executeSearch(query);
   };
 
-  // --- Voice Search ---
+  // --- Voice Search with Stop functionality ---
   const handleVoiceSearch = () => {
+    // If currently listening, gracefully stop it
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
     const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition; // Save instance
     recognition.lang = 'en-US';
     recognition.continuous = true; 
     recognition.interimResults = false;
@@ -337,7 +325,7 @@ export default function SearchPage() {
   useEffect(() => {
     if (!isRestored) return;
     if (!debouncedQuery.trim()) {
-      setAllData({ topMatches:[], songs:[], foryou:[], albums: [], playlists:[], artists:[] });
+      setAllData({ topMatches:[], songs:[], foryou:[], albums:[], playlists:[], artists:[] });
       setResults([]); setHasMore(true); lastFetched.current = { query: "", tab: activeTab, page: 1 }; return;
     }
 
@@ -370,7 +358,7 @@ export default function SearchPage() {
 
           setAllData({ 
             topMatches: sortedMatches.length > 0 ? sortedMatches : combined.slice(0, 4), 
-            foryou: forYouRes ||[], // Placed structurally here
+            foryou: forYouRes ||[],
             songs: sRes.data?.results || sRes.data ||[], 
             albums: aRes.data?.results || aRes.data ||[], 
             playlists: pRes.data?.results || pRes.data ||[], 
@@ -403,11 +391,9 @@ export default function SearchPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[loading, loadingMore, hasMore, activeTab]);
 
-  // --- Perfect Routing / Click Logic ---
   const handleItemClick = async (item: any, passedType?: string) => {
     const type = item.type || passedType || activeTab;
     
-    // Logic for playing "For You" fetched tracks
     if (type === "foryou") {
       const querySong = item.song_name || item.title || item.name || "";
       const queryArtist = item.artist || item.artists || "";
@@ -432,7 +418,6 @@ export default function SearchPage() {
       return;
     }
 
-    // Logic for standard routing (Fixed to prevent page refresh)
     let link = item.url || item.perma_url || item.action || "";
     if (link && !link.startsWith("http")) link = `https://www.jiosaavn.com${link}`;
     let path = link; 
@@ -471,7 +456,7 @@ export default function SearchPage() {
         }
       `}} />
 
-      {/* 🔮 STATIC, HIGH-PERFORMANCE HEADER (OLED BLACK) */}
+      {/* 🔮 STATIC, HIGH-PERFORMANCE HEADER */}
       <div className="sticky top-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-md border-b border-[#222] pt-4 sm:pt-8 pb-3 shadow-md">
         <div className="max-w-[1200px] mx-auto px-3 sm:px-6">
           
@@ -536,7 +521,7 @@ export default function SearchPage() {
                     isActive ? "bg-white text-black" : "bg-[#111] text-white/70 border border-[#222] hover:bg-[#1a1a1a]"
                   }`}
                 >
-                  {tab.icon && <tab.icon size={14} className={tab.isPremium && !isActive ? "text-purple-400" : ""} />}
+                  {tab.icon && <tab.icon size={14} className={tab.isPremium && !isActive ? "text-emerald-400" : ""} />}
                   {tab.label}
                 </button>
               );
@@ -566,13 +551,13 @@ export default function SearchPage() {
                 {allData.topMatches.length > 0 && (
                   <div>
                     <h2 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">
-                      Best Match
+                      Top Result
                     </h2>
                     <TopHeroCard item={allData.topMatches[0]} onClick={handleItemClick} />
                   </div>
                 )}
                 
-                {/* For You Rendered Before Top Songs */}
+                {/* Ordered: For You before Top Songs */}
                 {allData.foryou.length > 0 && (
                   <div>
                     <h2 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">
@@ -580,7 +565,7 @@ export default function SearchPage() {
                     </h2>
                     <div className="flex flex-col gap-1">
                       {allData.foryou.slice(0, 4).map((song: any, i: number) => (
-                         <TrackRow key={i} item={song} onClick={handleItemClick} isPro={true} />
+                         <TrackRow key={i} item={song} onClick={handleItemClick} />
                       ))}
                     </div>
                   </div>
@@ -647,7 +632,7 @@ export default function SearchPage() {
           <div className="pb-10">
             {activeTab === "songs" || activeTab === "foryou" ? (
               <div className="flex flex-col w-full max-w-3xl mx-auto">
-                {results.map((item, i) => <TrackRow ref={i === results.length - 1 ? lastVerticalElementRef : null} key={i} item={item} onClick={handleItemClick} isPro={activeTab === "foryou"} />)}
+                {results.map((item, i) => <TrackRow ref={i === results.length - 1 ? lastVerticalElementRef : null} key={i} item={item} onClick={handleItemClick} />)}
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">

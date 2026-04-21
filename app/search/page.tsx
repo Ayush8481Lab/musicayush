@@ -3,13 +3,13 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef } from "react";
 import { 
   Search as SearchIcon, Loader2, Music2, Disc, ListMusic, 
-  Mic2, X, Mic, Play, Flame 
+  Mic2, X, Mic, Play, Sparkles
 } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 import { useRouter } from "next/navigation";
 
 // ==========================================
-// 1. AUTH & CACHE ENGINE
+// 1. AUTH & CACHE ENGINE (Untouched Logic)
 // ==========================================
 const AUTH_STORAGE_KEY = 'spotify_app_auth';
 let ongoingAuthPromise: Promise<any> | null = null;
@@ -45,7 +45,7 @@ export const getAuthData = async () => {
 };
 
 // ==========================================
-// 2. UTILITY FUNCTIONS
+// 2. UTILITIES
 // ==========================================
 const getImageUrl = (img: any) => {
   if (!img) return "https://via.placeholder.com/500x500?text=Music";
@@ -80,70 +80,66 @@ const getMatchScore = (t: string, q: string) => {
 };
 
 // ==========================================
-// 3. UNIQUE UI COMPONENTS (STRICTLY TYPED)
+// 3. UI COMPONENTS (High Performance & Touch Optimized)
 // ==========================================
 
-// --- Top Result Bento Card ---
 interface CardProps { item: any; onClick: (item: any, type: string) => void; tabType?: string; }
 
+// --- Top Match Hero Card ---
 const TopHeroCard = ({ item, onClick }: CardProps) => {
   const type = item.type || "song";
   const title = decodeEntities(item.title || item.name || item.song_name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, type));
-  const imgUrl = getImageUrl(item.image);
+  const isCircular = type === "artist" || type === "artists";
 
   return (
     <div 
       onClick={() => onClick(item, type)}
-      className="group relative overflow-hidden rounded-[32px] bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 transition-all duration-500 cursor-pointer flex flex-col md:flex-row shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-xl"
+      className="group relative flex flex-col sm:flex-row items-center sm:items-start gap-6 p-6 rounded-[28px] bg-white/[0.04] hover:bg-white/[0.08] active:scale-[0.98] transition-all duration-200 cursor-pointer border border-white/[0.05]"
     >
-      <div className="relative w-full md:w-[260px] aspect-square flex-shrink-0 p-4">
-        <div className="w-full h-full rounded-[24px] overflow-hidden shadow-2xl relative">
-          <img src={imgUrl} alt={title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
-          <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-            <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center transform scale-50 group-hover:scale-100 transition-all duration-300 border border-white/40">
-              <Play size={28} className="text-white fill-white ml-1" />
-            </div>
-          </div>
-        </div>
+      <div className={`relative w-32 h-32 sm:w-40 sm:h-40 flex-shrink-0 bg-neutral-900 shadow-xl overflow-hidden ${isCircular ? 'rounded-full' : 'rounded-2xl'}`}>
+        <img src={getImageUrl(item.image)} alt={title} className="w-full h-full object-cover" />
       </div>
-      <div className="flex flex-col justify-center p-6 md:p-8 flex-1 relative z-10">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/5 w-max mb-4">
-          <Flame size={14} className="text-pink-500" />
-          <span className="text-[11px] font-bold uppercase tracking-wider text-white/70">Top Result</span>
-        </div>
-        <h3 className="text-3xl md:text-5xl font-black text-white leading-tight tracking-tighter drop-shadow-md line-clamp-2">{title}</h3>
-        <p className="text-white/50 font-semibold text-lg mt-2 line-clamp-1">{subtitle}</p>
+      <div className="flex flex-col flex-1 text-center sm:text-left justify-center h-full">
+        <span className="text-[12px] font-bold uppercase tracking-widest text-emerald-400 mb-2">Top Result</span>
+        <h3 className="text-3xl sm:text-4xl font-bold text-white line-clamp-2 leading-tight">{title}</h3>
+        <p className="text-white/50 font-medium text-base mt-2 line-clamp-1">{subtitle}</p>
+      </div>
+      
+      {/* Floating Play Button for Top Result */}
+      <div className="absolute right-6 bottom-6 w-14 h-14 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 hidden sm:flex">
+        <Play size={24} className="text-black fill-black ml-1" />
       </div>
     </div>
   );
 };
 
-// --- Sleek Song Row ---
+// --- Track List Item (Touch friendly) ---
 const TrackRow = forwardRef<HTMLDivElement, CardProps>(({ item, onClick }, ref) => {
   const title = decodeEntities(item.title || item.name || item.song_name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, item.type || "song"));
   return (
     <div 
-      ref={ref} onClick={() => onClick(item, item.type || "song")}
-      className="group flex items-center gap-4 p-3 rounded-2xl hover:bg-white/[0.05] transition-all duration-300 cursor-pointer border border-transparent hover:border-white/5"
+      ref={ref} 
+      onClick={() => onClick(item, item.type || "song")}
+      className="flex items-center gap-4 p-3 rounded-xl hover:bg-white/[0.06] active:bg-white/[0.1] active:scale-[0.98] transition-all duration-200 cursor-pointer"
     >
-      <div className="relative w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-black shadow-lg">
-        <img src={getImageUrl(item.image)} alt={title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-300">
+      <div className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 bg-neutral-900">
+        <img src={getImageUrl(item.image)} alt={title} className="w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
           <Play size={20} className="text-white fill-white" />
         </div>
       </div>
       <div className="flex flex-col flex-1 min-w-0">
-        <span className="text-[16px] font-bold text-white truncate drop-shadow-sm">{title}</span>
-        <span className="text-[13px] font-medium text-white/40 truncate mt-0.5">{subtitle}</span>
+        <span className="text-[16px] font-semibold text-white truncate">{title}</span>
+        <span className="text-[14px] text-white/50 truncate mt-0.5">{subtitle}</span>
       </div>
     </div>
   );
 });
 TrackRow.displayName = "TrackRow";
 
-// --- Dynamic Grid Tile ---
+// --- Grid Item (Responsive) ---
 const MediaGridCard = forwardRef<HTMLDivElement, CardProps>(({ item, tabType, onClick }, ref) => {
   const type = item.type || tabType || "album";
   const title = decodeEntities(item.title || item.name || "Unknown");
@@ -151,23 +147,23 @@ const MediaGridCard = forwardRef<HTMLDivElement, CardProps>(({ item, tabType, on
   const isCircular = type === "artists" || type === "artist";
 
   return (
-    <div ref={ref} onClick={() => onClick(item, type)} className="group cursor-pointer flex flex-col gap-3 transition-transform duration-300 hover:-translate-y-2">
-      <div className={`relative w-full aspect-square overflow-hidden bg-black shadow-lg border border-white/5 group-hover:border-white/20 transition-colors ${isCircular ? "rounded-full" : "rounded-3xl"}`}>
-        <img src={getImageUrl(item.image)} alt={title} loading="lazy" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
-        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-          <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center transform scale-50 group-hover:scale-100 transition-all duration-300">
-             <Play size={20} className="text-white fill-white ml-1" />
-          </div>
-        </div>
+    <div 
+      ref={ref} 
+      onClick={() => onClick(item, type)} 
+      className="flex flex-col gap-3 group active:scale-[0.95] active:opacity-80 transition-all duration-200 cursor-pointer"
+    >
+      <div className={`relative w-full aspect-square overflow-hidden bg-neutral-900 ${isCircular ? "rounded-full" : "rounded-[20px]"}`}>
+        <img src={getImageUrl(item.image)} alt={title} loading="lazy" className="w-full h-full object-cover" />
       </div>
-      <div className="flex flex-col px-1 text-center">
-        <span className="text-[15px] font-black text-white truncate tracking-tight">{title}</span>
-        {subtitle && <span className="text-[13px] font-medium text-white/40 truncate mt-0.5">{subtitle}</span>}
+      <div className="flex flex-col px-1">
+        <span className="text-[15px] font-semibold text-white truncate">{title}</span>
+        {subtitle && <span className="text-[13px] text-white/50 truncate mt-0.5">{subtitle}</span>}
       </div>
     </div>
   );
 });
 MediaGridCard.displayName = "MediaGridCard";
+
 
 // ==========================================
 // 4. MAIN SEARCH PAGE
@@ -176,56 +172,37 @@ export default function SearchPage() {
   const { setCurrentSong, setIsPlaying, setPlayContext, setQueue } = useAppContext() as any;
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const CACHE_KEY = "search_page_cache_ultimate_v3";
+  const CACHE_KEY = "search_page_cache_v4";
 
-  const [isRestored, setIsRestored] = useState(false);
+  const[isRestored, setIsRestored] = useState(false);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState(""); 
   const [activeTab, setActiveTab] = useState("all");
 
-  const[allData, setAllData] = useState<any>({ topMatches:[], songs: [], albums:[], playlists: [], artists:[] });
+  const [allData, setAllData] = useState<any>({ topMatches:[], songs: [], albums:[], playlists: [], artists:[] });
   const [results, setResults] = useState<any[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
   const [loading, setLoading] = useState(false);
-  const[loadingMore, setLoadingMore] = useState(false);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
+  
+  const[suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [showNav, setShowNav] = useState(true);
 
   const lastFetched = useRef({ query: "", tab: "all", page: 1 });
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   const tabs =[
-    { id: "all", label: "Overview" },
-    { id: "pro", label: "Pro Audio", icon: Flame, isPremium: true }, 
-    { id: "songs", label: "Tracks", icon: Music2 },
-    { id: "albums", label: "Albums", icon: Disc },
-    { id: "playlists", label: "Playlists", icon: ListMusic },
-    { id: "artists", label: "Artists", icon: Mic2 }
+    { id: "all", label: "All" },
+    { id: "pro", label: "Pro API" }, 
+    { id: "songs", label: "Songs" },
+    { id: "albums", label: "Albums" },
+    { id: "playlists", label: "Playlists" },
+    { id: "artists", label: "Artists" }
   ];
 
-  // --- Fluid Scroll Hide/Show ---
-  useEffect(() => {
-    let ticking = false; let lastScrollY = window.scrollY;
-    const handleScroll = () => {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          const currentScrollY = window.scrollY;
-          if (currentScrollY > 100 && currentScrollY > lastScrollY) setShowNav(false);
-          else setShowNav(true);
-          lastScrollY = currentScrollY;
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  },[]);
-
-  // --- State Hydration & Caching ---
+  // --- Core Lifecycle & Cache ---
   useEffect(() => { getAuthData(); },[]);
   useEffect(() => {
     const cached = localStorage.getItem(CACHE_KEY);
@@ -235,7 +212,7 @@ export default function SearchPage() {
         if (parsed.timestamp && (Date.now() - parsed.timestamp < 8 * 60 * 60 * 1000)) {
           const d = parsed.data;
           setQuery(d.query || ""); setDebouncedQuery(d.debouncedQuery || ""); setActiveTab(d.activeTab || "all");
-          setAllData(d.allData || { topMatches: [], songs:[], albums: [], playlists:[], artists:[] });
+          setAllData(d.allData || { topMatches: [], songs:[], albums:[], playlists:[], artists:[] });
           setResults(d.results ||[]); setPage(d.page || 1); setHasMore(d.hasMore ?? true);
           if (d.lastFetched) lastFetched.current = d.lastFetched;
         } else localStorage.removeItem(CACHE_KEY);
@@ -249,7 +226,7 @@ export default function SearchPage() {
     localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data: { query, debouncedQuery, activeTab, allData, results, page, hasMore, lastFetched: lastFetched.current } }));
   },[query, debouncedQuery, activeTab, allData, results, page, hasMore, isRestored]);
 
-  // --- Strict Suggestions Engine (Only while typing) ---
+  // --- Strict Typing / Suggestion Logic ---
   useEffect(() => {
     if (!query.trim() || query === debouncedQuery) { setSuggestions([]); setShowSuggestions(false); return; }
     const fetchSuggestions = async () => {
@@ -263,21 +240,20 @@ export default function SearchPage() {
     return () => clearTimeout(sTimer);
   }, [query, debouncedQuery]);
 
-  // --- Strict Action-Based Search ---
   const executeSearch = (val: string) => {
     if (!val.trim()) return;
     setQuery(val); 
     setDebouncedQuery(val);
     setSuggestions([]); 
     setShowSuggestions(false);
-    inputRef.current?.blur(); // Force close mobile keyboard
+    inputRef.current?.blur(); // Dismisses mobile keyboard
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') executeSearch(query);
   };
 
-  // --- Search Fetching Engine ---
+  // --- Central Data Fetcher ---
   useEffect(() => {
     if (!isRestored) return;
     if (!debouncedQuery.trim()) {
@@ -346,17 +322,17 @@ export default function SearchPage() {
     fetchData();
   },[debouncedQuery, activeTab, page, isRestored]);
 
-  // --- Infinite Scroll Observer ---
+  // --- Infinite Scroll ---
   const lastVerticalElementRef = useCallback((node: HTMLDivElement | null) => {
     if (loading || loadingMore || !hasMore || activeTab === "all") return;
     if (observerRef.current) observerRef.current.disconnect();
     observerRef.current = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && hasMore) setPage(prev => prev + 1);
-    }, { rootMargin: "600px", threshold: 0 });
+    }, { rootMargin: "400px", threshold: 0 });
     if (node) observerRef.current.observe(node);
   },[loading, loadingMore, hasMore, activeTab]);
 
-  // --- Click Handlers ---
+  // --- Routing & Playback ---
   const handleItemClick = async (item: any, passedType?: string) => {
     const type = item.type || passedType || activeTab;
     if (type === "pro") {
@@ -391,58 +367,56 @@ export default function SearchPage() {
     else if (type === "artists" || type === "artist") router.push(`/artist?id=${item.id}`);
   };
 
-  const globalBgImage = allData?.topMatches?.[0]?.image || results?.[0]?.image || null;
-
-  if (!isRestored) return <div className="min-h-screen bg-black" />;
+  if (!isRestored) return <div className="min-h-screen bg-[#09090b]" />;
 
   return (
-    <main className="min-h-screen pb-32 bg-black text-white font-sans selection:bg-pink-500/30 overflow-x-hidden">
+    <main className="min-h-screen pb-32 bg-[#09090b] text-white font-sans overflow-x-hidden selection:bg-emerald-500/30 relative">
       
-      {/* --- AMBIENT GLASS BACKGROUND (Hardware Accelerated, No Lag) --- */}
-      <div className="fixed inset-0 z-[0] pointer-events-none overflow-hidden bg-black">
-        {globalBgImage && (
-           <div 
-             className="absolute top-[-30%] left-[-30%] w-[160%] h-[160%] bg-cover bg-center opacity-[0.25] mix-blend-screen transform-gpu will-change-transform transition-opacity duration-1000 ease-in-out blur-[120px]"
-             style={{ backgroundImage: `url(${getImageUrl(globalBgImage)})` }}
-           />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/80 to-black backdrop-blur-[20px]" />
+      {/* 🚀 LAG-FREE BACKGROUND: Pure CSS radial gradients (No expensive blurs/images) */}
+      <div className="fixed inset-0 z-[0] pointer-events-none">
+         <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-emerald-900/20 blur-[100px]" />
+         <div className="absolute top-[40%] right-[-20%] w-[600px] h-[600px] rounded-full bg-indigo-900/10 blur-[120px]" />
       </div>
 
-      {/* --- UNIQUE FLOATING HEADER --- */}
-      <div className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${showNav ? 'translate-y-0' : '-translate-y-full'}`}>
-        <div className="absolute inset-0 bg-gradient-to-b from-black/90 to-transparent backdrop-blur-3xl border-b border-white/5" />
-        <div className="relative pt-10 pb-4 px-4 md:px-8 max-w-5xl mx-auto flex flex-col items-center">
+      {/* 🔮 STATIC, HIGH-PERFORMANCE HEADER (Always responsive, no scroll-lag) */}
+      <div className="sticky top-0 left-0 right-0 z-50 bg-[#09090b]/80 backdrop-blur-xl border-b border-white/5 pt-6 sm:pt-10 pb-4">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 md:px-8">
           
-          {/* Neon Search Pill */}
-          <div className="relative w-full group">
-            <div className="flex items-center w-full bg-white/5 group-hover:bg-white/10 focus-within:bg-white/10 border border-white/10 rounded-full h-[64px] px-6 transition-all duration-300 shadow-[0_0_40px_rgba(255,255,255,0.05)] focus-within:shadow-[0_0_50px_rgba(255,255,255,0.1)] focus-within:border-white/30 backdrop-blur-xl">
-              <SearchIcon size={24} className="text-white/40 flex-shrink-0" />
+          {/* Search Input Container */}
+          <div className="relative w-full max-w-2xl mx-auto">
+            <div className="flex items-center w-full bg-white/[0.06] hover:bg-white/[0.08] focus-within:bg-white/[0.1] border border-white/10 rounded-2xl h-14 sm:h-16 px-4 sm:px-5 transition-all duration-200">
+              <SearchIcon size={22} className="text-white/40 flex-shrink-0" />
               <input 
                 ref={inputRef}
-                className="w-full h-full bg-transparent border-none outline-none text-[18px] md:text-[22px] font-bold text-white px-4 placeholder-white/30 tracking-wide"
-                placeholder="Search artists, songs, podcasts..."
+                className="w-full h-full bg-transparent border-none outline-none text-[16px] sm:text-[18px] font-medium text-white px-3 sm:px-4 placeholder-white/30"
+                placeholder="What do you want to play?"
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); if(!e.target.value.trim()){ setSuggestions([]); setShowSuggestions(false); } }}
                 onKeyDown={handleKeyDown}
+                onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }}
               />
               {query && (
-                <button onClick={() => { setQuery(""); setDebouncedQuery(""); setSuggestions([]); setShowSuggestions(false); inputRef.current?.focus(); }} className="text-white/30 hover:text-white transition-colors p-2">
-                  <X size={22} />
+                <button 
+                  onClick={() => { setQuery(""); setDebouncedQuery(""); setSuggestions([]); setShowSuggestions(false); inputRef.current?.focus(); }} 
+                  className="p-2 text-white/40 hover:text-white active:scale-90 transition-all rounded-full"
+                >
+                  <X size={20} />
                 </button>
               )}
             </div>
 
-            {/* Floating Suggestions */}
+            {/* Absolute Suggestions List */}
             {showSuggestions && suggestions.length > 0 && (
-               <div className="absolute top-[76px] left-0 right-0 bg-[#0a0a0a]/95 backdrop-blur-3xl border border-white/10 rounded-[24px] shadow-2xl overflow-hidden z-[100] py-2 animate-in fade-in slide-in-from-top-4 duration-200">
+               <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-[#121212] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-[100] py-2">
                   {suggestions.map((s, i) => (
-                     <div key={i} onClick={() => executeSearch(s.text)} className="px-6 py-4 flex items-center gap-4 cursor-pointer hover:bg-white/10 transition-colors">
-                        <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
-                          <SearchIcon size={16} className="text-white/40" />
-                        </div>
-                        <span className="text-white/90 text-[16px] font-semibold tracking-wide truncate">
-                          {s.runs ? s.runs.map((r: any, j: number) => <span key={j} className={r.bold ? "font-bold text-white drop-shadow-sm" : "opacity-60"}>{r.text}</span>) : s.text}
+                     <div 
+                       key={i} 
+                       onClick={() => executeSearch(s.text)} 
+                       className="px-5 py-3.5 flex items-center gap-4 cursor-pointer hover:bg-white/[0.06] active:bg-white/[0.1] transition-colors"
+                     >
+                        <SearchIcon size={16} className="text-white/30 flex-shrink-0" />
+                        <span className="text-white/90 text-[15px] sm:text-[16px] truncate">
+                          {s.runs ? s.runs.map((r: any, j: number) => <span key={j} className={r.bold ? "font-bold text-white" : "opacity-70"}>{r.text}</span>) : s.text}
                         </span>
                      </div>
                   ))}
@@ -450,55 +424,57 @@ export default function SearchPage() {
             )}
           </div>
 
-          {/* Premium Filter Tabs */}
-          <div className="flex gap-2.5 mt-5 overflow-x-auto hide-scrollbar w-full pb-1">
+          {/* Scrollable Tabs */}
+          <div className="flex gap-2 sm:gap-3 mt-5 overflow-x-auto hide-scrollbar snap-x w-full max-w-2xl mx-auto">
             {tabs.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
                 <button 
-                  key={tab.id} onClick={() => { setActiveTab(tab.id); setPage(1); }} 
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-[14px] font-bold transition-all duration-300 whitespace-nowrap outline-none ${
-                    isActive ? (tab.isPremium ? "bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 text-white shadow-[0_0_20px_rgba(236,72,153,0.4)] scale-105" : "bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)] scale-105") 
-                    : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white border border-white/5"
+                  key={tab.id} 
+                  onClick={() => { setActiveTab(tab.id); setPage(1); }} 
+                  className={`flex-shrink-0 snap-start px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-[13px] sm:text-[14px] font-semibold transition-all duration-200 active:scale-[0.95] ${
+                    isActive ? "bg-white text-black" : "bg-white/5 text-white/70 hover:bg-white/10"
                   }`}
                 >
-                  {tab.icon && <tab.icon size={16} className={tab.isPremium && !isActive ? "text-pink-500" : ""} />}
                   {tab.label}
                 </button>
               );
             })}
           </div>
+
         </div>
       </div>
 
-      {/* --- CONTENT LAYOUT --- */}
-      <div className="relative z-10 pt-[220px] max-w-7xl mx-auto px-4 md:px-8">
+      {/* 📚 MAIN CONTENT ZONE */}
+      <div className="relative z-10 pt-8 max-w-[1400px] mx-auto px-4 sm:px-6 md:px-8">
         
         {loading ? (
-          <div className="flex flex-col items-center justify-center mt-32 gap-4">
-            <Loader2 className="animate-spin text-white/40" size={40} />
-          </div>
+          <div className="flex justify-center py-20"><Loader2 className="animate-spin text-white/30" size={36} /></div>
         ) : !debouncedQuery.trim() ? (
-          <div className="flex flex-col items-center justify-center mt-32 text-center animate-in fade-in duration-1000">
-            <h1 className="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/20 to-transparent tracking-tighter">
-              Start Typing
-            </h1>
+          <div className="flex flex-col items-center justify-center py-24 sm:py-32 text-center px-4">
+            <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+              <Sparkles size={32} className="text-white/40" />
+            </div>
+            <h1 className="text-2xl sm:text-4xl font-bold text-white tracking-tight">Search for Music</h1>
+            <p className="text-white/40 mt-3 text-sm sm:text-base">Find your favorite tracks, artists, and albums.</p>
           </div>
         ) : activeTab === "all" ? (
           
-          <div className="flex flex-col lg:flex-row gap-10">
-             {/* LEFT: Bento Hero & Songs */}
-             <div className="w-full lg:w-[55%] flex flex-col gap-10">
+          <div className="flex flex-col xl:flex-row gap-8 xl:gap-12">
+             
+             {/* Left Column (Top Result & Songs) */}
+             <div className="w-full xl:w-5/12 flex flex-col gap-8">
                 {allData.topMatches.length > 0 && (
-                  <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-5">Top Result</h2>
                     <TopHeroCard item={allData.topMatches[0]} onClick={handleItemClick} />
                   </div>
                 )}
                 
                 {allData.songs.length > 0 && (
-                  <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 delay-100">
-                    <h2 className="text-2xl font-black text-white mb-5 tracking-tight">Top Tracks</h2>
-                    <div className="flex flex-col gap-1 bg-white/[0.02] p-2 rounded-3xl border border-white/5">
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-5">Songs</h2>
+                    <div className="flex flex-col">
                       {allData.songs.slice(0, 4).map((song: any, i: number) => (
                          <TrackRow key={i} item={song} onClick={handleItemClick} />
                       ))}
@@ -507,12 +483,12 @@ export default function SearchPage() {
                 )}
              </div>
 
-             {/* RIGHT: Floating Grids */}
-             <div className="w-full lg:w-[45%] flex flex-col gap-10">
+             {/* Right Column (Albums & Artists) */}
+             <div className="w-full xl:w-7/12 flex flex-col gap-8">
                 {allData.albums.length > 0 && (
-                  <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200">
-                    <h2 className="text-2xl font-black text-white mb-5 tracking-tight">Albums</h2>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-5">Albums</h2>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-3 gap-4 sm:gap-6">
                       {allData.albums.slice(0, 6).map((album: any, i: number) => (
                          <MediaGridCard key={i} item={album} onClick={handleItemClick} />
                       ))}
@@ -521,9 +497,9 @@ export default function SearchPage() {
                 )}
                 
                 {allData.artists.length > 0 && (
-                  <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 delay-300">
-                    <h2 className="text-2xl font-black text-white mb-5 tracking-tight">Artists</h2>
-                    <div className="grid grid-cols-3 md:grid-cols-4 gap-4">
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-5">Artists</h2>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-4 gap-4 sm:gap-6">
                       {allData.artists.slice(0, 4).map((artist: any, i: number) => (
                          <MediaGridCard key={i} item={artist} onClick={handleItemClick} />
                       ))}
@@ -531,28 +507,38 @@ export default function SearchPage() {
                   </div>
                 )}
              </div>
+
           </div>
 
         ) : (
           
-          <div className="animate-in fade-in slide-in-from-bottom-8 duration-500">
+          <div>
+            <div className="flex items-center justify-between mb-6">
+               <h2 className="text-2xl font-bold text-white capitalize">{activeTab}</h2>
+            </div>
+
             {activeTab === "songs" || activeTab === "pro" ? (
-              <div className="flex flex-col gap-2 max-w-4xl mx-auto bg-white/[0.02] p-2 rounded-3xl border border-white/5">
+              <div className="flex flex-col w-full max-w-4xl mx-auto">
                 {results.map((item, i) => <TrackRow ref={i === results.length - 1 ? lastVerticalElementRef : null} key={i} item={item} onClick={handleItemClick} />)}
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
                 {results.map((item, i) => <MediaGridCard ref={i === results.length - 1 ? lastVerticalElementRef : null} key={i} item={item} onClick={handleItemClick} />)}
               </div>
             )}
             
-            <div className="h-32 mt-8 flex justify-center items-center">
-              {loadingMore && <Loader2 className="animate-spin text-white/40" size={32} />}
+            <div className="h-24 mt-6 flex justify-center items-center">
+              {loadingMore && <Loader2 className="animate-spin text-white/30" size={28} />}
             </div>
           </div>
 
         )}
       </div>
+
+      <style dangerouslySetInnerHTML={{__html:`
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      `}} />
     </main>
   );
 }

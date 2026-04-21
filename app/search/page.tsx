@@ -1,6 +1,9 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback, forwardRef } from "react";
-import { Search as SearchIcon, Loader2, Music2, Disc, ListMusic, Mic2, X, Mic } from "lucide-react";
+import { 
+  Search as SearchIcon, Loader2, Music2, Disc, ListMusic, 
+  Mic2, X, Mic, Play, Sparkles, Flame 
+} from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 import { useRouter } from "next/navigation";
 
@@ -82,35 +85,46 @@ const getMatchScore = (title: string, query: string) => {
   return 0;
 };
 
-// Priority loading built in using native loading="lazy" coupled with Glass UI enhancements
+// --- REDESIGNED PRO SEARCH CARD ---
 const SearchCard = forwardRef<HTMLDivElement, any>(({ item, tabType, onClick, isGrid = false }, ref) => {
   const type = item.type || tabType;
   const title = decodeEntities(item.title || item.name || item.song_name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, type));
   const isCircular = type === "artists" || type === "artist";
 
-  const isLongTitle = title.length > 15;
-  const isLongSub = subtitle.length > 18;
-
   return (
-    <div ref={ref} onClick={() => onClick(item, type)} className={`cursor-pointer group active:scale-95 transition-all duration-300 ${isGrid ? "w-full" : "flex-shrink-0 snap-start w-36"}`}>
-      <div className={`relative overflow-hidden shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] bg-white/10 backdrop-blur-xl border border-white/20 mb-2 flex items-center justify-center transition-all group-hover:border-white/40 group-hover:shadow-[0_8px_32px_0_rgba(255,255,255,0.15)] ${isCircular ? "rounded-full aspect-square" : "rounded-2xl aspect-[1/1]"}`}>
-        <img src={getImageUrl(item.image)} alt={title} loading="lazy" onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/500x500?text=Music"; }} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-      </div>
-      <div className="w-full overflow-hidden whitespace-nowrap text-center">
-        <span className={`inline-block text-[14px] font-extrabold text-white/90 drop-shadow-md tracking-wide ${isLongTitle ? "animate-ping-pong" : ""}`} style={isLongTitle ? { animationDuration: `${Math.max(4, title.length * 0.25)}s` } : {}}>{title}</span>
-      </div>
-      {subtitle && (
-        <div className="w-full overflow-hidden whitespace-nowrap text-center mt-0.5">
-          <span className={`inline-block text-[12px] font-medium text-white/60 capitalize ${isLongSub ? "animate-ping-pong" : ""}`} style={isLongSub ? { animationDuration: `${Math.max(4, subtitle.length * 0.25)}s` } : {}}>{subtitle}</span>
+    <div 
+      ref={ref} 
+      onClick={() => onClick(item, type)} 
+      className={`group cursor-pointer flex flex-col gap-3 p-3 rounded-2xl hover:bg-white/10 active:bg-white/5 transition-colors duration-300 ${isGrid ? "w-full" : "w-40 flex-shrink-0 snap-start"}`}
+    >
+      <div className={`relative w-full aspect-square overflow-hidden shadow-lg border border-white/5 group-hover:shadow-[0_8px_30px_rgb(0,0,0,0.5)] transition-all duration-300 ${isCircular ? "rounded-full" : "rounded-xl"}`}>
+        <img 
+          src={getImageUrl(item.image)} 
+          alt={title} 
+          loading="lazy" 
+          onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/500x500?text=Music"; }} 
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out" 
+        />
+        {/* Colorful Hover Overlay & Play Button */}
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-[2px]">
+          <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-cyan-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(52,211,153,0.5)] transform translate-y-4 group-hover:translate-y-0 transition-all duration-300">
+            <Play className="text-white fill-white ml-1" size={20} />
+          </div>
         </div>
-      )}
+      </div>
+      <div className="flex flex-col px-1">
+        <span className="text-[15px] font-bold text-white tracking-wide truncate">{title}</span>
+        {subtitle && (
+          <span className="text-[13px] font-medium text-white/50 truncate mt-0.5 group-hover:text-white/80 transition-colors">{subtitle}</span>
+        )}
+      </div>
     </div>
   );
 });
 SearchCard.displayName = "SearchCard";
 
+// --- REDESIGNED HORIZONTAL CAROUSEL ---
 const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore, onItemClick }: any) => {
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -139,13 +153,17 @@ const HorizontalCarousel = ({ title, type, items, hasMore, loadingMore, loadMore
 
   return (
     <div className="mb-8 contain-content">
-      <h2 className="text-[22px] font-black mb-4 px-4 tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-white/60 drop-shadow-sm">{title}</h2>
-      <div id={`carousel-${type}`} onScroll={handleScroll} className="flex gap-5 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
+      <div className="flex items-center gap-2 px-6 mb-3">
+        <h2 className="text-[22px] font-black tracking-tight text-white">{title}</h2>
+      </div>
+      <div id={`carousel-${type}`} onScroll={handleScroll} className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
         {items.map((item: any, i: number) => (
           <SearchCard ref={i === items.length - 1 ? lastElementRef : null} key={`${type}-${i}`} item={item} tabType={type} onClick={onItemClick} isGrid={false} />
         ))}
         {loadingMore && (
-          <div className="flex-shrink-0 flex justify-center items-center w-36 aspect-square border border-white/20 rounded-2xl bg-white/5 backdrop-blur-xl shadow-lg"><Loader2 className="animate-spin text-white/70" size={28} /></div>
+          <div className="flex-shrink-0 flex justify-center items-center w-40 aspect-square rounded-xl bg-white/5 animate-pulse">
+            <Loader2 className="animate-spin text-emerald-400" size={32} />
+          </div>
         )}
       </div>
     </div>
@@ -156,30 +174,27 @@ export default function SearchPage() {
   const { setCurrentSong, setIsPlaying, setPlayContext, setQueue } = useAppContext() as any;
   const router = useRouter();
   const CACHE_KEY = "search_page_cache_ultimate";
-  const CACHE_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours Premium cache length
+  const CACHE_DURATION_MS = 8 * 60 * 60 * 1000;
 
   const [isRestored, setIsRestored] = useState(false);
-  const[query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [query, setQuery] = useState("");
+  const[debouncedQuery, setDebouncedQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
 
   const [allData, setAllData] = useState<any>({ topMatches: [], songs: [], albums:[], playlists: [], artists:[] });
   const [allPages, setAllPages] = useState<any>({ songs: 1, albums: 1, playlists: 1, artists: 1 });
-  const [allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
+  const[allHasMore, setAllHasMore] = useState<any>({ songs: true, albums: true, playlists: true, artists: true });
   const [horizontalLoading, setHorizontalLoading] = useState<any>({ songs: false, albums: false, playlists: false, artists: false });
 
-  const [results, setResults] = useState<any[]>([]);
+  const[results, setResults] = useState<any[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
   const [loading, setLoading] = useState(false);
-  const[loadingMore, setLoadingMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  // Suggestion Engine States
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-
-  // Voice Search States
   const [isListening, setIsListening] = useState(false);
 
   const lastFetched = useRef({ query: "", tab: "all", page: 1 });
@@ -187,7 +202,7 @@ export default function SearchPage() {
 
   const tabs =[
     { id: "all", label: "All" },
-    { id: "pro", label: "Pro" }, 
+    { id: "pro", label: "Pro", icon: Flame }, 
     { id: "songs", label: "Songs", icon: Music2 },
     { id: "albums", label: "Albums", icon: Disc },
     { id: "playlists", label: "Playlists", icon: ListMusic },
@@ -196,7 +211,6 @@ export default function SearchPage() {
 
   useEffect(() => { getAuthData(); },[]);
 
-  // Initial 8-Hour LocalStorage Cache Restoration
   useEffect(() => {
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
@@ -223,7 +237,6 @@ export default function SearchPage() {
     setIsRestored(true);
   },[]);
 
-  // Synchronize Cache with strictly required properties
   useEffect(() => {
     if (!isRestored) return;
     const stateToCache = {
@@ -233,14 +246,13 @@ export default function SearchPage() {
     localStorage.setItem(CACHE_KEY, JSON.stringify(stateToCache));
   },[query, debouncedQuery, activeTab, allData, allPages, allHasMore, results, page, hasMore, isRestored]);
 
-  // Suggestions Fetcher
   useEffect(() => {
     if (!query.trim()) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
-    if (query === debouncedQuery) return; // Prevent extra fetch if already searching
+    if (query === debouncedQuery) return;
     
     const fetchSuggestions = async () => {
       try {
@@ -259,17 +271,23 @@ export default function SearchPage() {
     return () => clearTimeout(sTimer);
   }, [query, debouncedQuery]);
 
-  // Debounced Main Search Trigger
   useEffect(() => {
     if (!isRestored) return;
     const timer = setTimeout(() => {
       setDebouncedQuery(query);
-      setShowSuggestions(false); // Hide suggestions once main search starts
+      setShowSuggestions(false);
     }, 600);
     return () => clearTimeout(timer);
   },[query, isRestored]);
 
-  // Unified Search Handler
+  // Trigger search on "Enter"
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      setDebouncedQuery(query);
+      setShowSuggestions(false);
+    }
+  };
+
   useEffect(() => {
     if (!isRestored) return;
     if (!debouncedQuery.trim()) {
@@ -338,7 +356,6 @@ export default function SearchPage() {
     fetchData();
   },[debouncedQuery, activeTab, page, isRestored]);
 
-  // Voice Search Setup
   const handleVoiceSearch = () => {
     const windowAny = window as any;
     const SpeechRecognition = windowAny.SpeechRecognition || windowAny.webkitSpeechRecognition;
@@ -365,7 +382,7 @@ export default function SearchPage() {
 
   const handleSuggestionClick = (text: string) => {
     setQuery(text);
-    setDebouncedQuery(text);
+    setDebouncedQuery(text); // Instantly trigger search
     setShowSuggestions(false);
   };
 
@@ -395,7 +412,6 @@ export default function SearchPage() {
   const handleItemClick = async (item: any, passedType?: string) => {
     const type = item.type || passedType || activeTab;
     
-    // --- PRO API CLICK HANDLER w/ FALLBACK ---
     if (type === "pro") {
       const querySong = item.song_name || item.title || item.name || "";
       const queryArtist = item.artist || item.artists || "";
@@ -422,7 +438,6 @@ export default function SearchPage() {
         setQueue([songObj]); setCurrentSong(songObj); setIsPlaying(true);
       } catch (err) {
         console.warn("Saavn fallback triggered for Pro Search:", err);
-        // --- FALLBACK TO YOUTUBE / CND API ---
         try {
            const ytQuery = `${querySong} ${queryArtist.split(',').slice(0, 3).join(' ')} official music video`;
            const ytRes = await fetch(`https://ayushvid.vercel.app/api?q=${encodeURIComponent(ytQuery)}`);
@@ -445,7 +460,6 @@ export default function SearchPage() {
       return;
     }
 
-    // --- STANDARD CLICK HANDLERS ---
     let link = item.url || item.perma_url || item.action || "";
     if (link && !link.startsWith("http")) link = `https://www.jiosaavn.com${link}`;
     let path = link;
@@ -459,59 +473,61 @@ export default function SearchPage() {
     else if (type === "artists" || type === "artist") router.push(`/artist?id=${item.id}`);
   };
 
-  if (!isRestored) return <div className="min-h-screen bg-black" />;
+  if (!isRestored) return <div className="min-h-screen bg-[#09090b]" />;
 
   return (
-    <main className="min-h-screen pb-28 relative isolate">
-      {/* Background Colorful Liquid Glass Blurs */}
-      <div className="fixed inset-0 pointer-events-none z-[-1] bg-black overflow-hidden">
-        <div className="absolute top-[-15%] left-[-15%] w-[60vw] h-[60vw] bg-indigo-900/40 blur-[140px] rounded-full mix-blend-screen animate-pulse duration-[10000ms]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] bg-fuchsia-900/30 blur-[120px] rounded-full mix-blend-screen animate-pulse duration-[8000ms]" />
-        <div className="absolute top-[30%] left-[20%] w-[40vw] h-[40vw] bg-blue-900/20 blur-[100px] rounded-full mix-blend-screen" />
+    <main className="min-h-screen pb-32 relative isolate bg-[#09090b] text-white">
+      {/* VIBRANT DYNAMIC BACKGROUND ENGINE */}
+      <div className="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
+        <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] bg-emerald-900/20 blur-[140px] rounded-full mix-blend-screen animate-pulse duration-[10000ms]" />
+        <div className="absolute top-[20%] right-[-15%] w-[60vw] h-[60vw] bg-violet-900/20 blur-[150px] rounded-full mix-blend-screen" />
+        <div className="absolute bottom-[-10%] left-[20%] w-[40vw] h-[40vw] bg-cyan-900/15 blur-[120px] rounded-full mix-blend-screen animate-pulse duration-[8000ms]" />
       </div>
 
-      <div className="sticky top-0 z-50 bg-black/30 backdrop-blur-3xl pt-8 pb-4 px-4 border-b border-white/10 shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
-        <div className="relative">
-          <div className={`relative flex items-center w-full h-14 rounded-2xl bg-white/10 backdrop-blur-md border transition-all duration-300 shadow-inner ${isListening ? 'border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.3)]' : 'border-white/20 focus-within:border-white/60 focus-within:bg-white/15 focus-within:shadow-[0_0_20px_rgba(255,255,255,0.15)]'}`}>
-            <div className="grid place-items-center h-full w-14 text-white/70">
-              {loading ? <Loader2 className="animate-spin" size={20} /> : <SearchIcon size={20} />}
+      {/* REDESIGNED STICKY HEADER & SEARCH BAR */}
+      <div className="sticky top-0 z-50 bg-[#09090b]/80 backdrop-blur-2xl pt-8 pb-4 px-6 border-b border-white/5 shadow-2xl">
+        <div className="relative max-w-4xl mx-auto">
+          <div className={`relative flex items-center w-full h-16 rounded-2xl bg-white/5 border transition-all duration-300 shadow-inner ${isListening ? 'border-red-500/50 bg-red-500/5 shadow-[0_0_30px_rgba(239,68,68,0.2)]' : 'border-white/10 focus-within:border-emerald-500/50 focus-within:bg-white/10 focus-within:shadow-[0_0_30px_rgba(52,211,153,0.15)]'}`}>
+            <div className="grid place-items-center h-full w-16 text-white/50">
+              {loading ? <Loader2 className="animate-spin text-emerald-400" size={22} /> : <SearchIcon size={22} className={query ? "text-emerald-400" : ""} />}
             </div>
             
             <input 
-              className="peer h-full w-full outline-none text-[16px] text-white bg-transparent placeholder-white/50 font-semibold tracking-wide" 
+              className="peer h-full w-full outline-none text-[18px] text-white bg-transparent placeholder-white/40 font-semibold tracking-wide" 
               type="text" 
-              placeholder="Search songs, albums, artists..." 
+              placeholder="What do you want to listen to?" 
               value={query} 
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
               onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }}
             />
             
             {query && (
-              <button onClick={() => { setQuery(""); setSuggestions([]); setShowSuggestions(false); }} className="p-2 text-white/50 hover:text-white transition-colors">
+              <button onClick={() => { setQuery(""); setSuggestions([]); setShowSuggestions(false); }} className="p-3 text-white/40 hover:text-white transition-colors">
                 <X size={20} />
               </button>
             )}
 
-            <div className="w-px h-6 bg-white/20 mx-2" />
+            <div className="w-px h-8 bg-white/10 mx-1" />
 
-            <button onClick={handleVoiceSearch} className={`mr-2 p-2.5 rounded-full transition-all duration-300 ${isListening ? 'bg-red-500 text-white animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.5)]' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}>
-              <Mic size={20} />
+            <button onClick={handleVoiceSearch} className={`mr-3 p-3 rounded-full transition-all duration-300 ${isListening ? 'bg-red-500 text-white animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.5)]' : 'text-white/50 hover:bg-white/10 hover:text-white'}`}>
+              <Mic size={22} />
             </button>
           </div>
 
-          {/* Suggestions Dropdown (Glassmorphism) */}
+          {/* COLORFUL SUGGESTIONS DROPDOWN */}
           {showSuggestions && suggestions.length > 0 && (
-             <div className="absolute top-16 left-0 right-0 bg-[#1a1a1a]/80 backdrop-blur-3xl border border-white/20 rounded-2xl shadow-[0_20px_40px_rgba(0,0,0,0.6)] overflow-hidden z-[100] animate-slide-down origin-top">
+             <div className="absolute top-20 left-0 right-0 bg-[#18181b]/95 backdrop-blur-3xl border border-white/10 rounded-2xl shadow-[0_30px_60px_rgba(0,0,0,0.8)] overflow-hidden z-[100] animate-in fade-in slide-in-from-top-4 duration-200">
                 {suggestions.map((s, i) => (
                    <div 
                      key={i} 
                      onClick={() => handleSuggestionClick(s.text)} 
-                     className="px-5 py-3.5 border-b border-white/5 flex items-center gap-4 cursor-pointer hover:bg-white/10 transition-colors active:bg-white/20"
+                     className="px-6 py-4 border-b border-white/5 flex items-center gap-4 cursor-pointer hover:bg-white/10 transition-colors active:bg-white/20 group"
                    >
-                      <SearchIcon size={16} className="text-white/40 flex-shrink-0" />
-                      <span className="text-white/90 text-[15px] font-medium tracking-wide truncate">
+                      <SearchIcon size={18} className="text-white/30 group-hover:text-emerald-400 transition-colors flex-shrink-0" />
+                      <span className="text-white/90 text-[16px] font-medium tracking-wide truncate">
                         {s.runs ? s.runs.map((r: any, j: number) => (
-                           <span key={j} className={r.bold ? "font-bold text-white" : "opacity-80"}>{r.text}</span>
+                           <span key={j} className={r.bold ? "font-bold text-white" : "opacity-70"}>{r.text}</span>
                         )) : s.text}
                       </span>
                    </div>
@@ -520,35 +536,52 @@ export default function SearchPage() {
           )}
         </div>
 
-        <div className="flex gap-2.5 mt-5 overflow-x-auto hide-scrollbar pb-1 px-1">
+        {/* VIBRANT PILL TABS */}
+        <div className="flex gap-3 mt-6 overflow-x-auto hide-scrollbar pb-2 px-1 max-w-4xl mx-auto">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
-              <button key={tab.id} onClick={() => { setActiveTab(tab.id); setPage(1); }} className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold transition-all duration-300 whitespace-nowrap shadow-sm ${isActive ? "bg-white text-black scale-105 shadow-[0_0_20px_rgba(255,255,255,0.4)]" : "bg-white/5 text-white/70 border border-white/10 hover:bg-white/15 hover:border-white/30 active:scale-95 backdrop-blur-md"}`}>
-                {tab.icon && <tab.icon size={16} strokeWidth={isActive ? 2.5 : 2} />}{tab.label}
+              <button 
+                key={tab.id} 
+                onClick={() => { setActiveTab(tab.id); setPage(1); }} 
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-[14px] font-bold transition-all duration-300 whitespace-nowrap ${
+                  isActive 
+                  ? "bg-gradient-to-r from-emerald-400 to-cyan-500 text-white shadow-[0_0_20px_rgba(52,211,153,0.3)] scale-105" 
+                  : "bg-white/5 text-white/60 border border-white/5 hover:bg-white/10 hover:text-white hover:border-white/20 active:scale-95"
+                }`}
+              >
+                {tab.icon && <tab.icon size={18} strokeWidth={isActive ? 2.5 : 2} />}{tab.label}
               </button>
             );
           })}
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-8 max-w-[1600px] mx-auto">
         {loading ? (
-          <div className="flex justify-center mt-32"><Loader2 className="animate-spin text-white/50" size={40} /></div>
+          <div className="flex flex-col items-center justify-center mt-32 gap-4">
+            <Loader2 className="animate-spin text-emerald-400" size={48} />
+            <p className="text-white/50 font-medium">Searching the universe...</p>
+          </div>
         ) : !debouncedQuery.trim() ? (
-          <div className="flex flex-col items-center justify-center mt-32 animate-fade-in px-4 text-center">
-            <div className="w-24 h-24 rounded-full bg-white/5 backdrop-blur-xl border border-white/10 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(255,255,255,0.05)]">
-               <Mic size={40} className="text-white/30" />
+          // COLORFUL EMPTY STATE
+          <div className="flex flex-col items-center justify-center mt-32 animate-in fade-in duration-700 px-6 text-center">
+            <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-emerald-500/20 to-cyan-500/20 backdrop-blur-xl border border-white/10 flex items-center justify-center mb-8 shadow-[0_0_50px_rgba(52,211,153,0.15)] relative">
+               <div className="absolute inset-0 bg-gradient-to-tr from-emerald-400 to-cyan-500 rounded-full blur-xl opacity-20 animate-pulse" />
+               <Sparkles size={48} className="text-emerald-400 relative z-10" />
             </div>
-            <p className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-white/40 tracking-tight">What do you want to play?</p>
-            <p className="text-white/50 font-medium mt-2">Search for artists, songs, or podcasts</p>
+            <p className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/50 tracking-tight">Discover New Music</p>
+            <p className="text-white/50 font-medium mt-3 text-lg">Search for your favorite tracks, artists, or podcasts</p>
           </div>
         ) : activeTab === "all" ? (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-6">
             {allData.topMatches.length > 0 && (
-              <div className="mb-8 contain-content">
-                <h2 className="text-[22px] font-black mb-4 px-4 tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-white/60">Best Matches</h2>
-                <div className="flex gap-5 overflow-x-auto hide-scrollbar px-4 snap-x pb-4">
+              <div className="mb-4 contain-content">
+                <div className="flex items-center gap-2 px-6 mb-4">
+                  <Flame className="text-emerald-400" size={24} />
+                  <h2 className="text-[24px] font-black tracking-tight text-white">Top Results</h2>
+                </div>
+                <div className="flex gap-4 overflow-x-auto hide-scrollbar px-6 snap-x pb-4">
                   {allData.topMatches.map((item: any, i: number) => <SearchCard key={`top-${i}`} item={item} onClick={handleItemClick} isGrid={false} />)}
                 </div>
               </div>
@@ -561,13 +594,13 @@ export default function SearchPage() {
             ))}
           </div>
         ) : (
-          <div className="px-4">
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-x-5 gap-y-8 justify-items-center">
+          <div className="px-6">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-x-6 gap-y-8 justify-items-center">
               {results.map((item, index) => <SearchCard ref={index === results.length - 1 ? lastVerticalElementRef : null} key={`${activeTab}-${index}`} item={item} tabType={activeTab} onClick={handleItemClick} isGrid={true} />)}
             </div>
-            <div className="h-16 mt-8 mb-6 flex justify-center items-center w-full">
-              {loadingMore && <Loader2 className="animate-spin text-white/60" size={30} />}
-              {!hasMore && results.length > 0 && <p className="text-sm text-white/40 font-medium tracking-wide">End of results</p>}
+            <div className="h-24 mt-8 flex justify-center items-center w-full">
+              {loadingMore && <Loader2 className="animate-spin text-emerald-400" size={32} />}
+              {!hasMore && results.length > 0 && <p className="text-[15px] text-white/30 font-semibold tracking-wide">You've reached the end</p>}
             </div>
           </div>
         )}

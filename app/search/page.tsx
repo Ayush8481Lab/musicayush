@@ -1,4 +1,4 @@
- "use client";
+"use client";
 
 import React, { useState, useEffect, useRef, useCallback, forwardRef } from "react";
 import { 
@@ -57,7 +57,7 @@ const getImageUrl = (img: any) => {
 const decodeEntities = (text: any) => String(text || "").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
 const getSubtitle = (item: any, type: string) => {
-  if (type === "personalized") return item.artist || item.artists || "Personalised Track";
+  if (type === "foryou") return item.artist || item.artists || "For You Track";
   if (type === "songs" || item.type === "song") {
     if (item.artists?.primary && Array.isArray(item.artists.primary)) return item.artists.primary.map((a: any) => a.name).join(", ");
     if (typeof item.artists === "string") return item.artists;
@@ -80,14 +80,14 @@ const getMatchScore = (t: string, q: string) => {
 };
 
 // ==========================================
-// 3. UI COMPONENTS (Ping-Pong Marquee + Perfect UI)
+// 3. UI COMPONENTS (Ping-Pong Marquee + Strict UI)
 // ==========================================
 
 const PingPongMarquee = ({ text, className, isCentered = false }: { text: string, className: string, isCentered?: boolean }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
   const [distance, setDistance] = useState(0);
-  const safeText = text || ""; // Safety against nulls to prevent deployment crashes
+  const safeText = text || "";
 
   useEffect(() => {
     const checkOverflow = () => {
@@ -104,7 +104,7 @@ const PingPongMarquee = ({ text, className, isCentered = false }: { text: string
     checkOverflow();
     window.addEventListener('resize', checkOverflow);
     return () => window.removeEventListener('resize', checkOverflow);
-  }, [safeText]);
+  },[safeText]);
 
   const style = distance > 0 ? {
     '--distance': `-${distance}px`,
@@ -120,7 +120,7 @@ const PingPongMarquee = ({ text, className, isCentered = false }: { text: string
   );
 };
 
-interface CardProps { item: any; onClick: (item: any, type: string) => void; tabType?: string; }
+interface CardProps { item: any; onClick: (item: any, type: string) => void; tabType?: string; isPro?: boolean; }
 
 const TopHeroCard = ({ item, onClick }: CardProps) => {
   const type = item.type || "song";
@@ -137,7 +137,7 @@ const TopHeroCard = ({ item, onClick }: CardProps) => {
         <img draggable={false} src={getImageUrl(item.image)} alt={title} className="w-full h-full object-cover pointer-events-none" />
       </div>
       <div className="flex flex-col flex-1 justify-center h-full min-w-0">
-        <span className="text-[10px] sm:text-[12px] font-bold uppercase tracking-widest text-emerald-400 mb-1 sm:mb-2">Top Result</span>
+        <span className="text-[10px] sm:text-[12px] font-bold uppercase tracking-widest text-emerald-400 mb-1 sm:mb-2">Top Match</span>
         <PingPongMarquee text={title} className="text-2xl sm:text-4xl font-black text-white leading-tight" />
         <PingPongMarquee text={subtitle} className="text-white/50 font-semibold text-sm sm:text-lg mt-1" />
       </div>
@@ -148,7 +148,7 @@ const TopHeroCard = ({ item, onClick }: CardProps) => {
   );
 };
 
-const TrackRow = forwardRef<HTMLDivElement, CardProps>(({ item, onClick }, ref) => {
+const TrackRow = forwardRef<HTMLDivElement, CardProps>(({ item, onClick, isPro }, ref) => {
   const title = decodeEntities(item.title || item.name || item.song_name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, item.type || "song"));
   return (
@@ -163,7 +163,10 @@ const TrackRow = forwardRef<HTMLDivElement, CardProps>(({ item, onClick }, ref) 
         </div>
       </div>
       <div className="flex flex-col flex-1 min-w-0">
-        <PingPongMarquee text={title} className="text-[15px] sm:text-[16px] font-bold text-white/90" />
+        <div className="flex items-center gap-2">
+          <PingPongMarquee text={title} className="text-[15px] sm:text-[16px] font-bold text-white/90" />
+          {isPro && <Sparkles size={14} className="text-purple-400 flex-shrink-0" />}
+        </div>
         <PingPongMarquee text={subtitle} className="text-[13px] text-white/50 font-medium mt-0.5" />
       </div>
     </div>
@@ -203,31 +206,31 @@ export default function SearchPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionTimer = useRef<NodeJS.Timeout | null>(null);
   const searchActiveRef = useRef<boolean>(false);
-  const CACHE_KEY = "search_page_cache_v8_perfect";
+  const CACHE_KEY = "search_page_cache_v9_foryou";
 
   const [isRestored, setIsRestored] = useState(false);
-  const [query, setQuery] = useState("");
+  const[query, setQuery] = useState("");
   const[debouncedQuery, setDebouncedQuery] = useState(""); 
   const [activeTab, setActiveTab] = useState("all");
 
-  const [allData, setAllData] = useState<any>({ topMatches:[], songs: [], personalized:[], albums:[], playlists:[], artists:[] });
+  const[allData, setAllData] = useState<any>({ topMatches:[], songs: [], foryou:[], albums:[], playlists:[], artists:[] });
   const [results, setResults] = useState<any[]>([]);
-  const [page, setPage] = useState(1);
+  const[page, setPage] = useState(1);
   const[hasMore, setHasMore] = useState(true);
 
   const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const[loadingMore, setLoadingMore] = useState(false);
   
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isListening, setIsListening] = useState(false);
+  const[isListening, setIsListening] = useState(false);
 
   const lastFetched = useRef({ query: "", tab: "all", page: 1 });
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   const tabs =[
     { id: "all", label: "All", icon: LayoutGrid },
-    { id: "personalized", label: "Personalised", icon: Sparkles }, 
+    { id: "foryou", label: "For You", icon: Sparkles, isPremium: true }, 
     { id: "songs", label: "Songs", icon: Music2 },
     { id: "albums", label: "Albums", icon: Disc },
     { id: "playlists", label: "Playlists", icon: ListMusic },
@@ -246,7 +249,7 @@ export default function SearchPage() {
         if (parsed.timestamp && (Date.now() - parsed.timestamp < 8 * 60 * 60 * 1000)) {
           const d = parsed.data;
           setQuery(d.query || ""); setDebouncedQuery(d.debouncedQuery || ""); setActiveTab(d.activeTab || "all");
-          setAllData(d.allData || { topMatches:[], songs:[], personalized:[], albums:[], playlists:[], artists:[] });
+          setAllData(d.allData || { topMatches:[], songs:[], foryou:[], albums:[], playlists:[], artists:[] });
           setResults(d.results ||[]); setPage(d.page || 1); setHasMore(d.hasMore ?? true);
           if (d.lastFetched) lastFetched.current = d.lastFetched;
         } else localStorage.removeItem(CACHE_KEY);
@@ -316,7 +319,7 @@ export default function SearchPage() {
     recognition.start();
   };
 
-  const fetchPersonalizedData = async (searchQuery: string, limit: number, offset: number) => {
+  const fetchForYouData = async (searchQuery: string, limit: number, offset: number) => {
     try {
       const auth = await getAuthData();
       if (!auth || !auth.accessToken) return[];
@@ -324,7 +327,7 @@ export default function SearchPage() {
       const data = await res.json();
       const raw = Array.isArray(data) ? data : (data.results ||[]);
       return raw.map((item: any) => ({
-        ...item, type: "personalized", id: item.spotify_url || Date.now().toString(),
+        ...item, type: "foryou", id: item.spotify_url || Date.now().toString(),
         title: item.song_name || "Unknown Track", name: item.song_name || "Unknown Track",
         artist: item.artist || "Unknown Artist", image: item.image, url: item.spotify_url || ""
       }));
@@ -334,7 +337,7 @@ export default function SearchPage() {
   useEffect(() => {
     if (!isRestored) return;
     if (!debouncedQuery.trim()) {
-      setAllData({ topMatches:[], songs:[], personalized:[], albums: [], playlists:[], artists:[] });
+      setAllData({ topMatches:[], songs:[], foryou:[], albums: [], playlists:[], artists:[] });
       setResults([]); setHasMore(true); lastFetched.current = { query: "", tab: activeTab, page: 1 }; return;
     }
 
@@ -348,12 +351,12 @@ export default function SearchPage() {
 
       try {
         if (activeTab === "all") {
-          const[sRes, aRes, pRes, arRes, persRes] = await Promise.all([
+          const[sRes, aRes, pRes, arRes, forYouRes] = await Promise.all([
             fetch(`https://ayushm-psi.vercel.app/api/search/songs?query=${encodeURIComponent(debouncedQuery)}&page=1`).then(r=>r.json()).catch(()=>({data:[]})),
             fetch(`https://ayushm-psi.vercel.app/api/search/albums?query=${encodeURIComponent(debouncedQuery)}&page=1`).then(r=>r.json()).catch(()=>({data:[]})),
             fetch(`https://ayushm-psi.vercel.app/api/search/playlists?query=${encodeURIComponent(debouncedQuery)}&page=1`).then(r=>r.json()).catch(()=>({data:[]})),
             fetch(`https://ayushm-psi.vercel.app/api/search/artists?query=${encodeURIComponent(debouncedQuery)}&page=1`).then(r=>r.json()).catch(()=>({data:[]})),
-            fetchPersonalizedData(debouncedQuery, 5, 0)
+            fetchForYouData(debouncedQuery, 5, 0)
           ]);
 
           const combined =[
@@ -367,15 +370,15 @@ export default function SearchPage() {
 
           setAllData({ 
             topMatches: sortedMatches.length > 0 ? sortedMatches : combined.slice(0, 4), 
+            foryou: forYouRes ||[], // Placed structurally here
             songs: sRes.data?.results || sRes.data ||[], 
-            personalized: persRes ||[],
             albums: aRes.data?.results || aRes.data ||[], 
             playlists: pRes.data?.results || pRes.data ||[], 
             artists: arRes.data?.results || arRes.data ||[] 
           });
           setHasMore(false);
-        } else if (activeTab === "personalized") {
-          const newData = await fetchPersonalizedData(debouncedQuery, 20, (page - 1) * 20);
+        } else if (activeTab === "foryou") {
+          const newData = await fetchForYouData(debouncedQuery, 20, (page - 1) * 20);
           setResults(prev => (isNewQueryOrTab || page === 1) ? newData : [...prev, ...newData]); setHasMore(newData.length > 0);
         } else {
           const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${activeTab}?query=${encodeURIComponent(debouncedQuery)}&page=${page}`);
@@ -400,9 +403,12 @@ export default function SearchPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[loading, loadingMore, hasMore, activeTab]);
 
+  // --- Perfect Routing / Click Logic ---
   const handleItemClick = async (item: any, passedType?: string) => {
     const type = item.type || passedType || activeTab;
-    if (type === "personalized") {
+    
+    // Logic for playing "For You" fetched tracks
+    if (type === "foryou") {
       const querySong = item.song_name || item.title || item.name || "";
       const queryArtist = item.artist || item.artists || "";
       try {
@@ -412,7 +418,7 @@ export default function SearchPage() {
         const songObj = {
           ...proData, id: proData.PermaUrl || item.id || Date.now().toString(), title: proData.Title || item.title, name: proData.Title || item.name, image: proData.Bannerlink || item.image, artists: proData.Artists || item.artist, primaryArtists: proData.Artists || item.artist, url: proData.PermaUrl || item.url, spotifyUrl: item.spotify_url || item.url, downloadUrl: proData.StreamLinks.map((l: any) => ({ quality: l.quality, url: l.url, link: l.url })), type: "song" 
         };
-        setPlayContext({ type: "Search", name: "Personalised Search" }); setQueue([songObj]); setCurrentSong(songObj); setIsPlaying(true);
+        setPlayContext({ type: "Search", name: "For You" }); setQueue([songObj]); setCurrentSong(songObj); setIsPlaying(true);
       } catch (err) {
         try {
            const ytRes = await fetch(`https://ayushvid.vercel.app/api?q=${encodeURIComponent(`${querySong} ${queryArtist} official video`)}`);
@@ -425,12 +431,21 @@ export default function SearchPage() {
       }
       return;
     }
+
+    // Logic for standard routing (Fixed to prevent page refresh)
     let link = item.url || item.perma_url || item.action || "";
     if (link && !link.startsWith("http")) link = `https://www.jiosaavn.com${link}`;
-    let path = link; try { path = new URL(link).pathname; } catch (e) { path = link.replace("https://www.jiosaavn.com", ""); }
+    let path = link; 
+    try { path = new URL(link).pathname; } catch (e) { path = link.replace("https://www.jiosaavn.com", ""); }
 
-    if (type === "songs" || type === "song") { setPlayContext({ type: "Search" }); setQueue([item]); setCurrentSong(item); setIsPlaying(true); }
-    else if (type === "albums" || type === "album" || type === "playlists" || type === "playlist") router.push(path);
+    if (type === "songs" || type === "song") { 
+      setPlayContext({ type: "Search" }); 
+      setQueue([item]); 
+      setCurrentSong(item); 
+      setIsPlaying(true); 
+    }
+    else if (type === "albums" || type === "album") router.push(path);
+    else if (type === "playlists" || type === "playlist") router.push(path);
     else if (type === "artists" || type === "artist") router.push(`/artist?id=${item.id}`);
   };
 
@@ -521,7 +536,7 @@ export default function SearchPage() {
                     isActive ? "bg-white text-black" : "bg-[#111] text-white/70 border border-[#222] hover:bg-[#1a1a1a]"
                   }`}
                 >
-                  {tab.icon && <tab.icon size={14} />}
+                  {tab.icon && <tab.icon size={14} className={tab.isPremium && !isActive ? "text-purple-400" : ""} />}
                   {tab.label}
                 </button>
               );
@@ -551,12 +566,26 @@ export default function SearchPage() {
                 {allData.topMatches.length > 0 && (
                   <div>
                     <h2 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">
-                      Top Result
+                      Best Match
                     </h2>
                     <TopHeroCard item={allData.topMatches[0]} onClick={handleItemClick} />
                   </div>
                 )}
                 
+                {/* For You Rendered Before Top Songs */}
+                {allData.foryou.length > 0 && (
+                  <div>
+                    <h2 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">
+                      For You
+                    </h2>
+                    <div className="flex flex-col gap-1">
+                      {allData.foryou.slice(0, 4).map((song: any, i: number) => (
+                         <TrackRow key={i} item={song} onClick={handleItemClick} isPro={true} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {allData.songs.length > 0 && (
                   <div>
                     <h2 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">
@@ -564,19 +593,6 @@ export default function SearchPage() {
                     </h2>
                     <div className="flex flex-col gap-1">
                       {allData.songs.slice(0, 4).map((song: any, i: number) => (
-                         <TrackRow key={i} item={song} onClick={handleItemClick} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {allData.personalized.length > 0 && (
-                  <div>
-                    <h2 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">
-                      Personalised Results
-                    </h2>
-                    <div className="flex flex-col gap-1">
-                      {allData.personalized.slice(0, 4).map((song: any, i: number) => (
                          <TrackRow key={i} item={song} onClick={handleItemClick} />
                       ))}
                     </div>
@@ -593,6 +609,19 @@ export default function SearchPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-3 gap-3 sm:gap-4">
                       {allData.albums.slice(0, 6).map((album: any, i: number) => (
                          <MediaGridCard key={i} item={album} onClick={handleItemClick} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {allData.playlists.length > 0 && (
+                  <div>
+                    <h2 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">
+                      Playlists
+                    </h2>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-3 gap-3 sm:gap-4">
+                      {allData.playlists.slice(0, 6).map((playlist: any, i: number) => (
+                         <MediaGridCard key={i} item={playlist} onClick={handleItemClick} />
                       ))}
                     </div>
                   </div>
@@ -616,9 +645,9 @@ export default function SearchPage() {
         ) : (
           
           <div className="pb-10">
-            {activeTab === "songs" || activeTab === "personalized" ? (
+            {activeTab === "songs" || activeTab === "foryou" ? (
               <div className="flex flex-col w-full max-w-3xl mx-auto">
-                {results.map((item, i) => <TrackRow ref={i === results.length - 1 ? lastVerticalElementRef : null} key={i} item={item} onClick={handleItemClick} />)}
+                {results.map((item, i) => <TrackRow ref={i === results.length - 1 ? lastVerticalElementRef : null} key={i} item={item} onClick={handleItemClick} isPro={activeTab === "foryou"} />)}
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">

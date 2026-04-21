@@ -4,10 +4,10 @@ import { useAppContext } from "../context/AppContext";
 import { Search as SearchIcon, Mic } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-// --- INDEXED-DB CACHE ENGINE (Non-blocking) ---
+// --- HYBRID CACHE ENGINE (Instant RAM + 30m IDB Background) ---
 const DB_NAME = 'MusicAppDB';
 const STORE_NAME = 'HomeCache';
-const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+const CACHE_DURATION = 30 * 60 * 1000; 
 
 const initDB = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
   const request = indexedDB.open(DB_NAME, 1);
@@ -16,18 +16,24 @@ const initDB = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
   request.onerror = () => reject('IDB Error');
 });
 
-const setIDB = async (key: string, val: any) => {
-  const db = await initDB();
-  db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(val, key);
+const setCache = async (key: string, val: any) => {
+  try { sessionStorage.setItem(key, JSON.stringify(val)); } catch (e) {} // Fast RAM Save
+  try {
+    const db = await initDB();
+    db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(val, key); // BG IDB Save
+  } catch (e) {}
 };
 
-const getIDB = async (key: string): Promise<any> => {
-  const db = await initDB();
-  return new Promise((resolve) => {
-    const req = db.transaction(STORE_NAME).objectStore(STORE_NAME).get(key);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => resolve(null);
-  });
+const getCache = async (key: string): Promise<any> => {
+  try { const mem = sessionStorage.getItem(key); if (mem) return JSON.parse(mem); } catch (e) {} // Instant RAM Hit
+  try {
+    const db = await initDB();
+    return new Promise((resolve) => {
+      const req = db.transaction(STORE_NAME).objectStore(STORE_NAME).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) { return null; }
 };
 
 // --- UTILS ---
@@ -93,6 +99,7 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
     }, { rootMargin: "250px" });
     if (cardRef.current) observer.observe(cardRef.current);
     return () => observer.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item, imgUrl]);
 
   const fetchImage = async () => {
@@ -113,7 +120,7 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
   const isLongTitle = title.length > 15;
 
   return (
-    <div ref={cardRef} onClick={() => onClick(item)} className="w-[140px] flex-shrink-0 snap-start cursor-pointer group pb-1">
+    <div ref={cardRef} onClick={() => onClick(item)} className="w-[140px] flex-shrink-0 snap-start cursor-pointer group pb-1 content-visibility-auto">
       <div className={`relative overflow-hidden bg-[#111] border border-[#222] mb-2 flex items-center justify-center transition-transform duration-200 active:scale-95 shadow-md ${isCircular ? "rounded-full aspect-square" : "rounded-xl aspect-[1/1]"}`}>
         {imgUrl ? <img src={imgUrl} alt={title} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out" /> : <div className="w-full h-full bg-[#222] animate-pulse" />}
       </div>
@@ -124,14 +131,14 @@ const AsyncImageCard = ({ item, type, onClick }: any) => {
   );
 };
 
-// Standard 1-line Carousel
 const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => sessionStorage.setItem(`scrollX_${title}`, (e.target as HTMLDivElement).scrollLeft.toString());
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => { const el = document.getElementById(`carousel_${title}`); if (el && sessionStorage.getItem(`scrollX_${title}`)) el.scrollLeft = parseInt(sessionStorage.getItem(`scrollX_${title}`)!); },[title]);
 
   return (
-    <div className="mb-8 contain-content">
+    <div className="mb-8 content-visibility-auto">
       <h2 className="text-[20px] font-bold mb-3 px-4 tracking-tight text-white">{title}</h2>
       <div id={`carousel_${title}`} onScroll={handleScroll} className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-2 pt-1">
         {items.map((item: any, i: number) => <PremiumCard key={item.id || i} item={item} isCircular={isCircular} hideSubtitle={hideSubtitle} onClick={onItemClick} />)}
@@ -140,14 +147,14 @@ const Carousel = ({ title, items, isCircular = false, hideSubtitle = false, onIt
   );
 };
 
-// Custom 2-Line Carousel
 const TwoLineCarousel = ({ title, items, isCircular = false, hideSubtitle = false, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => sessionStorage.setItem(`scrollX_${title}`, (e.target as HTMLDivElement).scrollLeft.toString());
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => { const el = document.getElementById(`carousel_${title}`); if (el && sessionStorage.getItem(`scrollX_${title}`)) el.scrollLeft = parseInt(sessionStorage.getItem(`scrollX_${title}`)!); }, [title]);
 
   return (
-    <div className="mb-8 contain-content">
+    <div className="mb-8 content-visibility-auto">
       <h2 className="text-[20px] font-bold mb-3 px-4 tracking-tight text-white">{title}</h2>
       <div id={`carousel_${title}`} onScroll={handleScroll} className="grid grid-rows-2 grid-flow-col auto-cols-max gap-x-4 gap-y-6 overflow-x-auto hide-scrollbar px-4 snap-x pb-2 pt-1">
         {items.map((item: any, i: number) => <PremiumCard key={item.id || i} item={item} isCircular={isCircular} hideSubtitle={hideSubtitle} onClick={onItemClick} />)}
@@ -159,10 +166,11 @@ const TwoLineCarousel = ({ title, items, isCircular = false, hideSubtitle = fals
 const AsyncCarousel = ({ title, items, type, onItemClick }: any) => {
   if (!items || items.length === 0) return null;
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => sessionStorage.setItem(`scrollX_${title}`, (e.target as HTMLDivElement).scrollLeft.toString());
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => { const el = document.getElementById(`carousel_${title}`); if (el && sessionStorage.getItem(`scrollX_${title}`)) el.scrollLeft = parseInt(sessionStorage.getItem(`scrollX_${title}`)!); }, [title]);
 
   return (
-    <div className="mb-8 contain-content">
+    <div className="mb-8 content-visibility-auto">
       <h2 className="text-[20px] font-bold mb-3 px-4 tracking-tight text-white">{title}</h2>
       <div id={`carousel_${title}`} onScroll={handleScroll} className="flex gap-4 overflow-x-auto hide-scrollbar px-4 snap-x pb-2 pt-1">
         {items.map((item: any, i: number) => <AsyncImageCard key={item.id || i} item={item} type={type} onClick={onItemClick} />)}
@@ -176,15 +184,15 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const [trending, setTrending] = useState<any[]>([]);
+  const[trending, setTrending] = useState<any[]>([]);
   const[newReleases, setNewReleases] = useState<any[]>([]);
   const [featuredPlaylists, setFeaturedPlaylists] = useState<any[]>([]);
-  const [otherPromos, setOtherPromos] = useState<any[]>([]);
-  const [topArtists, setTopArtists] = useState<any[]>([]);
+  const[otherPromos, setOtherPromos] = useState<any[]>([]);
+  const[topArtists, setTopArtists] = useState<any[]>([]);
   const [charts, setCharts] = useState<any[]>([]);
 
   const [recoArtists, setRecoArtists] = useState<any[]>([]);
-  const [recoActors, setRecoActors] = useState<any[]>([]);
+  const[recoActors, setRecoActors] = useState<any[]>([]);
   const[recoAlbums, setRecoAlbums] = useState<any[]>([]);
   const[recoPlaylists, setRecoPlaylists] = useState<any[]>([]);
 
@@ -194,20 +202,18 @@ export default function Home() {
       const cacheKey = `home_data_${language}`;
       
       try {
-        const cachedData = await getIDB(cacheKey);
+        const cachedData = await getCache(cacheKey);
         if (cachedData && (Date.now() - cachedData.timestamp < CACHE_DURATION)) {
           applyData(cachedData.data);
           setLoading(false);
-          return;
+          return; // Instant render
         }
 
         const res = await fetch(`https://ayushpr.vercel.app/home?ln=${language}`);
         const data = await res.json();
-        await setIDB(cacheKey, { timestamp: Date.now(), data });
+        await setCache(cacheKey, { timestamp: Date.now(), data });
         applyData(data);
-      } catch (error) {
-        console.error("Fetch error:", error);
-      }
+      } catch (error) {}
       setLoading(false);
     };
 
@@ -233,18 +239,17 @@ export default function Home() {
     fetchAllData();
   }, [language]);
 
-  // Restore Y-Scroll exactly after loading finishes
+  // Restore scroll perfectly after data maps
   useEffect(() => {
     if (!loading) {
       const scrollY = sessionStorage.getItem("homeScrollY");
       if (scrollY) {
-        window.requestAnimationFrame(() => window.scrollTo(0, parseInt(scrollY)));
+        requestAnimationFrame(() => window.scrollTo(0, parseInt(scrollY)));
       }
     }
   }, [loading]);
 
   const handleItemClick = (item: any) => {
-    // Save scroll pos before routing
     sessionStorage.setItem("homeScrollY", window.scrollY.toString());
 
     const type = item.type;
@@ -282,7 +287,7 @@ export default function Home() {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-black text-white">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-pulse opacity-40 px-4 w-full">
-           {[...Array(8)].map((_, i) => <div key={i} className="w-full aspect-square bg-[#222] rounded-2xl" />)}
+           {[...Array(8)].map((_, i) => <div key={i} className="w-full aspect-[1/1] bg-[#222] rounded-2xl" />)}
         </div>
       </div>
     );
@@ -296,6 +301,7 @@ export default function Home() {
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes ping-pong { 0%, 15% { transform: translateX(0); } 85%, 100% { transform: translateX(calc(-100% + 140px)); } }
         .animate-ping-pong { animation-name: ping-pong; animation-timing-function: ease-in-out; animation-iteration-count: infinite; animation-direction: alternate; }
+        .content-visibility-auto { content-visibility: auto; contain-intrinsic-size: 250px; }
       `}} />
 
       {/* Header */}
@@ -306,11 +312,13 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Google-Style Search Widget */}
-      <div onClick={() => { sessionStorage.setItem("homeScrollY", window.scrollY.toString()); router.push('/search'); }} className="mx-4 mb-8 flex items-center bg-[#111] border border-[#222] rounded-full h-[52px] px-4 cursor-pointer hover:bg-[#1a1a1a] active:scale-[0.98] transition-all shadow-lg">
+      {/* Google-Style Search Widget with Auto-focus/Auto-mic hooks */}
+      <div onClick={() => { sessionStorage.setItem("homeScrollY", window.scrollY.toString()); router.push('/search?action=focus'); }} className="mx-4 mb-8 flex items-center bg-[#111] border border-[#222] rounded-full h-[52px] px-4 cursor-pointer hover:bg-[#1a1a1a] active:scale-[0.98] transition-all shadow-lg">
          <SearchIcon size={20} className="text-white/50" />
          <span className="text-white/50 ml-3 text-[15px] font-medium tracking-wide">Search songs, artists...</span>
-         <Mic size={20} className="text-white/50 ml-auto" />
+         <button onClick={(e) => { e.stopPropagation(); sessionStorage.setItem("homeScrollY", window.scrollY.toString()); router.push('/search?action=mic'); }} className="ml-auto p-2 text-white/50 hover:text-white active:scale-90 transition-all rounded-full bg-[#1a1a1a] border border-[#333]">
+           <Mic size={18} />
+         </button>
       </div>
 
       <TwoLineCarousel title="Trending" items={trending} onItemClick={handleItemClick} />

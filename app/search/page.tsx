@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef } from "react";
 import { 
   Search as SearchIcon, Loader2, Music2, Disc, ListMusic, 
-  User, X, Mic, Play, Flame, LayoutGrid, AudioWaveform
+  User, X, Mic, Play, LayoutGrid, AudioWaveform, Sparkles
 } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 import { useRouter } from "next/navigation";
@@ -57,7 +57,7 @@ const getImageUrl = (img: any) => {
 const decodeEntities = (text: any) => String(text || "").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
 const getSubtitle = (item: any, type: string) => {
-  if (type === "pro") return item.artist || item.artists || "Pro Track";
+  if (type === "personalized") return item.artist || item.artists || "Personalised Track";
   if (type === "songs" || item.type === "song") {
     if (item.artists?.primary && Array.isArray(item.artists.primary)) return item.artists.primary.map((a: any) => a.name).join(", ");
     if (typeof item.artists === "string") return item.artists;
@@ -80,23 +80,47 @@ const getMatchScore = (t: string, q: string) => {
 };
 
 // ==========================================
-// 3. UI COMPONENTS (Black Theme + Marquee + No Select)
+// 3. UI COMPONENTS (Ping-Pong Marquee + Perfect UI)
 // ==========================================
 
-const MarqueeText = ({ text, className, sub = false }: { text: string, className: string, sub?: boolean }) => {
-  const isLong = text.length > (sub ? 25 : 18);
-  if (!isLong) return <span className={`truncate block w-full ${className}`}>{text}</span>;
+const PingPongMarquee = ({ text, className, isCentered = false }: { text: string, className: string, isCentered?: boolean }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [distance, setDistance] = useState(0);
+  const safeText = text || ""; // Safety against nulls to prevent deployment crashes
+
+  useEffect(() => {
+    const checkOverflow = () => {
+      if (containerRef.current && textRef.current) {
+        const cWidth = containerRef.current.clientWidth;
+        const sWidth = textRef.current.scrollWidth;
+        if (sWidth > cWidth) {
+          setDistance(sWidth - cWidth);
+        } else {
+          setDistance(0);
+        }
+      }
+    };
+    checkOverflow();
+    window.addEventListener('resize', checkOverflow);
+    return () => window.removeEventListener('resize', checkOverflow);
+  }, [safeText]);
+
+  const style = distance > 0 ? {
+    '--distance': `-${distance}px`,
+    animation: `ping-pong ${Math.max(3, safeText.length * 0.12)}s ease-in-out infinite alternate`,
+  } as React.CSSProperties : {};
+
   return (
-    <div className={`marquee-wrapper w-full ${className}`}>
-      <div className="marquee-content inline-block">
-        <span className="pr-10">{text}</span>
-        <span className="pr-10">{text}</span>
-      </div>
+    <div ref={containerRef} className={`overflow-hidden whitespace-nowrap w-full ${isCentered ? 'text-center' : 'text-left'} ${className}`}>
+      <span ref={textRef} className={`inline-block ${distance > 0 ? 'animate-ping-pong' : ''}`} style={style}>
+        {safeText}
+      </span>
     </div>
   );
 };
 
-interface CardProps { item: any; onClick: (item: any, type: string) => void; tabType?: string; isPro?: boolean; }
+interface CardProps { item: any; onClick: (item: any, type: string) => void; tabType?: string; }
 
 const TopHeroCard = ({ item, onClick }: CardProps) => {
   const type = item.type || "song";
@@ -113,9 +137,9 @@ const TopHeroCard = ({ item, onClick }: CardProps) => {
         <img draggable={false} src={getImageUrl(item.image)} alt={title} className="w-full h-full object-cover pointer-events-none" />
       </div>
       <div className="flex flex-col flex-1 justify-center h-full min-w-0">
-        <span className="text-[10px] sm:text-[12px] font-bold uppercase tracking-widest text-emerald-400 mb-1 sm:mb-2">Top Match</span>
-        <MarqueeText text={title} className="text-2xl sm:text-4xl font-black text-white" />
-        <MarqueeText text={subtitle} sub={true} className="text-white/50 font-semibold text-sm sm:text-lg mt-1" />
+        <span className="text-[10px] sm:text-[12px] font-bold uppercase tracking-widest text-emerald-400 mb-1 sm:mb-2">Top Result</span>
+        <PingPongMarquee text={title} className="text-2xl sm:text-4xl font-black text-white leading-tight" />
+        <PingPongMarquee text={subtitle} className="text-white/50 font-semibold text-sm sm:text-lg mt-1" />
       </div>
       <div className="absolute right-4 bottom-4 w-12 h-12 bg-white text-black rounded-full items-center justify-center hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity">
         <Play size={20} className="fill-black ml-1" />
@@ -124,7 +148,7 @@ const TopHeroCard = ({ item, onClick }: CardProps) => {
   );
 };
 
-const TrackRow = forwardRef<HTMLDivElement, CardProps>(({ item, onClick, isPro }, ref) => {
+const TrackRow = forwardRef<HTMLDivElement, CardProps>(({ item, onClick }, ref) => {
   const title = decodeEntities(item.title || item.name || item.song_name || "Unknown");
   const subtitle = decodeEntities(getSubtitle(item, item.type || "song"));
   return (
@@ -139,11 +163,8 @@ const TrackRow = forwardRef<HTMLDivElement, CardProps>(({ item, onClick, isPro }
         </div>
       </div>
       <div className="flex flex-col flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <MarqueeText text={title} className="text-[15px] sm:text-[16px] font-bold text-white" />
-          {isPro && <Flame size={14} className="text-pink-500 flex-shrink-0" />}
-        </div>
-        <MarqueeText text={subtitle} sub={true} className="text-[13px] text-white/50 font-medium mt-0.5" />
+        <PingPongMarquee text={title} className="text-[15px] sm:text-[16px] font-bold text-white/90" />
+        <PingPongMarquee text={subtitle} className="text-[13px] text-white/50 font-medium mt-0.5" />
       </div>
     </div>
   );
@@ -160,16 +181,18 @@ const MediaGridCard = forwardRef<HTMLDivElement, CardProps>(({ item, tabType, on
     <div ref={ref} onClick={() => onClick(item, type)} className="flex flex-col gap-2 sm:gap-3 group active:scale-[0.95] transition-all duration-200 cursor-pointer">
       <div className={`relative w-full aspect-square overflow-hidden bg-[#111] border border-[#222] ${isCircular ? "rounded-full" : "rounded-xl sm:rounded-2xl"}`}>
         <img draggable={false} src={getImageUrl(item.image)} alt={title} loading="lazy" className="w-full h-full object-cover pointer-events-none" />
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <Play size={24} className="text-white fill-white" />
+        </div>
       </div>
-      <div className="flex flex-col px-1">
-        <MarqueeText text={title} className="text-[13px] sm:text-[15px] font-bold text-white" />
-        {subtitle && <MarqueeText text={subtitle} sub={true} className="text-[11px] sm:text-[13px] font-medium text-white/50" />}
+      <div className={`flex flex-col px-1 ${isCircular ? "items-center" : "items-start"}`}>
+        <PingPongMarquee text={title} isCentered={isCircular} className="text-[13px] sm:text-[14px] font-bold text-white/90 leading-snug w-full" />
+        {subtitle && <PingPongMarquee text={subtitle} isCentered={isCircular} className="text-[11px] sm:text-[12px] font-medium text-white/50 mt-0.5 w-full" />}
       </div>
     </div>
   );
 });
 MediaGridCard.displayName = "MediaGridCard";
-
 
 // ==========================================
 // 4. MAIN SEARCH PAGE
@@ -180,31 +203,31 @@ export default function SearchPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionTimer = useRef<NodeJS.Timeout | null>(null);
   const searchActiveRef = useRef<boolean>(false);
-  const CACHE_KEY = "search_page_cache_v6_black";
+  const CACHE_KEY = "search_page_cache_v8_perfect";
 
-  const[isRestored, setIsRestored] = useState(false);
+  const [isRestored, setIsRestored] = useState(false);
   const [query, setQuery] = useState("");
   const[debouncedQuery, setDebouncedQuery] = useState(""); 
   const [activeTab, setActiveTab] = useState("all");
 
-  const[allData, setAllData] = useState<any>({ topMatches:[], songs: [], pro: [], albums:[], playlists:[], artists:[] });
-  const[results, setResults] = useState<any[]>([]);
-  const[page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [allData, setAllData] = useState<any>({ topMatches:[], songs: [], personalized:[], albums:[], playlists:[], artists:[] });
+  const [results, setResults] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const[hasMore, setHasMore] = useState(true);
 
   const [loading, setLoading] = useState(false);
-  const[loadingMore, setLoadingMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   
-  const[suggestions, setSuggestions] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const[isListening, setIsListening] = useState(false);
+  const [isListening, setIsListening] = useState(false);
 
   const lastFetched = useRef({ query: "", tab: "all", page: 1 });
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   const tabs =[
     { id: "all", label: "All", icon: LayoutGrid },
-    { id: "pro", label: "Pro", icon: Flame, isPremium: true }, 
+    { id: "personalized", label: "Personalised", icon: Sparkles }, 
     { id: "songs", label: "Songs", icon: Music2 },
     { id: "albums", label: "Albums", icon: Disc },
     { id: "playlists", label: "Playlists", icon: ListMusic },
@@ -212,7 +235,9 @@ export default function SearchPage() {
   ];
 
   // --- Hydration & Caching ---
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { getAuthData(); },[]);
+  
   useEffect(() => {
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
@@ -221,7 +246,7 @@ export default function SearchPage() {
         if (parsed.timestamp && (Date.now() - parsed.timestamp < 8 * 60 * 60 * 1000)) {
           const d = parsed.data;
           setQuery(d.query || ""); setDebouncedQuery(d.debouncedQuery || ""); setActiveTab(d.activeTab || "all");
-          setAllData(d.allData || { topMatches: [], songs:[], pro:[], albums:[], playlists:[], artists:[] });
+          setAllData(d.allData || { topMatches:[], songs:[], personalized:[], albums:[], playlists:[], artists:[] });
           setResults(d.results ||[]); setPage(d.page || 1); setHasMore(d.hasMore ?? true);
           if (d.lastFetched) lastFetched.current = d.lastFetched;
         } else localStorage.removeItem(CACHE_KEY);
@@ -233,6 +258,7 @@ export default function SearchPage() {
   useEffect(() => {
     if (!isRestored) return;
     localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data: { query, debouncedQuery, activeTab, allData, results, page, hasMore, lastFetched: lastFetched.current } }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[query, debouncedQuery, activeTab, allData, results, page, hasMore, isRestored]);
 
   // --- Strict Suggestions Engine ---
@@ -270,13 +296,13 @@ export default function SearchPage() {
     if (e.key === 'Enter') executeSearch(query);
   };
 
-  // --- Silent Voice Search Setup ---
+  // --- Voice Search ---
   const handleVoiceSearch = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
-    recognition.continuous = true; // Prevents aggressive OS native popups on some browsers
+    recognition.continuous = true; 
     recognition.interimResults = false;
     
     recognition.onstart = () => setIsListening(true);
@@ -285,11 +311,12 @@ export default function SearchPage() {
       executeSearch(transcript);
       recognition.stop();
     };
+    recognition.onerror = () => setIsListening(false);
     recognition.onend = () => setIsListening(false);
     recognition.start();
   };
 
-  const fetchProData = async (searchQuery: string, limit: number, offset: number) => {
+  const fetchPersonalizedData = async (searchQuery: string, limit: number, offset: number) => {
     try {
       const auth = await getAuthData();
       if (!auth || !auth.accessToken) return[];
@@ -297,7 +324,7 @@ export default function SearchPage() {
       const data = await res.json();
       const raw = Array.isArray(data) ? data : (data.results ||[]);
       return raw.map((item: any) => ({
-        ...item, type: "pro", id: item.spotify_url || Date.now().toString(),
+        ...item, type: "personalized", id: item.spotify_url || Date.now().toString(),
         title: item.song_name || "Unknown Track", name: item.song_name || "Unknown Track",
         artist: item.artist || "Unknown Artist", image: item.image, url: item.spotify_url || ""
       }));
@@ -307,7 +334,7 @@ export default function SearchPage() {
   useEffect(() => {
     if (!isRestored) return;
     if (!debouncedQuery.trim()) {
-      setAllData({ topMatches:[], songs:[], pro:[], albums: [], playlists:[], artists:[] });
+      setAllData({ topMatches:[], songs:[], personalized:[], albums: [], playlists:[], artists:[] });
       setResults([]); setHasMore(true); lastFetched.current = { query: "", tab: activeTab, page: 1 }; return;
     }
 
@@ -321,12 +348,12 @@ export default function SearchPage() {
 
       try {
         if (activeTab === "all") {
-          const[sRes, aRes, pRes, arRes, proRes] = await Promise.all([
+          const[sRes, aRes, pRes, arRes, persRes] = await Promise.all([
             fetch(`https://ayushm-psi.vercel.app/api/search/songs?query=${encodeURIComponent(debouncedQuery)}&page=1`).then(r=>r.json()).catch(()=>({data:[]})),
             fetch(`https://ayushm-psi.vercel.app/api/search/albums?query=${encodeURIComponent(debouncedQuery)}&page=1`).then(r=>r.json()).catch(()=>({data:[]})),
             fetch(`https://ayushm-psi.vercel.app/api/search/playlists?query=${encodeURIComponent(debouncedQuery)}&page=1`).then(r=>r.json()).catch(()=>({data:[]})),
             fetch(`https://ayushm-psi.vercel.app/api/search/artists?query=${encodeURIComponent(debouncedQuery)}&page=1`).then(r=>r.json()).catch(()=>({data:[]})),
-            fetchProData(debouncedQuery, 5, 0)
+            fetchPersonalizedData(debouncedQuery, 5, 0)
           ]);
 
           const combined =[
@@ -340,15 +367,15 @@ export default function SearchPage() {
 
           setAllData({ 
             topMatches: sortedMatches.length > 0 ? sortedMatches : combined.slice(0, 4), 
-            songs: sRes.data?.results || sRes.data || [], 
-            pro: proRes ||[],
+            songs: sRes.data?.results || sRes.data ||[], 
+            personalized: persRes ||[],
             albums: aRes.data?.results || aRes.data ||[], 
             playlists: pRes.data?.results || pRes.data ||[], 
             artists: arRes.data?.results || arRes.data ||[] 
           });
           setHasMore(false);
-        } else if (activeTab === "pro") {
-          const newData = await fetchProData(debouncedQuery, 20, (page - 1) * 20);
+        } else if (activeTab === "personalized") {
+          const newData = await fetchPersonalizedData(debouncedQuery, 20, (page - 1) * 20);
           setResults(prev => (isNewQueryOrTab || page === 1) ? newData : [...prev, ...newData]); setHasMore(newData.length > 0);
         } else {
           const res = await fetch(`https://ayushm-psi.vercel.app/api/search/${activeTab}?query=${encodeURIComponent(debouncedQuery)}&page=${page}`);
@@ -360,6 +387,7 @@ export default function SearchPage() {
       } catch (err) {} finally { setLoading(false); setLoadingMore(false); }
     };
     fetchData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[debouncedQuery, activeTab, page, isRestored]);
 
   const lastVerticalElementRef = useCallback((node: HTMLDivElement | null) => {
@@ -369,11 +397,12 @@ export default function SearchPage() {
       if (entries[0].isIntersecting && hasMore) setPage(prev => prev + 1);
     }, { rootMargin: "400px", threshold: 0 });
     if (node) observerRef.current.observe(node);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[loading, loadingMore, hasMore, activeTab]);
 
   const handleItemClick = async (item: any, passedType?: string) => {
     const type = item.type || passedType || activeTab;
-    if (type === "pro") {
+    if (type === "personalized") {
       const querySong = item.song_name || item.title || item.name || "";
       const queryArtist = item.artist || item.artists || "";
       try {
@@ -383,7 +412,7 @@ export default function SearchPage() {
         const songObj = {
           ...proData, id: proData.PermaUrl || item.id || Date.now().toString(), title: proData.Title || item.title, name: proData.Title || item.name, image: proData.Bannerlink || item.image, artists: proData.Artists || item.artist, primaryArtists: proData.Artists || item.artist, url: proData.PermaUrl || item.url, spotifyUrl: item.spotify_url || item.url, downloadUrl: proData.StreamLinks.map((l: any) => ({ quality: l.quality, url: l.url, link: l.url })), type: "song" 
         };
-        setPlayContext({ type: "Search", name: "Pro Search" }); setQueue([songObj]); setCurrentSong(songObj); setIsPlaying(true);
+        setPlayContext({ type: "Search", name: "Personalised Search" }); setQueue([songObj]); setCurrentSong(songObj); setIsPlaying(true);
       } catch (err) {
         try {
            const ytRes = await fetch(`https://ayushvid.vercel.app/api?q=${encodeURIComponent(`${querySong} ${queryArtist} official video`)}`);
@@ -410,16 +439,21 @@ export default function SearchPage() {
   return (
     <main 
       className="min-h-screen pb-32 font-sans overflow-x-hidden relative bg-black text-white"
-      style={{ WebkitUserSelect: 'none', userSelect: 'none', touchAction: 'pan-y' }} // Locks zoom & text selection natively
+      style={{ WebkitUserSelect: 'none', userSelect: 'none', touchAction: 'pan-y' }}
     >
-      {/* 🚀 CSS INJECTIONS FOR MARQUEE AND NO-SELECT */}
       <style dangerouslySetInnerHTML={{__html:`
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        .marquee-wrapper { overflow: hidden; white-space: nowrap; }
-        .marquee-content { display: inline-block; animation: marquee 10s linear infinite; }
-        .group:hover .marquee-content { animation-duration: 6s; }
-        @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        @keyframes ping-pong {
+          0%, 15% { transform: translateX(0); }
+          85%, 100% { transform: translateX(var(--distance, 0)); }
+        }
+        .animate-ping-pong {
+          animation-name: ping-pong;
+          animation-timing-function: ease-in-out;
+          animation-iteration-count: infinite;
+          animation-direction: alternate;
+        }
       `}} />
 
       {/* 🔮 STATIC, HIGH-PERFORMANCE HEADER (OLED BLACK) */}
@@ -444,8 +478,15 @@ export default function SearchPage() {
                 </button>
               )}
               <div className="w-px h-6 bg-[#333] mx-2" />
-              <button onClick={handleVoiceSearch} className={`p-2 rounded-full transition-all duration-300 ${isListening ? 'text-red-500 animate-pulse' : 'text-white/50 hover:text-white'}`}>
-                <Mic size={20} />
+              
+              <button 
+                onClick={handleVoiceSearch} 
+                className={`relative flex items-center justify-center w-9 h-9 rounded-full transition-all duration-300 ${isListening ? 'text-emerald-400' : 'text-white/50 hover:text-white hover:bg-[#222]'}`}
+              >
+                {isListening && (
+                  <span className="absolute inset-0 rounded-full border-2 border-emerald-400 animate-ping opacity-60"></span>
+                )}
+                <Mic size={20} className="relative z-10" />
               </button>
             </div>
 
@@ -480,7 +521,7 @@ export default function SearchPage() {
                     isActive ? "bg-white text-black" : "bg-[#111] text-white/70 border border-[#222] hover:bg-[#1a1a1a]"
                   }`}
                 >
-                  {tab.icon && <tab.icon size={14} className={tab.isPremium && !isActive ? "text-pink-500" : ""} />}
+                  {tab.icon && <tab.icon size={14} />}
                   {tab.label}
                 </button>
               );
@@ -510,7 +551,7 @@ export default function SearchPage() {
                 {allData.topMatches.length > 0 && (
                   <div>
                     <h2 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">
-                      Best Match
+                      Top Result
                     </h2>
                     <TopHeroCard item={allData.topMatches[0]} onClick={handleItemClick} />
                   </div>
@@ -529,14 +570,14 @@ export default function SearchPage() {
                   </div>
                 )}
 
-                {allData.pro.length > 0 && (
+                {allData.personalized.length > 0 && (
                   <div>
                     <h2 className="flex items-center gap-2 text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">
-                      Pro Tracks
+                      Personalised Results
                     </h2>
                     <div className="flex flex-col gap-1">
-                      {allData.pro.slice(0, 4).map((song: any, i: number) => (
-                         <TrackRow key={i} item={song} onClick={handleItemClick} isPro={true} />
+                      {allData.personalized.slice(0, 4).map((song: any, i: number) => (
+                         <TrackRow key={i} item={song} onClick={handleItemClick} />
                       ))}
                     </div>
                   </div>
@@ -575,9 +616,9 @@ export default function SearchPage() {
         ) : (
           
           <div className="pb-10">
-            {activeTab === "songs" || activeTab === "pro" ? (
+            {activeTab === "songs" || activeTab === "personalized" ? (
               <div className="flex flex-col w-full max-w-3xl mx-auto">
-                {results.map((item, i) => <TrackRow ref={i === results.length - 1 ? lastVerticalElementRef : null} key={i} item={item} onClick={handleItemClick} isPro={activeTab === "pro"} />)}
+                {results.map((item, i) => <TrackRow ref={i === results.length - 1 ? lastVerticalElementRef : null} key={i} item={item} onClick={handleItemClick} />)}
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
@@ -595,4 +636,4 @@ export default function SearchPage() {
 
     </main>
   );
-  }
+}

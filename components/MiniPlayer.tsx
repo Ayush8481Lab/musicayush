@@ -388,7 +388,7 @@ export default function MiniPlayer() {
   const prefetchedYtIdRef = useRef<string | null>(null); 
   const iframeInitialTimeRef = useRef<number>(0); 
   const videoStartTimeRef = useRef<number>(0);    
-  const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const[isVideoLoading, setIsVideoLoading] = useState(false);
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
 
   const fetchingRecsRef = useRef(false);
@@ -408,6 +408,7 @@ export default function MiniPlayer() {
   const isCanvasEnabledRef = useRef(true);
   const isLyricsEnabledRef = useRef(true);
 
+  // PREMIUM AUDIO CONTEXT REFS
   const audioCtxRef = useRef<any>(null);
   const isAudioPremiumSetupRef = useRef(false);
 
@@ -424,6 +425,7 @@ export default function MiniPlayer() {
             else if (showTimerMenu) setShowTimerMenu(false);
             else if (showQueue) setShowQueue(false);
             else if (isExpanded) setIsExpanded(false);
+            // Push back to history so next native back continues gracefully
             window.history.pushState(null, '', window.location.href);
         }
     };
@@ -437,10 +439,12 @@ export default function MiniPlayer() {
     }
   }, [isExpanded, showQueue, showSettingsMenu, showTimerMenu]);
 
-  // --- LOUD/PREMIUM AUDIO QUALITY ENHANCER ---
+  // --- PREMIUM HI-FI AUDIO QUALITY ENHANCER (Spotify/Apple Music Equivalent) ---
   useEffect(() => {
     if (!audioRef.current) return;
     const audio = audioRef.current;
+    
+    // Enable CORS to allow Web Audio API source creation across CDNs
     audio.crossOrigin = "anonymous";
     
     const initAudioContext = () => {
@@ -455,22 +459,47 @@ export default function MiniPlayer() {
             audioCtxRef.current = ctx;
             const source = ctx.createMediaElementSource(audio);
             
-            const bassEQ = ctx.createBiquadFilter();
-            bassEQ.type = "lowshelf"; bassEQ.frequency.value = 100; bassEQ.gain.value = 3;
+            // 1. Sub-bass Sweetening (Deep & Punchy, like Apple Music)
+            const subBassEQ = ctx.createBiquadFilter();
+            subBassEQ.type = "lowshelf"; 
+            subBassEQ.frequency.value = 60; 
+            subBassEQ.gain.value = 1.5;
             
-            const trebleEQ = ctx.createBiquadFilter();
-            trebleEQ.type = "highshelf"; trebleEQ.frequency.value = 8000; trebleEQ.gain.value = 2;
+            // 2. Vocal Presence & Crispness
+            const vocalPresence = ctx.createBiquadFilter();
+            vocalPresence.type = "peaking"; 
+            vocalPresence.frequency.value = 3000; 
+            vocalPresence.Q.value = 1.0; 
+            vocalPresence.gain.value = 1.0;
             
+            // 3. Air/Treble Clarity
+            const airEQ = ctx.createBiquadFilter();
+            airEQ.type = "highshelf"; 
+            airEQ.frequency.value = 10000; 
+            airEQ.gain.value = 1.5;
+            
+            // 4. Studio Transparent Mastering Limiter (Zero harsh clipping, just smooth normalization)
             const compressor = ctx.createDynamicsCompressor();
-            compressor.threshold.value = -24; compressor.knee.value = 30; compressor.ratio.value = 12;
-            compressor.attack.value = 0.003; compressor.release.value = 0.25;
+            compressor.threshold.value = -3; // Only catch the loudest peaks
+            compressor.knee.value = 5;       // Soft musical knee
+            compressor.ratio.value = 4;      // Natural compression
+            compressor.attack.value = 0.01;  // Fast catch
+            compressor.release.value = 0.1;  // Quick smooth release
             
-            const makeUpGain = ctx.createGain(); makeUpGain.gain.value = 2.0;
+            // 5. Subtle Makeup Gain (Restores volume naturally without destroying dynamics)
+            const makeUpGain = ctx.createGain(); 
+            makeUpGain.gain.value = 1.05;
             
-            source.connect(bassEQ); bassEQ.connect(trebleEQ);
-            trebleEQ.connect(compressor); compressor.connect(makeUpGain); makeUpGain.connect(ctx.destination);
+            // Connect the Master Chain
+            source.connect(subBassEQ); 
+            subBassEQ.connect(vocalPresence);
+            vocalPresence.connect(airEQ);
+            airEQ.connect(compressor); 
+            compressor.connect(makeUpGain); 
+            makeUpGain.connect(ctx.destination);
+            
             isAudioPremiumSetupRef.current = true;
-        } catch(e) { console.warn("Premium Audio Config Error", e); }
+        } catch(e) { console.warn("Premium Audio Config Error (CORS/Browser fallback active)", e); }
     };
 
     const handlePlay = () => initAudioContext();
@@ -478,18 +507,25 @@ export default function MiniPlayer() {
     return () => audio.removeEventListener('play', handlePlay);
   },[]);
 
-  // --- CLEAN SHARE LINK FUNCTION ---
+  // --- CLEAN RAW LINK SHARE ---
   const handleShareSong = async () => {
     try {
       let path = currentSong.perma_url || currentSong.url || "";
       if (path && path.includes('jiosaavn.com')) path = new URL(path).pathname;
       const vId = ytVideoId || currentSong.prefetchedYtId || '';
       const sId = spotifyId || currentSong.spotifyId || '';
+      
+      // Clean, exact URL for sharing
       const shareUrl = `${window.location.origin}/play${path}?token=${vId}&signature=${sId}`;
 
       if (navigator.share) {
-        try { await navigator.share({ url: shareUrl }); } 
-        catch(e) { await navigator.clipboard.writeText(shareUrl); alert("Link copied to clipboard!"); }
+        try { 
+            await navigator.share({ url: shareUrl }); 
+        } 
+        catch(e) { 
+            await navigator.clipboard.writeText(shareUrl); 
+            alert("Link copied to clipboard!"); 
+        }
       } else { 
         await navigator.clipboard.writeText(shareUrl); 
         alert("Link copied to clipboard!"); 
@@ -1233,7 +1269,7 @@ export default function MiniPlayer() {
     }
   };
 
-  // HIGHLY OPTIMIZED CPU-FRIENDLY CSS-VAR WORD SYNC ENGINE
+  // HIGHLY OPTIMIZED APPLE-MUSIC STYLE WORD SYNC ENGINE
   useEffect(() => {
     if (!isWordSyncEnabled || !isLyricsEnabled || isVideoMode || activeLyricIndex < 0 || !lyrics[activeLyricIndex]) {
         return;
@@ -1285,11 +1321,11 @@ export default function MiniPlayer() {
                             wordNode.style.setProperty('--p', '0%');
                         }
                     } else {
+                        // Smooth floating-point math applied for Apple-style rollout (throttled at 0.2% diff for GPU stability)
                         const localProgress = ((boundedProgress - wordStartPct) / (wordEndPct - wordStartPct)) * 100;
-                        const roundedProgress = Math.round(localProgress);
-                        if (wordNode._lastProg !== roundedProgress) {
-                            wordNode._lastProg = roundedProgress;
-                            wordNode.style.setProperty('--p', `${roundedProgress}%`);
+                        if (Math.abs((wordNode._lastProg || 0) - localProgress) > 0.2) {
+                            wordNode._lastProg = localProgress;
+                            wordNode.style.setProperty('--p', `${localProgress.toFixed(1)}%`);
                         }
                     }
                     charAccumulator += wordLen;
@@ -1393,7 +1429,7 @@ export default function MiniPlayer() {
             item.style.boxShadow = 'none';
         }
     });
-  }, [upcomingQueue.length]);
+  },[upcomingQueue.length]);
 
   const handleDragStart = (e: React.TouchEvent | React.MouseEvent, index: number) => {
     if (isQueueEditMode) return;
@@ -1444,7 +1480,7 @@ export default function MiniPlayer() {
     if (activeIndex !== -1 && targetIndex !== -1 && activeIndex !== targetIndex) {
       setUpcomingQueue(prev => {
          const arr =[...prev];
-         const [moved] = arr.splice(activeIndex, 1);
+         const[moved] = arr.splice(activeIndex, 1);
          arr.splice(targetIndex, 0, moved);
          return arr;
       });
@@ -1805,10 +1841,11 @@ export default function MiniPlayer() {
         .no-select-text { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
         .queue-item { transform-origin: center; will-change: transform; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
         .lyric-word-sync {
-            background: linear-gradient(to right, #ffffff var(--p, 0%), rgba(255,255,255,0.3) var(--p, 0%));
+            background: linear-gradient(to right, #ffffff calc(var(--p, 0%) - 20%), rgba(255,255,255,0.3) calc(var(--p, 0%) + 20%));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             color: transparent;
+            will-change: background;
         }
       `}} />
 
@@ -1978,7 +2015,7 @@ export default function MiniPlayer() {
                    <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Actions</span>
                    <div className="flex flex-col bg-[#1e1e1e] rounded-[16px] overflow-hidden">
                       <button onClick={handleShareSong} className="w-full flex items-center justify-between px-5 py-4 transition-colors active:bg-white/10 border-b border-white/5">
-                        <div className="flex flex-col items-start text-left"><span className="text-white font-bold text-[15px]">Share Song</span><span className="text-white/50 text-[12px] font-medium mt-0.5">Share exact audio, video, & Spotify links</span></div><Share2 size={22} className="text-white/80" />
+                        <div className="flex flex-col items-start text-left"><span className="text-white font-bold text-[15px]">Share Song</span><span className="text-white/50 text-[12px] font-medium mt-0.5">Share exact link</span></div><Share2 size={22} className="text-white/80" />
                       </button>
                       <div className="flex w-full divide-x divide-white/5">
                         <button onClick={handleDownloadMusicInit} className="flex-1 flex flex-col items-center justify-center py-4 transition-colors active:bg-white/10 hover:bg-white/5 group"><Download size={22} className="text-white/80 mb-1 group-hover:text-[#1db954] transition-colors" /><span className="text-white font-bold text-[14px]">Music</span></button>

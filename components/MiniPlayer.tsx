@@ -396,7 +396,7 @@ export default function MiniPlayer() {
   const[isSessionRestored, setIsSessionRestored] = useState(false);
   const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   
-  const [selectedQuality, setSelectedQuality] = useState("320");
+  const[selectedQuality, setSelectedQuality] = useState("320");
   const[lineFontSize, setLineFontSize] = useState("Medium");
   const[cardFontSize, setCardFontSize] = useState("Medium");
   const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
@@ -413,6 +413,38 @@ export default function MiniPlayer() {
   const isSongLiked = likedSongs.some((s: any) => s && s.id === currentSong?.id);
   const handleLikeClick = (e: any) => { e.stopPropagation(); toggleLikeSong(currentSong); };
 
+  const rawTitle = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
+  const rawArtists = currentSong ? decodeEntities(getArtistsText(currentSong)) : "";
+  const rawImage = currentSong ? getImageUrl(currentSong.image) : "";
+
+  const displayTitle = songDetails?.name ? decodeEntities(songDetails.name) : rawTitle;
+  const displayArtists = songDetails ? decodeEntities(getArtistsText(songDetails)) : rawArtists;
+  const displayImage = songDetails?.image ? getImageUrl(songDetails.image) : rawImage;
+
+  // --- MOBILE BACK BUTTON NATIVE HISTORY MANAGER ---
+  const activeLayers = (isExpanded ? 1 : 0) + (isLyricsFullScreen ? 1 : 0) + (showQueue ? 1 : 0) + (showTimerMenu ? 1 : 0) + (dlState.type !== null ? 1 : 0) + (showSettingsMenu ? 1 : 0);
+  const prevLayersRef = useRef(0);
+
+  useEffect(() => {
+      if (activeLayers > prevLayersRef.current) {
+          window.history.pushState({ layer: activeLayers }, '');
+      }
+      prevLayersRef.current = activeLayers;
+  }, [activeLayers]);
+
+  useEffect(() => {
+      const handlePopState = () => {
+          if (showSettingsMenu) setShowSettingsMenu(false);
+          else if (dlState.type !== null) setDlState({ type: null, status: "idle" });
+          else if (showTimerMenu) setShowTimerMenu(false);
+          else if (showQueue) { setShowQueue(false); setIsQueueEditMode(false); }
+          else if (isLyricsFullScreen) setIsLyricsFullScreen(false);
+          else if (isExpanded) setIsExpanded(false);
+      };
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+  },[showSettingsMenu, dlState.type, showTimerMenu, showQueue, isLyricsFullScreen, isExpanded]);
+
   const handleShareSong = async () => {
     try {
       let path = currentSong.perma_url || currentSong.url || "";
@@ -422,16 +454,12 @@ export default function MiniPlayer() {
       const shareUrl = `${window.location.origin}/play${path}?token=${vId}&signature=${sId}`;
 
       const shareData: any = { title: displayTitle, text: `Listen to ${displayTitle} by ${displayArtists}`, url: shareUrl };
-      if (navigator.canShare) {
-        try {
-          if (displayImage) {
-            const response = await fetch(displayImage); const blob = await response.blob();
-            const file = new File([blob], 'cover.jpg', { type: blob.type });
-            if (navigator.canShare({ files:[file] })) shareData.files = [file];
-          }
-        } catch (e) {} 
+      
+      if (navigator.share) {
         await navigator.share(shareData);
-      } else { await navigator.clipboard.writeText(shareUrl); alert("Link copied to clipboard!"); }
+      } else { 
+        await navigator.clipboard.writeText(shareUrl); alert("Link copied to clipboard!"); 
+      }
     } catch (e) { console.error("Error sharing:", e); }
     setShowSettingsMenu(false);
   };
@@ -501,14 +529,6 @@ export default function MiniPlayer() {
   useEffect(() => { isLyricsEnabledRef.current = isLyricsEnabled; if (!isLyricsEnabled) setIsLyricsFullScreen(false); },[isLyricsEnabled]);
   useEffect(() => { if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong)); }, [currentSong]);
   useEffect(() => { if (upcomingQueue && upcomingQueue.length > 0) localStorage.setItem('last_session_queue', JSON.stringify(upcomingQueue)); }, [upcomingQueue]);
-
-  const rawTitle = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
-  const rawArtists = currentSong ? decodeEntities(getArtistsText(currentSong)) : "";
-  const rawImage = currentSong ? getImageUrl(currentSong.image) : "";
-
-  const displayTitle = songDetails?.name ? decodeEntities(songDetails.name) : rawTitle;
-  const displayArtists = songDetails ? decodeEntities(getArtistsText(songDetails)) : rawArtists;
-  const displayImage = songDetails?.image ? getImageUrl(songDetails.image) : rawImage;
   
   const uniqueArtists = useMemo(() => {
     if (!songDetails?.artists) return[];
@@ -809,6 +829,31 @@ export default function MiniPlayer() {
          } catch (e) {}
       }
 
+      // INSTANT ZERO-LATENCY CACHE HIT BYPASSING API
+      if (currentSong.downloadUrl && currentSong.downloadUrl.length > 0 && !currentSong.isProFallback) {
+          const urls = generateAllQualities(currentSong.downloadUrl);
+          const targetQ = selectedQuality + "kbps";
+          const match = urls.find((u: any) => u.quality === targetQ) || urls.find((u: any) => u.quality?.includes(selectedQuality));
+          const finalUrl = match ? match.url : urls[urls.length - 1].url;
+          if (isCurrent) {
+              setAudioUrl(finalUrl);
+              setLoading(false);
+          }
+          // Fetch additional details silently in background
+          try {
+             const fetchLink = encodeURIComponent(currentSong.url || currentSong.perma_url || "");
+             fetch(`https://ayushm-psi.vercel.app/api/songs?link=${fetchLink}`)
+                .then(res => res.json())
+                .then(json => {
+                   if (isCurrent && json.data?.[0]) {
+                       setSongDetails((prev: any) => prev?.id === json.data[0].id ? prev : json.data[0]); 
+                       setCache(`song_details_${currentSong.id}`, json.data[0]);
+                   }
+                }).catch(()=>{});
+          } catch(e) {}
+          return;
+      }
+
       try {
         const fetchLink = encodeURIComponent(currentSong.url || currentSong.perma_url || "");
         const res = await fetch(`https://ayushm-psi.vercel.app/api/songs?link=${fetchLink}`);
@@ -820,26 +865,16 @@ export default function MiniPlayer() {
           urls = generateAllQualities(json.data[0].downloadUrl);
           setSongDetails((prev: any) => prev?.id === json.data[0].id ? prev : json.data[0]); 
           await setCache(`song_details_${currentSong.id}`, json.data[0]);
-        } else if (currentSong.downloadUrl?.length > 0) {
-          urls = generateAllQualities(currentSong.downloadUrl);
-        }
+        } 
 
         if (urls.length > 0) {
           const targetQ = selectedQuality + "kbps";
           const match = urls.find((u: any) => u.quality === targetQ) || urls.find((u: any) => u.quality?.includes(selectedQuality));
           const finalUrl = match ? match.url : urls[urls.length - 1].url;
           
-          // INSTANT ZERO-LATENCY STREAMING (No Blob Wait)
           setAudioUrl(finalUrl);
         }
-      } catch (err) {
-        if (isCurrent && currentSong.downloadUrl?.length > 0) {
-          const urls = generateAllQualities(currentSong.downloadUrl);
-          const match = urls.find((u: any) => u.quality === (selectedQuality + "kbps")) || urls.find((u: any) => u.quality?.includes(selectedQuality));
-          const finalUrl = match ? match.url : urls[urls.length - 1].url;
-          setAudioUrl(finalUrl);
-        }
-      }
+      } catch (err) {}
       if (isCurrent) setLoading(false);
     };
     fetchAudioData();
@@ -1222,11 +1257,11 @@ export default function MiniPlayer() {
                     } else {
                         state = 1;
                         const localProgress = ((boundedProgress - wordStartPct) / (wordEndPct - wordStartPct)) * 100;
-                        const roundedProgress = Math.round(localProgress);
+                        const displayProgress = localProgress.toFixed(1); // Highly optimized decimal for smooth fill without blocky jumping
                         
-                        if (wordNode._lastProg !== roundedProgress) {
-                            wordNode._lastProg = roundedProgress;
-                            const gradient = `linear-gradient(to right, rgba(255,255,255,1) ${Math.max(0, roundedProgress - 20)}%, rgba(255,255,255,0.7) ${roundedProgress}%, rgba(255,255,255,0.3) ${Math.min(100, roundedProgress + 20)}%)`;
+                        if (wordNode._lastProg !== displayProgress) {
+                            wordNode._lastProg = displayProgress;
+                            const gradient = `linear-gradient(to right, rgba(255,255,255,1) ${displayProgress}%, rgba(255,255,255,0.3) ${displayProgress}%)`;
                             wordNode.style.backgroundImage = gradient;
                             wordNode.style.webkitBackgroundClip = 'text';
                             wordNode.style.webkitTextFillColor = 'transparent';
@@ -1350,7 +1385,7 @@ export default function MiniPlayer() {
             item.style.boxShadow = 'none';
         }
     });
-  }, [upcomingQueue.length]);
+  },[upcomingQueue.length]);
 
   const handleDragStart = (e: React.TouchEvent | React.MouseEvent, index: number) => {
     if (isQueueEditMode) return;
@@ -1588,13 +1623,11 @@ export default function MiniPlayer() {
   let albumRoute = `/album/${songDetails?.album?.id || ''}`;
   if (songDetails?.album?.url) { const match = songDetails.album.url.match(/\/album\/([^\/]+\/[^\/?]+)/); if (match) albumRoute = `/album/${match[1]}`; }
 
-  const getCardFontSizeClass = (isPast: boolean, isFuture: boolean, isFS: boolean) => {
+  const getCardFontSizeClass = (isFS: boolean) => {
       const s = cardFontSize;
       if (isFS) {
-         if (isPast || isFuture) return s === "Small" ? "text-[22px]" : s === "Large" ? "text-[32px]" : "text-[28px]";
          return s === "Small" ? "text-[30px]" : s === "Large" ? "text-[42px]" : "text-[36px]";
       }
-      if (isPast || isFuture) return s === "Small" ? "text-[18px]" : s === "Large" ? "text-[28px]" : "text-[24px]";
       return s === "Small" ? "text-[22px]" : s === "Large" ? "text-[32px]" : "text-[28px]";
   };
 
@@ -1645,10 +1678,10 @@ export default function MiniPlayer() {
       const isPast = idx < activeLyricIndex;
       const isFuture = idx > activeLyricIndex;
       
-      const fzClass = getCardFontSizeClass(isPast, isFuture, isLyricsFullScreen);
+      const fzClass = getCardFontSizeClass(isLyricsFullScreen);
       const activeClasses = `text-white ${fzClass} font-black drop-shadow-2xl leading-tight opacity-100`;
       const pastClasses = `text-white/50 ${fzClass} font-bold hover:text-white/80 leading-tight opacity-50 -translate-y-2`;
-      const futureClasses = `text-black/80 ${fzClass} font-black drop-shadow-md leading-tight opacity-70 translate-y-3`;
+      const futureClasses = `text-white/50 ${fzClass} font-bold drop-shadow-md leading-tight opacity-50 translate-y-3`;
 
       const cleanupStyles = !isActive ? { backgroundImage: 'none', WebkitBackgroundClip: 'unset', WebkitTextFillColor: 'unset', color: '' } : {};
 
@@ -1933,7 +1966,7 @@ export default function MiniPlayer() {
                    <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Actions</span>
                    <div className="flex flex-col bg-[#1e1e1e] rounded-[16px] overflow-hidden">
                       <button onClick={handleShareSong} className="w-full flex items-center justify-between px-5 py-4 transition-colors active:bg-white/10 border-b border-white/5">
-                        <div className="flex flex-col items-start text-left"><span className="text-white font-bold text-[15px]">Share Song</span><span className="text-white/50 text-[12px] font-medium mt-0.5">Share exact audio, video, & Spotify links</span></div><Share2 size={22} className="text-white/80" />
+                        <div className="flex flex-col items-start text-left"><span className="text-white font-bold text-[15px]">Share Song Link</span><span className="text-white/50 text-[12px] font-medium mt-0.5">Share exact audio, video, & Spotify links</span></div><Share2 size={22} className="text-white/80" />
                       </button>
                       <div className="flex w-full divide-x divide-white/5">
                         <button onClick={handleDownloadMusicInit} className="flex-1 flex flex-col items-center justify-center py-4 transition-colors active:bg-white/10 hover:bg-white/5 group"><Download size={22} className="text-white/80 mb-1 group-hover:text-[#1db954] transition-colors" /><span className="text-white font-bold text-[14px]">Music</span></button>
@@ -2148,7 +2181,7 @@ export default function MiniPlayer() {
                     <button onClick={() => {
                         if (selectedQueueItems.length === 0) return;
                         setUpcomingQueue(prev => {
-                            const arr = [...prev]; 
+                            const arr =[...prev]; 
                             const toMove = selectedQueueItems.map(idx => prev[idx]);
                             const remaining = arr.filter((_, i) => !selectedQueueItems.includes(i));
                             return[...toMove, ...remaining];

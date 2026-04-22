@@ -417,6 +417,29 @@ export default function MiniPlayer() {
   const isSongLiked = likedSongs.some((s: any) => s && s.id === currentSong?.id);
   const handleLikeClick = (e: any) => { e.stopPropagation(); toggleLikeSong(currentSong); };
 
+  // --- CUSTOM BUTTERY AUTO-SCROLL FOR LYRICS ENGINE ---
+  const customSmoothScroll = useCallback((container: HTMLElement, targetPos: number, duration: number) => {
+      if ((container as any)._scrollRaf) cancelAnimationFrame((container as any)._scrollRaf);
+      const startPos = container.scrollTop;
+      const distance = targetPos - startPos;
+      let startTime: number | null = null;
+      
+      const easeInOutCubic = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      
+      const animation = (currentTime: number) => {
+          if (startTime === null) startTime = currentTime;
+          const elapsed = currentTime - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          
+          container.scrollTop = startPos + distance * easeInOutCubic(progress);
+          
+          if (elapsed < duration) {
+              (container as any)._scrollRaf = requestAnimationFrame(animation);
+          }
+      };
+      (container as any)._scrollRaf = requestAnimationFrame(animation);
+  },[]);
+
   // --- MOBILE NATIVE BACK BUTTON POPSTATE ENGINE ---
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
@@ -437,7 +460,7 @@ export default function MiniPlayer() {
     if (isExpanded || showQueue || showSettingsMenu || showTimerMenu) {
         window.history.pushState({ appModal: true }, '', window.location.href);
     }
-  }, [isExpanded, showQueue, showSettingsMenu, showTimerMenu]);
+  },[isExpanded, showQueue, showSettingsMenu, showTimerMenu]);
 
   // --- PREMIUM HI-FI AUDIO QUALITY ENHANCER (Spotify/Apple Music Equivalent) ---
   useEffect(() => {
@@ -459,42 +482,49 @@ export default function MiniPlayer() {
             audioCtxRef.current = ctx;
             const source = ctx.createMediaElementSource(audio);
             
-            // 1. Sub-bass Sweetening (Deep & Punchy, like Apple Music)
+            // 1. Deep Sub-Bass Sweetening (Deep & Punchy, like Apple Music)
             const subBassEQ = ctx.createBiquadFilter();
             subBassEQ.type = "lowshelf"; 
-            subBassEQ.frequency.value = 60; 
-            subBassEQ.gain.value = 1.5;
+            subBassEQ.frequency.value = 50; 
+            subBassEQ.gain.value = 5.0; // Boosted deep punch
             
-            // 2. Vocal Presence & Crispness
-            const vocalPresence = ctx.createBiquadFilter();
-            vocalPresence.type = "peaking"; 
-            vocalPresence.frequency.value = 3000; 
-            vocalPresence.Q.value = 1.0; 
-            vocalPresence.gain.value = 1.0;
+            // 2. Mid-Bass / Kick Drum Punch
+            const kickEQ = ctx.createBiquadFilter();
+            kickEQ.type = "peaking";
+            kickEQ.frequency.value = 110;
+            kickEQ.Q.value = 1.2;
+            kickEQ.gain.value = 4.0; // Enhanced rhythmic thump
+
+            // 3. Instrumentals & Vocals Warmth
+            const midEQ = ctx.createBiquadFilter();
+            midEQ.type = "peaking";
+            midEQ.frequency.value = 1500;
+            midEQ.Q.value = 0.8;
+            midEQ.gain.value = 2.5; // Warmer synths and guitars
             
-            // 3. Air/Treble Clarity
-            const airEQ = ctx.createBiquadFilter();
-            airEQ.type = "highshelf"; 
-            airEQ.frequency.value = 10000; 
-            airEQ.gain.value = 1.5;
+            // 4. Treble / Air (Crispness)
+            const trebleEQ = ctx.createBiquadFilter();
+            trebleEQ.type = "highshelf"; 
+            trebleEQ.frequency.value = 10000; 
+            trebleEQ.gain.value = 3.5; // Crystal clear vocals
             
-            // 4. Studio Transparent Mastering Limiter (Zero harsh clipping, just smooth normalization)
+            // 5. Studio Mastering Limiter (Prevents clipping while maximizing loudness)
             const compressor = ctx.createDynamicsCompressor();
-            compressor.threshold.value = -3; // Only catch the loudest peaks
-            compressor.knee.value = 5;       // Soft musical knee
-            compressor.ratio.value = 4;      // Natural compression
-            compressor.attack.value = 0.01;  // Fast catch
-            compressor.release.value = 0.1;  // Quick smooth release
+            compressor.threshold.value = -1.5; 
+            compressor.knee.value = 6;       
+            compressor.ratio.value = 12;      
+            compressor.attack.value = 0.003;  
+            compressor.release.value = 0.05;  
             
-            // 5. Subtle Makeup Gain (Restores volume naturally without destroying dynamics)
             const makeUpGain = ctx.createGain(); 
-            makeUpGain.gain.value = 1.05;
+            makeUpGain.gain.value = 1.15; // Clean natural boost
             
             // Connect the Master Chain
             source.connect(subBassEQ); 
-            subBassEQ.connect(vocalPresence);
-            vocalPresence.connect(airEQ);
-            airEQ.connect(compressor); 
+            subBassEQ.connect(kickEQ);
+            kickEQ.connect(midEQ);
+            midEQ.connect(trebleEQ);
+            trebleEQ.connect(compressor); 
             compressor.connect(makeUpGain); 
             makeUpGain.connect(ctx.destination);
             
@@ -569,7 +599,7 @@ export default function MiniPlayer() {
         setTimerRemaining(null);
     }
     return () => clearInterval(interval);
-  }, [sleepTimer]);
+  },[sleepTimer]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -598,7 +628,7 @@ export default function MiniPlayer() {
   useEffect(() => { isCanvasEnabledRef.current = isCanvasEnabled; },[isCanvasEnabled]);
   useEffect(() => { isLyricsEnabledRef.current = isLyricsEnabled; if (!isLyricsEnabled) setIsLyricsFullScreen(false); },[isLyricsEnabled]);
   useEffect(() => { if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong)); }, [currentSong]);
-  useEffect(() => { if (upcomingQueue && upcomingQueue.length > 0) localStorage.setItem('last_session_queue', JSON.stringify(upcomingQueue)); }, [upcomingQueue]);
+  useEffect(() => { if (upcomingQueue && upcomingQueue.length > 0) localStorage.setItem('last_session_queue', JSON.stringify(upcomingQueue)); },[upcomingQueue]);
 
   const rawTitle = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
   const rawArtists = currentSong ? decodeEntities(getArtistsText(currentSong)) : "";
@@ -1311,19 +1341,19 @@ export default function MiniPlayer() {
                     const wordEndPct = ((charAccumulator + wordLen) / totalChars) * 100;
 
                     if (boundedProgress >= wordEndPct) {
-                        if (wordNode._lastProg !== 100) {
-                            wordNode._lastProg = 100;
-                            wordNode.style.setProperty('--p', '100%');
+                        if (wordNode._lastProg !== 120) {
+                            wordNode._lastProg = 120;
+                            wordNode.style.setProperty('--p', '120%');
                         }
                     } else if (boundedProgress <= wordStartPct) {
-                        if (wordNode._lastProg !== 0) {
-                            wordNode._lastProg = 0;
-                            wordNode.style.setProperty('--p', '0%');
+                        if (wordNode._lastProg !== -15) {
+                            wordNode._lastProg = -15;
+                            wordNode.style.setProperty('--p', '-15%');
                         }
                     } else {
-                        // Smooth floating-point math applied for Apple-style rollout (throttled at 0.2% diff for GPU stability)
-                        const localProgress = ((boundedProgress - wordStartPct) / (wordEndPct - wordStartPct)) * 100;
-                        if (Math.abs((wordNode._lastProg || 0) - localProgress) > 0.2) {
+                        // Math mapped perfectly up to 120% to clear the word entirely without white-edge bugs
+                        const localProgress = ((boundedProgress - wordStartPct) / (wordEndPct - wordStartPct)) * 120;
+                        if (Math.abs((wordNode._lastProg || 0) - localProgress) > 0.5) {
                             wordNode._lastProg = localProgress;
                             wordNode.style.setProperty('--p', `${localProgress.toFixed(1)}%`);
                         }
@@ -1361,14 +1391,14 @@ export default function MiniPlayer() {
     if (activeLyricRef.current && lyricsContainerRef.current) {
       const container = lyricsContainerRef.current; const element = activeLyricRef.current;
       const scrollPos = element.offsetTop - container.offsetTop - 20; 
-      container.scrollTo({ top: scrollPos, behavior: 'smooth' });
+      customSmoothScroll(container, scrollPos, 800);
     }
     if (fullActiveLyricRef.current && fullLyricsContainerRef.current) {
       const container = fullLyricsContainerRef.current; const element = fullActiveLyricRef.current;
       const scrollPos = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + 60; 
-      container.scrollTo({ top: scrollPos, behavior: 'smooth' });
+      customSmoothScroll(container, scrollPos, 800);
     }
-  },[activeLyricIndex, isLyricsFullScreen, isExpanded]);
+  },[activeLyricIndex, isLyricsFullScreen, isExpanded, customSmoothScroll]);
 
   const handleLyricClick = (time: number) => {
     if (isVideoMode && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_SEEK', time: time }, '*');
@@ -1841,7 +1871,7 @@ export default function MiniPlayer() {
         .no-select-text { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
         .queue-item { transform-origin: center; will-change: transform; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
         .lyric-word-sync {
-            background: linear-gradient(to right, #ffffff calc(var(--p, 0%) - 20%), rgba(255,255,255,0.3) calc(var(--p, 0%) + 20%));
+            background: linear-gradient(to right, #ffffff calc(var(--p, 0%) - 15%), rgba(255,255,255,0.2) var(--p, 0%));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             color: transparent;

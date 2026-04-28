@@ -499,14 +499,22 @@ export default function MiniPlayer() {
       window.history.pushState({ modal: 'timer' }, '');
   };
 
+  // Navigating out entirely
+  const closePlayerForNavigation = () => {
+      setIsExpanded(false);
+      activeOverlayRef.current = 'none';
+  };
 
-  // --- AUDIO EQ EFFECTS ENGINE (Runs in background) ---
+  // --- AUDIO EQ EFFECTS ENGINE (Runs seamlessly in background) ---
   useEffect(() => {
     if (eqBandsRef.current.length > 0 && audioCtxRef.current) {
         const targetEQ = isAudioEnhanced ? ENHANCED_EQ : ORIGINAL_EQ;
         targetEQ.forEach((val, i) => {
             eqBandsRef.current[i].gain.setTargetAtTime(val, audioCtxRef.current.currentTime, 0.1);
         });
+        if (audioCtxRef.current.state === 'suspended') {
+            audioCtxRef.current.resume();
+        }
     }
     localStorage.setItem('audio_enhanced', isAudioEnhanced.toString());
   },[isAudioEnhanced]);
@@ -514,7 +522,6 @@ export default function MiniPlayer() {
   useEffect(() => {
     if (!audioRef.current) return;
     const audio = audioRef.current;
-    audio.crossOrigin = "anonymous";
     
     const initAudioContext = () => {
         if (isAudioPremiumSetupRef.current) {
@@ -528,7 +535,7 @@ export default function MiniPlayer() {
             audioCtxRef.current = ctx;
             const source = ctx.createMediaElementSource(audio);
             
-            // 10-Band EQ filters
+            // 10-Band EQ filters Setup
             let previousNode: AudioNode = source;
             const bands: any[] =[];
             const currentEQ = isAudioEnhanced ? ENHANCED_EQ : ORIGINAL_EQ;
@@ -545,7 +552,7 @@ export default function MiniPlayer() {
             });
             eqBandsRef.current = bands;
 
-            // Studio Limiter (prevents clipping)
+            // Studio Limiter (prevents clipping/distortion)
             const limiter = ctx.createDynamicsCompressor();
             limiter.threshold.value = -1.0; 
             limiter.knee.value = 0.0;       
@@ -703,12 +710,12 @@ export default function MiniPlayer() {
   };
 
   const triggerFindRelated = async () => {
-    const targetVid = ytVideoId || prefetchedYtIdRef.current || currentSong?.prefetchedYtId;
+    const targetVid = ytVideoId || prefetchedYtIdRef.current || currentSong?.prefetchedYtId || currentSong?.ytVideoId;
     if (!targetVid) return;
 
     fetchingRecsRef.current = true;
     setIsFetchingRecsUI(true);
-    setUpcomingQueue([]); 
+    setUpcomingQueue([]); // Flushes the old queue completely
 
     try {
       let recs = await getCache(`recs_${targetVid}`);
@@ -722,11 +729,12 @@ export default function MiniPlayer() {
       }
 
       if (recs && recs.length > 0) {
+        const seedStr = displayTitle; 
         const formatted = recs.map((r: any) => ({
           id: r["Perma URL"] ? r["Perma URL"].split('/').pop() : Math.random().toString(),
           title: r.Title, name: r.Title, artists: r.Artists, image: r.Banner,
           downloadUrl:[{ url: r.Stream, quality: "320kbps" }], url: r["Perma URL"],
-          spotifyUrl: r.Spotify, isRecommendation: true
+          spotifyUrl: r.Spotify, isRecommendation: true, seedName: seedStr
         }));
         
         setUpcomingQueue(prev => {
@@ -742,18 +750,13 @@ export default function MiniPlayer() {
     setIsFetchingRecsUI(false);
   };
 
+  // Automatically fetch purely based on CURRENT SONG (Old history seeding removed to prevent bugs)
   useEffect(() => {
     let isSubscribed = true; let recTimer: any;
     
     if (upcomingQueue.length <= 3 && !fetchingRecsRef.current) {
-      let seedVid = ytVideoId || currentSong?.prefetchedYtId;
-      try {
-        const top30 = JSON.parse(localStorage.getItem('top_30_songs') || '[]'); let bestPercent = 30; 
-        for (const hSong of historyQueue.slice(0, 7)) {
-          const tSong = top30.find((t: any) => t.id === hSong.id);
-          if (tSong && tSong.maxListenPercent > bestPercent && hSong.prefetchedYtId) { bestPercent = tSong.maxListenPercent; seedVid = hSong.prefetchedYtId; }
-        }
-      } catch (e) {}
+      let seedVid = ytVideoId || currentSong?.prefetchedYtId || currentSong?.ytVideoId;
+      let seedTitleStr = displayTitle;
       
       if (seedVid) {
          recTimer = setTimeout(async () => {
@@ -774,7 +777,7 @@ export default function MiniPlayer() {
                        id: r["Perma URL"] ? r["Perma URL"].split('/').pop() : Math.random().toString(),
                        title: r.Title, name: r.Title, artists: r.Artists, image: r.Banner,
                        downloadUrl:[{ url: r.Stream, quality: "320kbps" }], url: r["Perma URL"],
-                       spotifyUrl: r.Spotify, isRecommendation: true
+                       spotifyUrl: r.Spotify, isRecommendation: true, seedName: seedTitleStr
                      }));
                      setUpcomingQueue(prev => {
                        const existingIds = new Set(prev.map((s: any) => s.id));
@@ -788,7 +791,7 @@ export default function MiniPlayer() {
       }
     }
     return () => { isSubscribed = false; fetchingRecsRef.current = false; clearTimeout(recTimer); };
-  },[upcomingQueue.length, ytVideoId, historyQueue]);
+  },[upcomingQueue.length, ytVideoId, currentSong]);
 
   // MAIN TRACK CHANGE HOOK
   useEffect(() => {
@@ -906,7 +909,7 @@ export default function MiniPlayer() {
     
     spotifyTimer = setTimeout(() => { fetchSpotifyMatch(); }, 1500);
     return () => { isCurrent = false; clearTimeout(spotifyTimer); };
-  },[currentSong]);
+  }, [currentSong]);
 
   useEffect(() => {
     if (queue && queue.length > 0) {
@@ -1060,6 +1063,9 @@ export default function MiniPlayer() {
       videoIframeRef.current.contentWindow.postMessage({ type: newState ? 'MUSIC_PLAY' : 'MUSIC_PAUSE' }, '*');
     } else {
       if (newState) {
+        if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+            audioCtxRef.current.resume();
+        }
         const playPromise = audioRef.current?.play();
         if (playPromise !== undefined) playPromise.catch(()=>{});
       } else audioRef.current?.pause();
@@ -1074,6 +1080,7 @@ export default function MiniPlayer() {
         const audioDur = audioRef.current.duration || 0; setDuration(audioDur);
         const safeTime = (audioDur > 0 && currentTime > audioDur) ? audioDur - 2 : currentTime;
         audioRef.current.currentTime = safeTime; setCurrentTime(safeTime);
+        if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
         const playPromise = audioRef.current.play();
         if (playPromise !== undefined) playPromise.catch(()=>{});
         setIsPlaying(true);
@@ -1090,7 +1097,10 @@ export default function MiniPlayer() {
     if (audioRef.current) audioRef.current.pause(); setIsPlaying(false);
     const newVid = await prefetchVideoId(displayTitle, displayArtists);
     if (newVid) { setYtVideoId(newVid); setIsVideoMode(true); } 
-    else if (audioRef.current) { const p = audioRef.current.play(); if(p!==undefined) p.catch(()=>{}); setIsPlaying(true); }
+    else if (audioRef.current) { 
+        if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+        const p = audioRef.current.play(); if(p!==undefined) p.catch(()=>{}); setIsPlaying(true); 
+    }
     setIsVideoLoading(false);
   };
 
@@ -1152,7 +1162,10 @@ export default function MiniPlayer() {
   useEffect(() => {
     if (audioRef.current && audioUrl) {
       audioRef.current.volume = volume / 100;
-      if (isPlaying && !isVideoMode) { const p = audioRef.current.play(); if (p !== undefined) p.catch(() => {}); }
+      if (isPlaying && !isVideoMode) { 
+          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+          const p = audioRef.current.play(); if (p !== undefined) p.catch(() => {}); 
+      }
       else if (!isPlaying) audioRef.current.pause();
     }
   },[isPlaying, audioUrl, volume, isVideoMode]);
@@ -1187,6 +1200,7 @@ export default function MiniPlayer() {
     if (repeatMode === 2 && audioRef.current) { 
       audioRef.current.currentTime = 0; 
       setRepeatMode(0); 
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
       const p = audioRef.current.play(); 
       if (p!==undefined) p.catch(()=>{}); 
       return; 
@@ -1259,7 +1273,10 @@ export default function MiniPlayer() {
        navigator.mediaSession.setActionHandler('play', () => {
           setIsPlaying(true); navigator.mediaSession.playbackState = 'playing';
           if (isVideoModeRef.current && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_PLAY' }, '*');
-          else if (audioRef.current) { const p = audioRef.current.play(); if (p !== undefined) p.catch(()=>{}); }
+          else if (audioRef.current) { 
+              if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+              const p = audioRef.current.play(); if (p !== undefined) p.catch(()=>{}); 
+          }
        });
        navigator.mediaSession.setActionHandler('pause', () => {
           setIsPlaying(false); navigator.mediaSession.playbackState = 'paused';
@@ -1280,7 +1297,7 @@ export default function MiniPlayer() {
     if ('mediaSession' in navigator) {
        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
     }
-  }, [isPlaying]);
+  },[isPlaying]);
 
   const handleTimeUpdate = () => {
     if (audioRef.current && !isVideoMode) {
@@ -1459,7 +1476,10 @@ export default function MiniPlayer() {
       videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_HIDE_UI' }, '*');
     } else if (audioRef.current && duration > 0) {
       audioRef.current.currentTime = newTime; syncPosition();
-      if (isPlaying) { const p = audioRef.current.play(); if (p !== undefined) p.catch(()=>{}); }
+      if (isPlaying) { 
+          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+          const p = audioRef.current.play(); if (p !== undefined) p.catch(()=>{}); 
+      }
     }
   };
 
@@ -1809,7 +1829,7 @@ export default function MiniPlayer() {
     return uniqueArtists.map((artist: any) => {
       const artistImg = getImageUrl(artist.image); const fallbackColor = getArtistColor(artist.name || "Unknown");
       return (
-        <Link key={artist.id} href={`/artist?id=${artist.id}`} onClick={() => window.history.back()} className="flex flex-col items-center gap-2 flex-shrink-0 w-[84px] group no-select-text">
+        <Link key={artist.id} href={`/artist?id=${artist.id}`} onClick={closePlayerForNavigation} className="flex flex-col items-center gap-2 flex-shrink-0 w-[84px] group no-select-text">
           <div className="w-[84px] h-[84px] rounded-full overflow-hidden relative flex items-center justify-center shadow-lg border border-white/10 group-hover:scale-105 transition-transform" style={{ backgroundColor: artistImg ? '#282828' : fallbackColor }}>
             {!artistImg ? <span className="text-white font-bold text-3xl no-select-text">{decodeEntities(artist.name).charAt(0).toUpperCase()}</span> : <img draggable={false} src={artistImg} onError={(e) => { e.currentTarget.style.display = 'none'; }} className="w-full h-full object-cover relative z-10 no-select pointer-events-none" alt={artist.name} />}
           </div>
@@ -1880,6 +1900,10 @@ export default function MiniPlayer() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  const isRecContext = currentSong?.isRecommendation;
+  const topHeaderText = isRecContext ? "Playing from Recommendation" : `Playing from ${playContext?.type || 'App'}`;
+  const bottomHeaderText = isRecContext ? decodeEntities(currentSong.seedName || "Recommended") : decodeEntities(playContext?.name || 'Music');
+
   if (!currentSong) return null;
 
   return (
@@ -1910,7 +1934,7 @@ export default function MiniPlayer() {
         }
       `}} />
 
-      <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} 
+      <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} crossOrigin="anonymous"
         onLoadedMetadata={() => { 
            const dur = audioRef.current?.duration || 0;
            setDuration(dur); 
@@ -1945,8 +1969,8 @@ export default function MiniPlayer() {
             <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full ${isLyricsFullScreen ? 'mt-0' : 'mt-4'}`}>
               <button onClick={() => { if (isLyricsFullScreen) setIsLyricsFullScreen(false); else window.history.back(); }} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md no-select-text">
-                <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {playContext?.type || 'App'}</span>
-                <span className="text-[13px] font-bold text-white truncate w-full text-center mt-[2px]">{decodeEntities(playContext?.name || 'Music')}</span>
+                <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">{topHeaderText}</span>
+                <span className="text-[13px] font-bold text-white truncate w-full text-center mt-[2px]">{bottomHeaderText}</span>
               </div>
               <button onClick={openSettings} className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><MoreHorizontal size={24} /></button>
             </div>
@@ -2046,7 +2070,7 @@ export default function MiniPlayer() {
             )}
 
             {!currentSong.isProFallback && songDetails?.album && (
-              <Link href={albumRoute} onClick={() => window.history.back()} className="w-full bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group no-select-text pointer-events-auto">
+              <Link href={albumRoute} onClick={closePlayerForNavigation} className="w-full bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group no-select-text pointer-events-auto">
                 <div className="absolute inset-0 z-0 pointer-events-none opacity-30" style={{ backgroundColor: dominantColor }} />
                 {displayImage && <img draggable={false} src={displayImage} className="w-[64px] h-[64px] rounded-md object-cover relative z-10 shadow-md border border-white/5 group-hover:scale-105 transition-transform no-select pointer-events-none" alt="Album Cover" />}
                 <div className="flex flex-col relative z-10 flex-1 pr-2"><span className="text-white/60 text-[11px] uppercase tracking-widest font-bold mb-1 drop-shadow-sm">Album</span><span className="text-white font-bold text-[16px] line-clamp-1 drop-shadow-md">{decodeEntities(songDetails.album.name)}</span></div><div className="relative z-10 text-white/50 group-hover:text-white transition-colors pl-2"><ChevronDown size={20} className="-rotate-90" /></div>
@@ -2079,20 +2103,6 @@ export default function MiniPlayer() {
              </div>
 
              <div className="px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] flex flex-col gap-6 overflow-y-auto scrollbar-hide flex-1">
-                
-                {/* Audio Profile Setting */}
-                <div className="flex flex-col gap-3 mt-2">
-                   <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Audio Profile</span>
-                   <div className="flex bg-[#1e1e1e] rounded-[16px] overflow-hidden p-2 gap-2">
-                      <button onClick={() => setIsAudioEnhanced(false)} className={`flex-1 px-4 py-3 rounded-xl text-[14px] font-bold transition-all ${!isAudioEnhanced ? 'bg-[#1db954] text-black shadow-md' : 'bg-white/5 text-white hover:bg-white/10'}`}>
-                         Original
-                      </button>
-                      <button onClick={() => setIsAudioEnhanced(true)} className={`flex-1 px-4 py-3 rounded-xl text-[14px] font-bold transition-all ${isAudioEnhanced ? 'bg-[#1db954] text-black shadow-md' : 'bg-white/5 text-white hover:bg-white/10'}`}>
-                         Enhanced
-                      </button>
-                   </div>
-                </div>
-
                 <div className="flex flex-col gap-3">
                    <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Actions</span>
                    <div className="flex flex-col bg-[#1e1e1e] rounded-[16px] overflow-hidden">
@@ -2170,6 +2180,25 @@ export default function MiniPlayer() {
                         <span className="text-white font-bold text-[15px]">Show Canvas</span>
                         <button onClick={() => { setIsCanvasEnabled(!isCanvasEnabled); localStorage.setItem('canvas_enabled', (!isCanvasEnabled).toString()); }} className={`w-11 h-[26px] rounded-full relative transition-colors duration-300 flex items-center ${isCanvasEnabled ? 'bg-[#1db954]' : 'bg-[#535353]'}`}><div className={`w-[22px] h-[22px] bg-white rounded-full absolute shadow-md transition-transform duration-300 ${isCanvasEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} /></button>
                       </div>
+                   </div>
+                </div>
+
+                {/* Audio Profile Setting - Placed at the very bottom */}
+                <div className="flex flex-col gap-3 mt-2">
+                   <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Audio Profile</span>
+                   <div className="flex bg-[#1e1e1e] rounded-[16px] overflow-hidden p-2 gap-2">
+                      <button onClick={() => {
+                          setIsAudioEnhanced(false);
+                          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+                      }} className={`flex-1 px-4 py-3 rounded-xl text-[14px] font-bold transition-all ${!isAudioEnhanced ? 'bg-[#1db954] text-black shadow-md' : 'bg-white/5 text-white hover:bg-white/10'}`}>
+                         Original
+                      </button>
+                      <button onClick={() => {
+                          setIsAudioEnhanced(true);
+                          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+                      }} className={`flex-1 px-4 py-3 rounded-xl text-[14px] font-bold transition-all ${isAudioEnhanced ? 'bg-[#1db954] text-black shadow-md' : 'bg-white/5 text-white hover:bg-white/10'}`}>
+                         Enhanced
+                      </button>
                    </div>
                 </div>
 
@@ -2277,7 +2306,7 @@ export default function MiniPlayer() {
           </div>
           
           <div className="flex-1 overflow-y-auto px-5 pb-32 no-select-text relative scrollbar-hide" ref={queueContainerRef}>
-            <span className="text-[14px] font-medium text-white/60 block mb-6 uppercase tracking-wider">Playing from {playContext?.type || 'App'}</span>
+            <span className="text-[14px] font-medium text-white/60 block mb-6 uppercase tracking-wider">{topHeaderText}</span>
             <div className="flex items-center justify-between w-full mb-8">
               <div className="flex items-center gap-3 overflow-hidden">
                 <div className="w-12 h-12 flex-shrink-0 rounded-[4px] bg-[#282828] overflow-hidden">{displayImage && <img draggable={false} src={displayImage} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />}</div>
@@ -2312,7 +2341,7 @@ export default function MiniPlayer() {
                     <button onClick={() => {
                         if (selectedQueueItems.length === 0) return;
                         setUpcomingQueue(prev => {
-                            const arr = [...prev]; 
+                            const arr =[...prev]; 
                             const toMove = selectedQueueItems.map(idx => prev[idx]);
                             const remaining = arr.filter((_, i) => !selectedQueueItems.includes(i));
                             return[...toMove, ...remaining];

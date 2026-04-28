@@ -1,4 +1,3 @@
-
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -157,6 +156,18 @@ const parseTimeTag = (tag: string) => {
 
 const RAPID_KEYS =["d1edce158amshec139440d20658ap1f2545jsnbb7da9add82f", "6cf7f03014msh787c51a713c0264p15c20djsna1f9a9f6a378", "13d48f6bb8msh459c11b91bdcc44p110f4ejsn099443894115", "03fc23317fmsh0535ef9ec8c6f5bp1db59bjsn545991df9343", "e54e3fbc4dmshfc16d4417b618fdp1a2fafjsn30c72d8cf3ab"];
 const RAPID_API_HOST = "spotify81.p.rapidapi.com";
+
+// --- EQ PRESETS & FREQUENCIES ---
+const EQ_FREQUENCIES =[32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+const EQ_PRESETS: Record<string, number[]> = {
+  Flat:[0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  "Bass Boost":[6, 4.5, 2, 0, -1, -1, 0, 0, 0, 0],
+  Electronic:[5, 4, 1, 0, -2, 1, 2, 3, 4, 3],
+  Acoustic:[2, 1, 0, -1, 1, 2, 2, 3, 2, 1],
+  Rock:[4, 3, 2, 1, -1, -1, 0, 2, 3, 4],
+  Pop:[-1, -1, 0, 2, 3, 3, 2, 1, 0, -1],
+  Enhanced:[-2, 2, -1, -5, -7, -6, -3, -3, -4, -1]
+};
 
 // --- AK47 SPECIFIC MATCHER ---
 const performAK47Matching = (results: any[], targetTrack: string, targetArtist: string): any => {
@@ -408,7 +419,15 @@ export default function MiniPlayer() {
   const isCanvasEnabledRef = useRef(true);
   const isLyricsEnabledRef = useRef(true);
 
-  // PREMIUM AUDIO CONTEXT REFS
+  // EQUALIZER STATE & REFS
+  const [eqPreset, setEqPreset] = useState("Enhanced");
+  const[eqBandValues, setEqBandValues] = useState<number[]>(EQ_PRESETS["Enhanced"]);
+  const eqBandsRef = useRef<any[]>([]);
+  const analyserRef = useRef<any>(null);
+  const visualizerCanvasRef = useRef<HTMLCanvasElement>(null);
+  const visualizerRafRef = useRef<number>(0);
+  const eqBandValuesRef = useRef(EQ_PRESETS["Enhanced"]);
+
   const audioCtxRef = useRef<any>(null);
   const isAudioPremiumSetupRef = useRef(false);
 
@@ -440,34 +459,78 @@ export default function MiniPlayer() {
       (container as any)._scrollRaf = requestAnimationFrame(animation);
   },[]);
 
-  // --- MOBILE NATIVE BACK BUTTON POPSTATE ENGINE ---
+  // --- ROBUST MODAL HISTORY ROUTING (Fixes App Closure Bug) ---
+  const previousStates = useRef({ isExpanded: false, showQueue: false, showSettingsMenu: false, showTimerMenu: false });
+
   useEffect(() => {
-    const handlePopState = (e: PopStateEvent) => {
-        if (showSettingsMenu || showTimerMenu || showQueue || isExpanded) {
-            if (showSettingsMenu) setShowSettingsMenu(false);
-            else if (showTimerMenu) setShowTimerMenu(false);
-            else if (showQueue) setShowQueue(false);
-            else if (isExpanded) setIsExpanded(false);
-            // Push back to history so next native back continues gracefully
-            window.history.pushState(null, '', window.location.href);
+      const prev = previousStates.current;
+      const modalOpened = (!prev.isExpanded && isExpanded) ||
+                          (!prev.showQueue && showQueue) ||
+                          (!prev.showSettingsMenu && showSettingsMenu) ||
+                          (!prev.showTimerMenu && showTimerMenu);
+      if (modalOpened) {
+          window.history.pushState({ appModal: true }, '', window.location.href);
+      }
+      previousStates.current = { isExpanded, showQueue, showSettingsMenu, showTimerMenu };
+  }, [isExpanded, showQueue, showSettingsMenu, showTimerMenu]);
+
+  useEffect(() => {
+      const handlePopState = (e: PopStateEvent) => {
+          if (showSettingsMenu) { setShowSettingsMenu(false); return; }
+          if (showTimerMenu) { setShowTimerMenu(false); return; }
+          if (showQueue) { setShowQueue(false); return; }
+          if (isExpanded) { setIsExpanded(false); return; }
+      };
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+  }, [showSettingsMenu, showTimerMenu, showQueue, isExpanded]);
+
+
+  // --- PRO 10-BAND AUDIO CONTEXT & SPECTRUM EQUALIZER ---
+  useEffect(() => { eqBandValuesRef.current = eqBandValues; }, [eqBandValues]);
+  useEffect(() => { () => cancelAnimationFrame(visualizerRafRef.current); },[]);
+
+  const startVisualizer = useCallback(() => {
+    const canvas = visualizerCanvasRef.current;
+    if (!canvas || !analyserRef.current) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const analyser = analyserRef.current;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const draw = () => {
+        visualizerRafRef.current = requestAnimationFrame(draw);
+        if (!visualizerCanvasRef.current) return;
+        const w = visualizerCanvasRef.current.clientWidth;
+        const h = visualizerCanvasRef.current.clientHeight;
+        if (visualizerCanvasRef.current.width !== w || visualizerCanvasRef.current.height !== h) {
+             visualizerCanvasRef.current.width = w; visualizerCanvasRef.current.height = h;
+        }
+
+        analyser.getByteFrequencyData(dataArray);
+        ctx.fillStyle = '#121212';
+        ctx.fillRect(0, 0, w, h);
+
+        const barWidth = (w / bufferLength) * 2.5;
+        let x = 0;
+        for (let i = 0; i < bufferLength; i++) {
+            const barHeight = dataArray[i] * (h / 255);
+            const r = 0;
+            const g = Math.min(255, barHeight + (100 * (i / bufferLength)));
+            const b = 255;
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(x, h - barHeight, barWidth - 1, barHeight);
+            x += barWidth;
         }
     };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  },[showSettingsMenu, showTimerMenu, showQueue, isExpanded]);
+    if (visualizerRafRef.current) cancelAnimationFrame(visualizerRafRef.current);
+    draw();
+  },[]);
 
-  useEffect(() => {
-    if (isExpanded || showQueue || showSettingsMenu || showTimerMenu) {
-        window.history.pushState({ appModal: true }, '', window.location.href);
-    }
-  },[isExpanded, showQueue, showSettingsMenu, showTimerMenu]);
-
-  // --- PREMIUM HI-FI AUDIO QUALITY ENHANCER (Spotify/Apple Music Equivalent) ---
   useEffect(() => {
     if (!audioRef.current) return;
     const audio = audioRef.current;
-    
-    // Enable CORS to allow Web Audio API source creation across CDNs
     audio.crossOrigin = "anonymous";
     
     const initAudioContext = () => {
@@ -482,60 +545,72 @@ export default function MiniPlayer() {
             audioCtxRef.current = ctx;
             const source = ctx.createMediaElementSource(audio);
             
-            // 1. Deep Sub-Bass Sweetening (Deep & Punchy, like Apple Music)
-            const subBassEQ = ctx.createBiquadFilter();
-            subBassEQ.type = "lowshelf"; 
-            subBassEQ.frequency.value = 50; 
-            subBassEQ.gain.value = 5.0; // Boosted deep punch
-            
-            // 2. Mid-Bass / Kick Drum Punch
-            const kickEQ = ctx.createBiquadFilter();
-            kickEQ.type = "peaking";
-            kickEQ.frequency.value = 110;
-            kickEQ.Q.value = 1.2;
-            kickEQ.gain.value = 4.0; // Enhanced rhythmic thump
+            // Analyzer for spectrum
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 1024;
+            analyser.smoothingTimeConstant = 0.85;
+            analyserRef.current = analyser;
 
-            // 3. Instrumentals & Vocals Warmth
-            const midEQ = ctx.createBiquadFilter();
-            midEQ.type = "peaking";
-            midEQ.frequency.value = 1500;
-            midEQ.Q.value = 0.8;
-            midEQ.gain.value = 2.5; // Warmer synths and guitars
+            // Studio Limiter (prevents clipping)
+            const limiter = ctx.createDynamicsCompressor();
+            limiter.threshold.value = -1.0; 
+            limiter.knee.value = 0.0;       
+            limiter.ratio.value = 20.0;      
+            limiter.attack.value = 0.005;  
+            limiter.release.value = 0.050;  
             
-            // 4. Treble / Air (Crispness)
-            const trebleEQ = ctx.createBiquadFilter();
-            trebleEQ.type = "highshelf"; 
-            trebleEQ.frequency.value = 10000; 
-            trebleEQ.gain.value = 3.5; // Crystal clear vocals
+            // 10-Band EQ filters
+            let previousNode = source;
+            const bands: any[] =[];
+
+            EQ_FREQUENCIES.forEach((freq, i) => {
+                let filter = ctx.createBiquadFilter();
+                filter.type = "peaking";
+                filter.frequency.value = freq;
+                filter.Q.value = 1.41;
+                filter.gain.value = eqBandValuesRef.current[i];
+                previousNode.connect(filter);
+                previousNode = filter;
+                bands.push(filter);
+            });
+            eqBandsRef.current = bands;
             
-            // 5. Studio Mastering Limiter (Prevents clipping while maximizing loudness)
-            const compressor = ctx.createDynamicsCompressor();
-            compressor.threshold.value = -1.5; 
-            compressor.knee.value = 6;       
-            compressor.ratio.value = 12;      
-            compressor.attack.value = 0.003;  
-            compressor.release.value = 0.05;  
-            
-            const makeUpGain = ctx.createGain(); 
-            makeUpGain.gain.value = 1.15; // Clean natural boost
-            
-            // Connect the Master Chain
-            source.connect(subBassEQ); 
-            subBassEQ.connect(kickEQ);
-            kickEQ.connect(midEQ);
-            midEQ.connect(trebleEQ);
-            trebleEQ.connect(compressor); 
-            compressor.connect(makeUpGain); 
-            makeUpGain.connect(ctx.destination);
+            // Connect chain
+            previousNode.connect(limiter); 
+            limiter.connect(analyser); 
+            analyser.connect(ctx.destination);
             
             isAudioPremiumSetupRef.current = true;
-        } catch(e) { console.warn("Premium Audio Config Error (CORS/Browser fallback active)", e); }
+            startVisualizer();
+        } catch(e) { console.warn("Premium Audio Config Error", e); }
     };
 
     const handlePlay = () => initAudioContext();
     audio.addEventListener('play', handlePlay);
     return () => audio.removeEventListener('play', handlePlay);
-  },[]);
+  },[startVisualizer]);
+
+  const applyEqPreset = (presetName: string) => {
+    setEqPreset(presetName);
+    if (presetName === "Custom") return;
+    const values = EQ_PRESETS[presetName];
+    setEqBandValues([...values]);
+    if (eqBandsRef.current.length > 0 && audioCtxRef.current) {
+        values.forEach((val, i) => {
+            eqBandsRef.current[i].gain.setTargetAtTime(val, audioCtxRef.current.currentTime, 0.05);
+        });
+    }
+  };
+
+  const handleEqBandChange = (index: number, val: number) => {
+    setEqPreset("Custom");
+    const newBands = [...eqBandValues];
+    newBands[index] = val;
+    setEqBandValues(newBands);
+    if (eqBandsRef.current[index] && audioCtxRef.current) {
+        eqBandsRef.current[index].gain.setTargetAtTime(val, audioCtxRef.current.currentTime, 0.05);
+    }
+  };
 
   // --- CLEAN RAW LINK SHARE ---
   const handleShareSong = async () => {
@@ -545,23 +620,16 @@ export default function MiniPlayer() {
       const vId = ytVideoId || currentSong.prefetchedYtId || '';
       const sId = spotifyId || currentSong.spotifyId || '';
       
-      // Clean, exact URL for sharing
       const shareUrl = `${window.location.origin}/play${path}?token=${vId}&signature=${sId}`;
 
       if (navigator.share) {
-        try { 
-            await navigator.share({ url: shareUrl }); 
-        } 
-        catch(e) { 
-            await navigator.clipboard.writeText(shareUrl); 
-            alert("Link copied to clipboard!"); 
-        }
+        try { await navigator.share({ url: shareUrl }); } 
+        catch(e) { await navigator.clipboard.writeText(shareUrl); alert("Link copied to clipboard!"); }
       } else { 
-        await navigator.clipboard.writeText(shareUrl); 
-        alert("Link copied to clipboard!"); 
+        await navigator.clipboard.writeText(shareUrl); alert("Link copied to clipboard!"); 
       }
     } catch (e) { console.error("Error sharing:", e); }
-    setShowSettingsMenu(false);
+    window.history.back(); // cleanly closes overlay via popstate
   };
 
   useEffect(() => {
@@ -689,10 +757,10 @@ export default function MiniPlayer() {
     try {
       let recs = await getCache(`recs_${targetVid}`);
       if (!recs || recs.length === 0) {
-          const res = await fetch(`https://ayushmind.vercel.app/api/rec?vid=${targetVid}`);
+          const res = await fetch(`https://recomserver.vercel.app/api?vid=${targetVid}`);
           if (res.ok) {
              const data = await res.json();
-             recs = data.recommendations ||[];
+             recs = data.recommendations || data ||[];
              if (recs.length > 0) await setCache(`recs_${targetVid}`, recs);
           }
       }
@@ -738,9 +806,10 @@ export default function MiniPlayer() {
              try {
                  let recs = await getCache(`recs_${seedVid}`);
                  if (!recs) {
-                     const res = await fetch(`https://ayushmind.vercel.app/api/rec?vid=${seedVid}`);
+                     const res = await fetch(`https://recomserver.vercel.app/api?vid=${seedVid}`);
                      if (res.ok) {
-                        recs = (await res.json()).recommendations ||[];
+                        const data = await res.json();
+                        recs = data.recommendations || data ||[];
                         if (recs.length > 0) await setCache(`recs_${seedVid}`, recs);
                      }
                  }
@@ -1670,10 +1739,10 @@ export default function MiniPlayer() {
           opts = Array.from(uniqueMap.values()).sort((a, b) => b.num - a.num);
       }
       setDlState({ type: "music", status: "options", options: opts.length > 0 ? opts : undefined });
-      setShowSettingsMenu(false); 
+      window.history.back(); 
   };
   
-  const handleDownloadVideoInit = () => { setDlState({ type: "video", status: "servers" }); setShowSettingsMenu(false); };
+  const handleDownloadVideoInit = () => { setDlState({ type: "video", status: "servers" }); window.history.back(); };
 
   const triggerVideoServer = async (serverNum: number) => {
     setDlState({ type: "video", status: "verifying", server: serverNum });
@@ -1778,7 +1847,7 @@ export default function MiniPlayer() {
     return uniqueArtists.map((artist: any) => {
       const artistImg = getImageUrl(artist.image); const fallbackColor = getArtistColor(artist.name || "Unknown");
       return (
-        <Link key={artist.id} href={`/artist?id=${artist.id}`} onClick={() => setIsExpanded(false)} className="flex flex-col items-center gap-2 flex-shrink-0 w-[84px] group no-select-text">
+        <Link key={artist.id} href={`/artist?id=${artist.id}`} onClick={() => window.history.back()} className="flex flex-col items-center gap-2 flex-shrink-0 w-[84px] group no-select-text">
           <div className="w-[84px] h-[84px] rounded-full overflow-hidden relative flex items-center justify-center shadow-lg border border-white/10 group-hover:scale-105 transition-transform" style={{ backgroundColor: artistImg ? '#282828' : fallbackColor }}>
             {!artistImg ? <span className="text-white font-bold text-3xl no-select-text">{decodeEntities(artist.name).charAt(0).toUpperCase()}</span> : <img draggable={false} src={artistImg} onError={(e) => { e.currentTarget.style.display = 'none'; }} className="w-full h-full object-cover relative z-10 no-select pointer-events-none" alt={artist.name} />}
           </div>
@@ -1877,6 +1946,9 @@ export default function MiniPlayer() {
             color: transparent;
             will-change: background;
         }
+        .eq-slider { -webkit-appearance: none; appearance: none; background: rgba(255,255,255,0.1); outline: none; border-radius: 2px; }
+        .eq-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid #1db954; box-shadow: 0 0 10px rgba(29, 185, 84, 0.5); cursor: pointer; transition: transform 0.1s; }
+        .eq-slider::-webkit-slider-thumb:active { transform: scale(1.2); }
       `}} />
 
       <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} 
@@ -1896,10 +1968,12 @@ export default function MiniPlayer() {
         <div className="absolute inset-0 z-0 pointer-events-none transition-all duration-700" style={{ backgroundColor: dominantColor, backgroundImage: isLyricsFullScreen ? 'none' : 'linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%)' }} />
         
         {canvasData?.canvasUrl && !isVideoMode && isCanvasEnabled && (
-          <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 ${isCanvasLoaded && !isScrolledPastMain && !showQueue && !isLyricsFullScreen ? 'opacity-100' : 'opacity-0'}`}>
-            <video ref={canvasVideoRef} src={canvasData.canvasUrl} loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover" />
-            <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/70 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
-            <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/30 transition-opacity duration-500 ${isUiHidden ? 'opacity-100' : 'opacity-0'}`} />
+          <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 flex justify-center ${isCanvasLoaded && !isScrolledPastMain && !showQueue && !isLyricsFullScreen ? 'opacity-100' : 'opacity-0'}`}>
+            <div className="relative w-full h-full max-w-[calc(100vh*9/16)] mx-auto overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+               <video ref={canvasVideoRef} src={canvasData.canvasUrl} loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover" />
+               <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/70 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
+               <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/30 transition-opacity duration-500 ${isUiHidden ? 'opacity-100' : 'opacity-0'}`} />
+            </div>
           </div>
         )}
 
@@ -1908,7 +1982,7 @@ export default function MiniPlayer() {
           <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto transition-all duration-500" style={{ height: isLyricsFullScreen ? '100%' : undefined, minHeight: isLyricsFullScreen ? '100%' : '100dvh' }}>
             
             <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full ${isLyricsFullScreen ? 'mt-0' : 'mt-4'}`}>
-              <button onClick={() => { if (isLyricsFullScreen) setIsLyricsFullScreen(false); else { setIsExpanded(false); window.history.back(); } }} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><ChevronDown size={28} /></button>
+              <button onClick={() => { if (isLyricsFullScreen) setIsLyricsFullScreen(false); else window.history.back(); }} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md no-select-text">
                 <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {playContext?.type || 'App'}</span>
                 <span className="text-[13px] font-bold text-white truncate w-full text-center mt-[2px]">{decodeEntities(playContext?.name || 'Music')}</span>
@@ -2008,7 +2082,7 @@ export default function MiniPlayer() {
             )}
 
             {!currentSong.isProFallback && songDetails?.album && (
-              <Link href={albumRoute} onClick={() => setIsExpanded(false)} className="w-full mb-6 bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group no-select-text pointer-events-auto">
+              <Link href={albumRoute} onClick={() => window.history.back()} className="w-full mb-6 bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group no-select-text pointer-events-auto">
                 <div className="absolute inset-0 z-0 pointer-events-none opacity-30" style={{ backgroundColor: dominantColor }} />
                 {displayImage && <img draggable={false} src={displayImage} className="w-[64px] h-[64px] rounded-md object-cover relative z-10 shadow-md border border-white/5 group-hover:scale-105 transition-transform no-select pointer-events-none" alt="Album Cover" />}
                 <div className="flex flex-col relative z-10 flex-1 pr-2"><span className="text-white/60 text-[11px] uppercase tracking-widest font-bold mb-1 drop-shadow-sm">Album</span><span className="text-white font-bold text-[16px] line-clamp-1 drop-shadow-md">{decodeEntities(songDetails.album.name)}</span></div><div className="relative z-10 text-white/50 group-hover:text-white transition-colors pl-2"><ChevronDown size={20} className="-rotate-90" /></div>
@@ -2016,7 +2090,7 @@ export default function MiniPlayer() {
             )}
 
             {!currentSong.isProFallback && songDetails && (
-              <div className="w-full mb-10 rounded-2xl p-5 flex flex-col gap-4 border border-white/10 shadow-2xl relative overflow-hidden no-select-text">
+              <div className="w-full mb-6 rounded-2xl p-5 flex flex-col gap-4 border border-white/10 shadow-2xl relative overflow-hidden no-select-text">
                 {displayImage && <div className="absolute inset-0 z-0 bg-cover bg-center opacity-30 blur-lg scale-110" style={{ backgroundImage: `url(${displayImage})` }} />}<div className="absolute inset-0 z-0 bg-gradient-to-t from-black/90 via-black/60 to-black/30 pointer-events-none" />
                 <h3 className="text-white font-bold text-[18px] drop-shadow-md relative z-10 mb-2">About Song</h3>
                 <div className="relative z-10 grid grid-cols-2 gap-y-5 gap-x-4">
@@ -2029,15 +2103,56 @@ export default function MiniPlayer() {
                 {songDetails.copyright && (<div className="relative z-10 mt-3 pt-4 border-t border-white/10"><p className="text-white/40 text-[10px] font-medium leading-relaxed">{decodeEntities(songDetails.copyright)}</p></div>)}
               </div>
             )}
+
+            {/* --- PRO EQUALIZER & VISUALIZER --- */}
+            {!currentSong.isProFallback && (
+              <div className="w-full mb-10 rounded-2xl p-5 flex flex-col gap-4 border border-white/10 shadow-2xl relative overflow-hidden bg-[#121212] no-select-text pointer-events-auto">
+                <div className="absolute inset-0 z-0 bg-gradient-to-t from-black/90 via-black/60 to-black/30 pointer-events-none" />
+                <div className="relative z-10 flex items-center justify-between mb-2">
+                  <h3 className="text-white font-bold text-[18px] drop-shadow-md">Pro Audio EQ</h3>
+                  <select
+                    value={eqPreset}
+                    onChange={(e) => applyEqPreset(e.target.value)}
+                    className="bg-white/10 text-white text-[12px] font-bold px-3 py-1.5 rounded-lg outline-none border border-white/10 appearance-none text-center cursor-pointer"
+                  >
+                    {Object.keys(EQ_PRESETS).map(p => <option key={p} value={p} className="text-black">{p}</option>)}
+                    <option value="Custom" className="text-black">Custom</option>
+                  </select>
+                </div>
+
+                <div className="relative z-10 w-full h-[120px] rounded-lg overflow-hidden border border-white/10 bg-[#0a0b0e] shadow-inner">
+                  <canvas ref={visualizerCanvasRef} className="w-full h-full block" />
+                </div>
+
+                <div className="relative z-10 flex items-center justify-between gap-2 overflow-x-auto scrollbar-hide py-4 px-1 w-full" style={{ touchAction: 'pan-x' }}>
+                  {EQ_FREQUENCIES.map((freq, i) => (
+                    <div key={i} className="flex flex-col items-center gap-3 flex-shrink-0 min-w-[36px]">
+                      <span className="text-white/50 text-[10px] font-bold">{freq >= 1000 ? `${freq/1000}k` : freq}</span>
+                      <div className="h-[120px] flex items-center justify-center relative w-full">
+                         <input
+                           type="range"
+                           min="-12" max="12" step="0.1"
+                           value={eqBandValues[i]}
+                           onChange={(e) => handleEqBandChange(i, parseFloat(e.target.value))}
+                           className="absolute w-[120px] h-[4px] eq-slider"
+                           style={{ transform: 'rotate(-90deg)' }}
+                         />
+                      </div>
+                      <span className="text-[#1db954] text-[9px] font-bold tracking-wider">{eqBandValues[i] > 0 ? `+${eqBandValues[i].toFixed(1)}` : eqBandValues[i].toFixed(1)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* --- SETTINGS MENU --- */}
-        <div className={`absolute inset-0 z-[100000] bg-black/60 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto flex flex-col justify-end ${showSettingsMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => { setShowSettingsMenu(false); window.history.back(); }}>
+        <div className={`absolute inset-0 z-[100000] bg-black/60 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto flex flex-col justify-end ${showSettingsMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => window.history.back()}>
           <div className={`w-full bg-[#121212] rounded-t-[28px] transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] shadow-2xl border-t border-white/10 flex flex-col max-h-[85vh] ${showSettingsMenu ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}>
              <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0">
                  <h3 className="text-white font-extrabold text-[22px] flex items-center gap-2"><Settings2 size={24}/> Settings</h3>
-                 <button onClick={() => { setShowSettingsMenu(false); window.history.back(); }} className="text-white/60 p-2 hover:text-white bg-white/5 rounded-full"><ChevronDown size={20} /></button>
+                 <button onClick={() => window.history.back()} className="text-white/60 p-2 hover:text-white bg-white/5 rounded-full"><ChevronDown size={20} /></button>
              </div>
 
              <div className="px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] flex flex-col gap-6 overflow-y-auto scrollbar-hide flex-1">
@@ -2058,7 +2173,7 @@ export default function MiniPlayer() {
                    <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Audio Quality</span>
                    <div className="flex bg-[#1e1e1e] rounded-[16px] overflow-x-auto hide-scrollbar p-2 gap-2">
                       {['12', '48', '96', '160', '320'].map((q) => (
-                         <button key={q} onClick={() => { setSelectedQuality(q); localStorage.setItem('audio_quality', q); setShowSettingsMenu(false); window.history.back(); restoreTimeRef.current = audioRef.current?.currentTime || 0; }} className={`flex-shrink-0 px-4 py-2 rounded-xl text-[14px] font-bold transition-all ${selectedQuality === q ? 'bg-[#1db954] text-black shadow-md' : 'bg-white/5 text-white hover:bg-white/10'}`}>
+                         <button key={q} onClick={() => { setSelectedQuality(q); localStorage.setItem('audio_quality', q); window.history.back(); restoreTimeRef.current = audioRef.current?.currentTime || 0; }} className={`flex-shrink-0 px-4 py-2 rounded-xl text-[14px] font-bold transition-all ${selectedQuality === q ? 'bg-[#1db954] text-black shadow-md' : 'bg-white/5 text-white hover:bg-white/10'}`}>
                             {q} kbps
                          </button>
                       ))}
@@ -2194,18 +2309,18 @@ export default function MiniPlayer() {
 
         {/* TIMER MENU OVERLAY */}
         {showTimerMenu && (
-          <div className="absolute inset-0 z-[100010] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm pointer-events-auto" onClick={() => { setShowTimerMenu(false); window.history.back(); }}>
+          <div className="absolute inset-0 z-[100010] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm pointer-events-auto" onClick={() => window.history.back()}>
              <div className="w-full max-w-sm bg-[#282828] rounded-2xl p-6 shadow-2xl flex flex-col gap-2 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
-                <h4 className="text-white font-bold text-lg mb-2 flex justify-between items-center">Sleep Timer <button onClick={() => { setShowTimerMenu(false); window.history.back(); }} className="text-white/50 hover:text-white"><X size={20}/></button></h4>
+                <h4 className="text-white font-bold text-lg mb-2 flex justify-between items-center">Sleep Timer <button onClick={() => window.history.back()} className="text-white/50 hover:text-white"><X size={20}/></button></h4>
                 {[5, 15, 30, 45, 60].map(mins => (
-                   <button key={mins} onClick={() => { setSleepTimer(mins); setShowTimerMenu(false); window.history.back(); }} className={`py-3 px-4 rounded-lg flex justify-between items-center transition-colors ${sleepTimer === mins ? 'bg-[#1db954]/20 text-[#1db954]' : 'bg-white/5 text-white hover:bg-white/10'}`}>
+                   <button key={mins} onClick={() => { setSleepTimer(mins); window.history.back(); }} className={`py-3 px-4 rounded-lg flex justify-between items-center transition-colors ${sleepTimer === mins ? 'bg-[#1db954]/20 text-[#1db954]' : 'bg-white/5 text-white hover:bg-white/10'}`}>
                       <span className="font-medium">{mins} minutes</span>{sleepTimer === mins && <Check size={18} />}
                    </button>
                 ))}
-                <button onClick={() => { setSleepTimer('end'); setShowTimerMenu(false); window.history.back(); }} className={`py-3 px-4 rounded-lg flex justify-between items-center transition-colors ${sleepTimer === 'end' ? 'bg-[#1db954]/20 text-[#1db954]' : 'bg-white/5 text-white hover:bg-white/10'}`}>
+                <button onClick={() => { setSleepTimer('end'); window.history.back(); }} className={`py-3 px-4 rounded-lg flex justify-between items-center transition-colors ${sleepTimer === 'end' ? 'bg-[#1db954]/20 text-[#1db954]' : 'bg-white/5 text-white hover:bg-white/10'}`}>
                    <span className="font-medium">End of track</span>{sleepTimer === 'end' && <Check size={18} />}
                 </button>
-                <button onClick={() => { setSleepTimer(null); setShowTimerMenu(false); window.history.back(); }} className="py-3 px-4 rounded-lg text-white/50 hover:bg-white/5 text-left mt-2 border border-white/10 transition-colors">
+                <button onClick={() => { setSleepTimer(null); window.history.back(); }} className="py-3 px-4 rounded-lg text-white/50 hover:bg-white/5 text-left mt-2 border border-white/10 transition-colors">
                    Turn off timer
                 </button>
              </div>
@@ -2215,7 +2330,7 @@ export default function MiniPlayer() {
         {/* QUEUE OVERLAY */}
         <div className={`absolute inset-0 z-[60] bg-[#121212] transition-transform duration-300 flex flex-col pointer-events-auto ${showQueue ? 'translate-y-0' : 'translate-y-full'}`}>
           <div className="flex items-center justify-between px-5 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 sticky top-0 bg-[#121212] z-20 shadow-md no-select-text">
-            <button onClick={() => { setShowQueue(false); setIsQueueEditMode(false); window.history.back(); }} className="p-2 -ml-2 text-white/80 active:opacity-50"><ChevronDown size={28} /></button>
+            <button onClick={() => { setIsQueueEditMode(false); window.history.back(); }} className="p-2 -ml-2 text-white/80 active:opacity-50"><ChevronDown size={28} /></button>
             <span className="text-[15px] font-bold text-white">Queue</span>
             {isQueueEditMode ? (
                <button onClick={() => { setIsQueueEditMode(false); setSelectedQueueItems([]); }} className="text-[14px] font-bold text-[#1db954] active:opacity-50">Done</button>

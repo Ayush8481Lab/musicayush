@@ -1,3 +1,5 @@
+
+
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -472,7 +474,7 @@ export default function MiniPlayer() {
           window.history.pushState({ appModal: true }, '', window.location.href);
       }
       previousStates.current = { isExpanded, showQueue, showSettingsMenu, showTimerMenu };
-  }, [isExpanded, showQueue, showSettingsMenu, showTimerMenu]);
+  },[isExpanded, showQueue, showSettingsMenu, showTimerMenu]);
 
   useEffect(() => {
       const handlePopState = (e: PopStateEvent) => {
@@ -483,11 +485,11 @@ export default function MiniPlayer() {
       };
       window.addEventListener('popstate', handlePopState);
       return () => window.removeEventListener('popstate', handlePopState);
-  }, [showSettingsMenu, showTimerMenu, showQueue, isExpanded]);
+  },[showSettingsMenu, showTimerMenu, showQueue, isExpanded]);
 
 
   // --- PRO 10-BAND AUDIO CONTEXT & SPECTRUM EQUALIZER ---
-  useEffect(() => { eqBandValuesRef.current = eqBandValues; }, [eqBandValues]);
+  useEffect(() => { eqBandValuesRef.current = eqBandValues; },[eqBandValues]);
   useEffect(() => { () => cancelAnimationFrame(visualizerRafRef.current); },[]);
 
   const startVisualizer = useCallback(() => {
@@ -560,7 +562,7 @@ export default function MiniPlayer() {
             limiter.release.value = 0.050;  
             
             // 10-Band EQ filters
-            let previousNode = source;
+            let previousNode: AudioNode = source; // Explicitly typed to fix TypeScript compilation error
             const bands: any[] =[];
 
             EQ_FREQUENCIES.forEach((freq, i) => {
@@ -604,7 +606,7 @@ export default function MiniPlayer() {
 
   const handleEqBandChange = (index: number, val: number) => {
     setEqPreset("Custom");
-    const newBands = [...eqBandValues];
+    const newBands =[...eqBandValues];
     newBands[index] = val;
     setEqBandValues(newBands);
     if (eqBandsRef.current[index] && audioCtxRef.current) {
@@ -879,6 +881,7 @@ export default function MiniPlayer() {
 
     if (!isCanvasEnabledRef.current && !isLyricsEnabledRef.current) return () => { isCurrent = false; };
 
+    // --- SPOTIFY FALLBACK LOGIC ---
     const fetchSpotifyMatch = async () => {
       const cacheKey = `spotify_match_v2_${currentSong.id}`;
       let cachedMatch = await getCache(cacheKey);
@@ -901,6 +904,7 @@ export default function MiniPlayer() {
       const query = `${instantTitle} ${searchArtist}`.trim();
       let matchData = null;
 
+      // FIRST TRY: AK47 API Matcher
       try {
          const auth = await getAuthData();
          if (auth && auth.accessToken) {
@@ -910,18 +914,22 @@ export default function MiniPlayer() {
                  if (authJson.results && Array.isArray(authJson.results) && authJson.results.length > 0) {
                      const match = performAK47Matching(authJson.results, instantTitle, searchArtist);
                      if (match) {
-                        const sId = match.spotify_url?.split('/track/')[1]?.split('?')[0];
+                        const sId = match.id || match.spotify_url?.split('/track/')[1]?.split('?')[0] || match.external_urls?.spotify?.split('/track/')[1]?.split('?')[0];
+                        const sUrl = match.spotify_url || match.external_urls?.spotify || `https://open.spotify.com/track/${sId}`;
                         if (sId) {
-                            setSpotifyId(sId); setSpotifyUrl(match.spotify_url);
-                            await setCache(cacheKey, { id: sId, url: match.spotify_url });
-                            return; 
+                            setSpotifyId(sId); setSpotifyUrl(sUrl);
+                            await setCache(cacheKey, { id: sId, url: sUrl });
+                            return; // IF AK47 SUCCEEDS, EXIT EARLY
                         }
                      }
                  }
              }
          }
-      } catch (e) {}
+      } catch (e) {
+          // If AK47 fails, we suppress the error and allow it to fall back to RapidAPI
+      }
 
+      // SECOND TRY (FALLBACK): RapidAPI
       const searchUrl = `https://${RAPID_API_HOST}/search?q=${encodeURIComponent(query)}&type=tracks&offset=0&limit=25&numberOfTopResults=5`;
       for (let attempt = 0; attempt < RAPID_KEYS.length; attempt++) {
         try {

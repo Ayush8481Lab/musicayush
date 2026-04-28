@@ -159,39 +159,10 @@ const parseTimeTag = (tag: string) => {
 const RAPID_KEYS =["d1edce158amshec139440d20658ap1f2545jsnbb7da9add82f", "6cf7f03014msh787c51a713c0264p15c20djsna1f9a9f6a378", "13d48f6bb8msh459c11b91bdcc44p110f4ejsn099443894115", "03fc23317fmsh0535ef9ec8c6f5bp1db59bjsn545991df9343", "e54e3fbc4dmshfc16d4417b618fdp1a2fafjsn30c72d8cf3ab"];
 const RAPID_API_HOST = "spotify81.p.rapidapi.com";
 
-// --- EQ PRESETS & FREQUENCIES ---
+// --- AUDIO EQ PRESETS ---
 const EQ_FREQUENCIES =[32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-const EQ_PRESETS: Record<string, number[]> = {
-  Flat:[0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  "Bass Boost":[6, 4.5, 2, 0, -1, -1, 0, 0, 0, 0],
-  Electronic:[5, 4, 1, 0, -2, 1, 2, 3, 4, 3],
-  Acoustic:[2, 1, 0, -1, 1, 2, 2, 3, 2, 1],
-  Rock:[4, 3, 2, 1, -1, -1, 0, 2, 3, 4],
-  Pop:[-1, -1, 0, 2, 3, 3, 2, 1, 0, -1],
-  Enhanced:[-2, 2, -1, -5, -7, -6, -3, -3, -4, -1]
-};
-
-// --- ISOLATED EQ SLIDER FOR 60FPS SMOOTHNESS ---
-const EqSlider = ({ freq, initialValue, onChange }: { freq: number, initialValue: number, onChange: (val: number) => void }) => {
-  const [val, setVal] = useState(initialValue);
-  useEffect(() => { setVal(initialValue); }, [initialValue]);
-
-  return (
-    <div className="flex flex-col items-center justify-between h-full min-w-[45px] flex-1">
-      <div className="text-[11px] font-semibold text-[#7a8295] mb-[15px]">{freq >= 1000 ? `${freq/1000}k` : freq}</div>
-      <input
-        type="range" min="-12" max="12" step="0.1" value={val}
-        onChange={(e) => {
-          const v = parseFloat(e.target.value);
-          setVal(v);
-          onChange(v);
-        }}
-        className="eq-slider-custom"
-      />
-      <div className="text-[10px] text-[#00f0ff] mt-[15px] font-bold">{val > 0 ? `+${val.toFixed(1)}` : val.toFixed(1)} dB</div>
-    </div>
-  );
-};
+const ENHANCED_EQ =[-2, 2, -1, -5, -7, -6, -3, -3, -4, -1];
+const ORIGINAL_EQ =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 // --- AK47 SPECIFIC MATCHER ---
 const performAK47Matching = (results: any[], targetTrack: string, targetArtist: string): any => {
@@ -446,17 +417,11 @@ export default function MiniPlayer() {
   const isCanvasEnabledRef = useRef(true);
   const isLyricsEnabledRef = useRef(true);
 
-  // EQUALIZER STATE & REFS
-  const [eqPreset, setEqPreset] = useState("Enhanced");
-  const[eqBandValues, setEqBandValues] = useState<number[]>(EQ_PRESETS["Enhanced"]);
-  const eqBandsRef = useRef<any[]>([]);
-  const analyserRef = useRef<any>(null);
-  const visualizerCanvasRef = useRef<HTMLCanvasElement>(null);
-  const visualizerRafRef = useRef<number>(0);
-  const eqBandValuesRef = useRef(EQ_PRESETS["Enhanced"]);
-
+  // BACKGROUND AUDIO EQ STATE
+  const[isAudioEnhanced, setIsAudioEnhanced] = useState(true);
   const audioCtxRef = useRef<any>(null);
   const isAudioPremiumSetupRef = useRef(false);
+  const eqBandsRef = useRef<any[]>([]);
 
   const[dlState, setDlState] = useState<{type: "music" | "video" | null, status: string, options?: any[], progress?: number, packStep?: string, server?: number}>({type: null, status: "idle", progress: 0, server: 1});
 
@@ -535,47 +500,16 @@ export default function MiniPlayer() {
   };
 
 
-  // --- PRO 10-BAND AUDIO CONTEXT & SPECTRUM EQUALIZER ---
-  useEffect(() => { eqBandValuesRef.current = eqBandValues; },[eqBandValues]);
-  useEffect(() => { return () => cancelAnimationFrame(visualizerRafRef.current); },[]);
-
-  const startVisualizer = useCallback(() => {
-    const canvas = visualizerCanvasRef.current;
-    if (!canvas || !analyserRef.current) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const analyser = analyserRef.current;
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-
-    const draw = () => {
-        visualizerRafRef.current = requestAnimationFrame(draw);
-        if (!visualizerCanvasRef.current) return;
-        const w = visualizerCanvasRef.current.clientWidth;
-        const h = visualizerCanvasRef.current.clientHeight;
-        if (visualizerCanvasRef.current.width !== w || visualizerCanvasRef.current.height !== h) {
-             visualizerCanvasRef.current.width = w; visualizerCanvasRef.current.height = h;
-        }
-
-        analyser.getByteFrequencyData(dataArray);
-        ctx.fillStyle = '#0a0b0e';
-        ctx.fillRect(0, 0, w, h);
-
-        const barWidth = (w / bufferLength) * 2.5;
-        let x = 0;
-        for (let i = 0; i < bufferLength; i++) {
-            const barHeight = dataArray[i] * (h / 255);
-            const r = 0;
-            const g = Math.min(255, barHeight + (100 * (i / bufferLength)));
-            const b = 255;
-            ctx.fillStyle = `rgb(${r},${g},${b})`;
-            ctx.fillRect(x, h - barHeight, barWidth - 1, barHeight);
-            x += barWidth;
-        }
-    };
-    if (visualizerRafRef.current) cancelAnimationFrame(visualizerRafRef.current);
-    draw();
-  },[]);
+  // --- AUDIO EQ EFFECTS ENGINE (Runs in background) ---
+  useEffect(() => {
+    if (eqBandsRef.current.length > 0 && audioCtxRef.current) {
+        const targetEQ = isAudioEnhanced ? ENHANCED_EQ : ORIGINAL_EQ;
+        targetEQ.forEach((val, i) => {
+            eqBandsRef.current[i].gain.setTargetAtTime(val, audioCtxRef.current.currentTime, 0.1);
+        });
+    }
+    localStorage.setItem('audio_enhanced', isAudioEnhanced.toString());
+  },[isAudioEnhanced]);
 
   useEffect(() => {
     if (!audioRef.current) return;
@@ -594,11 +528,22 @@ export default function MiniPlayer() {
             audioCtxRef.current = ctx;
             const source = ctx.createMediaElementSource(audio);
             
-            // Analyzer for spectrum
-            const analyser = ctx.createAnalyser();
-            analyser.fftSize = 1024;
-            analyser.smoothingTimeConstant = 0.85;
-            analyserRef.current = analyser;
+            // 10-Band EQ filters
+            let previousNode: AudioNode = source;
+            const bands: any[] =[];
+            const currentEQ = isAudioEnhanced ? ENHANCED_EQ : ORIGINAL_EQ;
+
+            EQ_FREQUENCIES.forEach((freq, i) => {
+                let filter = ctx.createBiquadFilter();
+                filter.type = "peaking";
+                filter.frequency.value = freq;
+                filter.Q.value = 1.41;
+                filter.gain.value = currentEQ[i];
+                previousNode.connect(filter);
+                previousNode = filter;
+                bands.push(filter);
+            });
+            eqBandsRef.current = bands;
 
             // Studio Limiter (prevents clipping)
             const limiter = ctx.createDynamicsCompressor();
@@ -608,58 +553,18 @@ export default function MiniPlayer() {
             limiter.attack.value = 0.005;  
             limiter.release.value = 0.050;  
             
-            // 10-Band EQ filters
-            let previousNode: AudioNode = source;
-            const bands: any[] =[];
-
-            EQ_FREQUENCIES.forEach((freq, i) => {
-                let filter = ctx.createBiquadFilter();
-                filter.type = "peaking";
-                filter.frequency.value = freq;
-                filter.Q.value = 1.41;
-                filter.gain.value = eqBandValuesRef.current[i];
-                previousNode.connect(filter);
-                previousNode = filter;
-                bands.push(filter);
-            });
-            eqBandsRef.current = bands;
-            
             // Connect chain
             previousNode.connect(limiter); 
-            limiter.connect(analyser); 
-            analyser.connect(ctx.destination);
+            limiter.connect(ctx.destination);
             
             isAudioPremiumSetupRef.current = true;
-            startVisualizer();
         } catch(e) { console.warn("Premium Audio Config Error", e); }
     };
 
     const handlePlay = () => initAudioContext();
     audio.addEventListener('play', handlePlay);
     return () => audio.removeEventListener('play', handlePlay);
-  },[startVisualizer]);
-
-  const applyEqPreset = (presetName: string) => {
-    setEqPreset(presetName);
-    if (presetName === "Custom") return;
-    const values = EQ_PRESETS[presetName];
-    setEqBandValues([...values]);
-    if (eqBandsRef.current.length > 0 && audioCtxRef.current) {
-        values.forEach((val, i) => {
-            eqBandsRef.current[i].gain.setTargetAtTime(val, audioCtxRef.current.currentTime, 0.05);
-        });
-    }
-  };
-
-  const handleEqBandChange = (index: number, val: number) => {
-    setEqPreset("Custom");
-    const newBands =[...eqBandValues];
-    newBands[index] = val;
-    setEqBandValues(newBands);
-    if (eqBandsRef.current[index] && audioCtxRef.current) {
-        eqBandsRef.current[index].gain.setTargetAtTime(val, audioCtxRef.current.currentTime, 0.05);
-    }
-  };
+  },[]);
 
   // --- CLEAN RAW LINK SHARE ---
   const handleShareSong = async () => {
@@ -678,7 +583,7 @@ export default function MiniPlayer() {
         await navigator.clipboard.writeText(shareUrl); alert("Link copied to clipboard!"); 
       }
     } catch (e) { console.error("Error sharing:", e); }
-    window.history.back();
+    window.history.back(); // cleanly closes overlay via popstate
   };
 
   useEffect(() => {
@@ -727,6 +632,8 @@ export default function MiniPlayer() {
        const l = localStorage.getItem('lyrics_enabled'); if (l !== null) { setIsLyricsEnabled(l === 'true'); isLyricsEnabledRef.current = l === 'true'; }
        const ws = localStorage.getItem('word_sync_enabled'); if (ws !== null) setIsWordSyncEnabled(ws === 'true');
        const mws = localStorage.getItem('mini_word_sync_enabled'); if (mws !== null) setIsMiniWordSyncEnabled(mws === 'true');
+       
+       const ae = localStorage.getItem('audio_enhanced'); if (ae !== null) setIsAudioEnhanced(ae === 'true');
 
        const storedSong = localStorage.getItem('last_session_song');
        if (storedSong && !currentSong && !isSessionRestored) {
@@ -744,7 +651,7 @@ export default function MiniPlayer() {
 
   useEffect(() => { isCanvasEnabledRef.current = isCanvasEnabled; },[isCanvasEnabled]);
   useEffect(() => { isLyricsEnabledRef.current = isLyricsEnabled; if (!isLyricsEnabled) setIsLyricsFullScreen(false); },[isLyricsEnabled]);
-  useEffect(() => { if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong)); }, [currentSong]);
+  useEffect(() => { if (currentSong) localStorage.setItem('last_session_song', JSON.stringify(currentSong)); },[currentSong]);
   useEffect(() => { if (upcomingQueue && upcomingQueue.length > 0) localStorage.setItem('last_session_queue', JSON.stringify(upcomingQueue)); },[upcomingQueue]);
 
   const rawTitle = currentSong ? decodeEntities(currentSong.title || currentSong.name || "Unknown") : "";
@@ -2001,15 +1908,6 @@ export default function MiniPlayer() {
             color: transparent;
             will-change: background;
         }
-        
-        /* Pro Equalizer Sliders Exact Match */
-        .eq-slider-custom {
-            -webkit-appearance: none; width: 140px; height: 6px; background: #202530; border-radius: 3px; outline: none; transform: rotate(-90deg); margin: auto 0;
-        }
-        .eq-slider-custom::-webkit-slider-thumb {
-            -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #fff; cursor: pointer; border: 2px solid #00f0ff; box-shadow: 0 0 10px rgba(0, 240, 255, 0.5); transition: transform 0.1s;
-        }
-        .eq-slider-custom::-webkit-slider-thumb:active { transform: scale(1.2); }
       `}} />
 
       <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} 
@@ -2023,9 +1921,22 @@ export default function MiniPlayer() {
 
       <div className={`player-root fixed inset-0 z-[99999] text-white transition-all duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0 opacity-100 overflow-hidden" : "translate-y-full opacity-0 pointer-events-none"}`}>
         
-        {/* Full Player Background Gradient using Dominant Color */}
-        <div className="absolute inset-0 z-0 pointer-events-none transition-all duration-700" style={{ backgroundColor: dominantColor, backgroundImage: isLyricsFullScreen ? 'none' : 'linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.85) 100%)' }} />
+        {/* Full Screen Background Layer */}
+        {isCanvasLoaded && !isScrolledPastMain && !showQueue && !isVideoMode && !isLyricsFullScreen && isCanvasEnabled && (
+          <div className="absolute inset-0 z-10 cursor-pointer" onClick={() => setIsUiHidden(!isUiHidden)} />
+        )}
+        <div className="absolute inset-0 z-0 pointer-events-none transition-all duration-700" style={{ backgroundColor: dominantColor, backgroundImage: isLyricsFullScreen ? 'none' : 'linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%)' }} />
+        
+        {/* Full Screen Canvas Video */}
+        {canvasData?.canvasUrl && !isVideoMode && isCanvasEnabled && (
+          <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 ${isCanvasLoaded && !isScrolledPastMain && !showQueue && !isLyricsFullScreen ? 'opacity-100' : 'opacity-0'}`}>
+            <video ref={canvasVideoRef} src={canvasData.canvasUrl} loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover" />
+            <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/70 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
+            <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/30 transition-opacity duration-500 ${isUiHidden ? 'opacity-100' : 'opacity-0'}`} />
+          </div>
+        )}
 
+        {/* Scrollable Container */}
         <div className={`absolute inset-0 z-20 overflow-x-hidden scrollbar-hide flex flex-col pointer-events-none ${isLyricsFullScreen ? 'overflow-y-hidden' : 'overflow-y-auto'}`} onScroll={handleScroll}>
           
           <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto transition-all duration-500" style={{ height: isLyricsFullScreen ? '100%' : undefined, minHeight: isLyricsFullScreen ? '100%' : '100dvh' }}>
@@ -2040,31 +1951,9 @@ export default function MiniPlayer() {
               <button onClick={openSettings} className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><MoreHorizontal size={24} /></button>
             </div>
 
-            {/* PERFECT FIXED 9:16 MEDIA CONTAINER */}
-            <div className={`flex-1 min-h-0 w-full flex flex-col items-center justify-center relative z-30 transition-all duration-500 ${isLyricsFullScreen ? 'hidden' : 'px-6 py-4 flex-shrink-0'}`}>
-               <div className="relative bg-black rounded-[16px] shadow-[0_15px_40px_rgba(0,0,0,0.6)] overflow-hidden w-full max-w-[380px] pointer-events-auto" style={{ aspectRatio: '9/16', maxHeight: '55vh' }}>
-                  {(loading || isVideoLoading) && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
-                  
-                  {isVideoMode && ytVideoId ? (
-                    <iframe 
-                      ref={videoIframeRef} 
-                      src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${iframeInitialTimeRef.current}`} 
-                      style={{ width: "100%", height: "100%", border: "none" }} 
-                      allow="autoplay; fullscreen; picture-in-picture" 
-                    />
-                  ) : isCanvasLoaded && isCanvasEnabled && canvasData?.canvasUrl ? (
-                    <div className="absolute inset-0 w-full h-full cursor-pointer" onClick={() => setIsUiHidden(!isUiHidden)}>
-                       <video ref={canvasVideoRef} src={canvasData.canvasUrl} loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="w-full h-full object-cover" />
-                       <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/50 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
-                    </div>
-                  ) : displayImage ? (
-                    <img draggable={false} src={displayImage} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />
-                  ) : null}
-               </div>
-            </div>
-
-            {/* FULL SCREEN LYRICS VIEW (If active) */}
-            {isLyricsFullScreen && isLyricsEnabled && (
+            {/* Square 1:1 Album Art Cover */}
+            <div className={`flex-1 min-h-0 w-full flex items-center justify-center relative z-30 transition-all duration-500 ${isLyricsFullScreen ? 'px-0 py-0 flex-col items-stretch justify-start' : (isVideoMode ? 'px-4 py-2' : 'px-8 py-2')}`}>
+              {isLyricsFullScreen && isLyricsEnabled ? (
                 <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden pointer-events-auto transition-colors duration-700 bg-transparent">
                   <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-4 pb-[30vh] flex flex-col gap-8 w-full h-full mask-edges-vertical" ref={fullLyricsContainerRef}>
                      {lyrics.length > 0 && (syncType !== "LINE_SYNCED" || isVideoMode) && (
@@ -2075,7 +1964,22 @@ export default function MiniPlayer() {
                      {RenderedLyrics}
                   </div>
                 </div>
-            )}
+              ) : isVideoMode && ytVideoId ? (
+                <div className="w-full aspect-video max-w-[600px] max-h-[50vh] relative bg-black shadow-[0_15px_40px_rgba(0,0,0,0.5)] rounded-[12px] transition-all duration-500 overflow-hidden mx-auto pointer-events-auto" style={{ transform: 'translateZ(0)' }}>
+                  <iframe 
+                    ref={videoIframeRef} 
+                    src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${iframeInitialTimeRef.current}`} 
+                    style={{ width: "100%", height: "100%", border: "none", pointerEvents: 'auto', borderRadius: '12px' }} 
+                    allow="autoplay; fullscreen; picture-in-picture" 
+                  />
+                </div>
+              ) : (
+                <div className={`relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isCanvasLoaded && isCanvasEnabled ? 'opacity-0 scale-75 pointer-events-none hidden' : 'opacity-100 scale-100 block'}`} style={{ width: '100%', aspectRatio: '1/1', maxWidth: '380px', maxHeight: '50vh' }}>
+                  {(loading || isVideoLoading) && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
+                  {displayImage && <img draggable={false} src={displayImage} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />}
+                </div>
+              )}
+            </div>
 
             {/* CONTROLS SECTION */}
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto ${isLyricsFullScreen ? 'mb-0 pb-[max(0.5rem,env(safe-area-inset-bottom))]' : 'mb-2'}`}>
@@ -2086,6 +1990,7 @@ export default function MiniPlayer() {
 
               <div className={`transition-all duration-500 flex items-center justify-between drop-shadow-md w-full no-select-text ${isLyricsFullScreen ? 'mb-2 scale-[0.8] origin-bottom-left' : 'mb-5'}`}>
                 <div className="flex items-center gap-3 overflow-hidden pr-4 flex-1 min-w-0 w-full max-w-full">
+                  {showTinyBanner && displayImage && !isLyricsFullScreen && (<img draggable={false} src={displayImage} className="w-[48px] h-[48px] rounded-md shadow-md flex-shrink-0 no-select pointer-events-none" alt="tiny cover" />)}
                   <div className="flex flex-col flex-1 min-w-0 w-full overflow-hidden">
                     <MarqueeText text={displayTitle} className="text-[22px] font-bold text-white tracking-tight drop-shadow-md w-full" />
                     <MarqueeText text={displayArtists} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md w-full" />
@@ -2162,36 +2067,6 @@ export default function MiniPlayer() {
                 {songDetails.copyright && (<div className="relative z-10 mt-3 pt-4 border-t border-white/10"><p className="text-white/40 text-[10px] font-medium leading-relaxed">{decodeEntities(songDetails.copyright)}</p></div>)}
               </div>
             )}
-
-            {/* --- PRO EQUALIZER EXACT HTML MATCH REPLICA --- */}
-            {!currentSong.isProFallback && (
-              <div className="w-full bg-[#111318] p-6 rounded-[12px] shadow-[0_15px_35px_rgba(0,0,0,0.8),0_0_15px_rgba(0,240,255,0.05)] border border-white/5 flex flex-col gap-5 no-select-text pointer-events-auto">
-                <div className="flex flex-col">
-                  <h1 className="text-[22px] font-bold uppercase tracking-[1.5px] mb-1" style={{ background: 'linear-gradient(90deg, #00f0ff, #0066ff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Pro Audio Analyzer</h1>
-                  <p className="text-[#7a8295] text-[13px]">Distortion-Free 10-Band EQ & Spectrum</p>
-                </div>
-                
-                <div className="w-full h-[140px] bg-[#0a0b0e] rounded-[8px] overflow-hidden relative border border-[#202530]">
-                  <canvas ref={visualizerCanvasRef} className="w-full h-full block" />
-                </div>
-
-                <div className="bg-[#0a0b0e] p-5 rounded-[8px] border border-[#202530]">
-                   <div className="flex justify-between items-center mb-5 flex-wrap gap-[15px]">
-                      <h3 className="text-[16px] text-white font-bold">10-Band Equalizer</h3>
-                      <select value={eqPreset} onChange={(e) => applyEqPreset(e.target.value)} className="bg-[#111318] text-white border border-[#202530] py-[10px] px-[14px] rounded-[6px] outline-none cursor-pointer text-[14px] w-full max-w-[180px]">
-                        {Object.keys(EQ_PRESETS).map(p => <option key={p} value={p}>{p}</option>)}
-                        <option value="Custom">Custom</option>
-                      </select>
-                   </div>
-                   <div className="flex justify-between items-center gap-[10px] h-[220px] overflow-x-auto overflow-y-hidden pb-[10px] scrollbar-hide">
-                      {EQ_FREQUENCIES.map((freq, i) => (
-                         <EqSlider key={freq} freq={freq} initialValue={eqBandValues[i]} onChange={(v) => handleEqBandChange(i, v)} />
-                      ))}
-                   </div>
-                </div>
-              </div>
-            )}
-
           </div>
         </div>
 
@@ -2204,6 +2079,20 @@ export default function MiniPlayer() {
              </div>
 
              <div className="px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] flex flex-col gap-6 overflow-y-auto scrollbar-hide flex-1">
+                
+                {/* Audio Profile Setting */}
+                <div className="flex flex-col gap-3 mt-2">
+                   <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Audio Profile</span>
+                   <div className="flex bg-[#1e1e1e] rounded-[16px] overflow-hidden p-2 gap-2">
+                      <button onClick={() => setIsAudioEnhanced(false)} className={`flex-1 px-4 py-3 rounded-xl text-[14px] font-bold transition-all ${!isAudioEnhanced ? 'bg-[#1db954] text-black shadow-md' : 'bg-white/5 text-white hover:bg-white/10'}`}>
+                         Original
+                      </button>
+                      <button onClick={() => setIsAudioEnhanced(true)} className={`flex-1 px-4 py-3 rounded-xl text-[14px] font-bold transition-all ${isAudioEnhanced ? 'bg-[#1db954] text-black shadow-md' : 'bg-white/5 text-white hover:bg-white/10'}`}>
+                         Enhanced
+                      </button>
+                   </div>
+                </div>
+
                 <div className="flex flex-col gap-3">
                    <span className="text-white/60 text-[11px] font-bold uppercase tracking-wider pl-1">Actions</span>
                    <div className="flex flex-col bg-[#1e1e1e] rounded-[16px] overflow-hidden">

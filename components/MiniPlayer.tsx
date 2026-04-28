@@ -60,7 +60,7 @@ const setCache = async (key: string, data: any, isAudio = false): Promise<void> 
           const allReq = storec.getAll();
           allReq.onsuccess = () => {
             const audioItems = allReq.result.filter((i: any) => i.isAudio).sort((a: any, b: any) => b.timestamp - a.timestamp);
-            if (audioItems.length > 30) audioItems.slice(30).forEach((i: any) => storec.delete(i.key)); // Keep only 30 cached songs
+            if (audioItems.length > 30) audioItems.slice(30).forEach((i: any) => storec.delete(i.key));
           };
         }
         resolve();
@@ -169,6 +169,28 @@ const EQ_PRESETS: Record<string, number[]> = {
   Rock:[4, 3, 2, 1, -1, -1, 0, 2, 3, 4],
   Pop:[-1, -1, 0, 2, 3, 3, 2, 1, 0, -1],
   Enhanced:[-2, 2, -1, -5, -7, -6, -3, -3, -4, -1]
+};
+
+// --- ISOLATED EQ SLIDER FOR 60FPS SMOOTHNESS ---
+const EqSlider = ({ freq, initialValue, onChange }: { freq: number, initialValue: number, onChange: (val: number) => void }) => {
+  const [val, setVal] = useState(initialValue);
+  useEffect(() => { setVal(initialValue); }, [initialValue]);
+
+  return (
+    <div className="flex flex-col items-center justify-between h-full min-w-[45px] flex-1">
+      <div className="text-[11px] font-semibold text-[#7a8295] mb-[15px]">{freq >= 1000 ? `${freq/1000}k` : freq}</div>
+      <input
+        type="range" min="-12" max="12" step="0.1" value={val}
+        onChange={(e) => {
+          const v = parseFloat(e.target.value);
+          setVal(v);
+          onChange(v);
+        }}
+        className="eq-slider-custom"
+      />
+      <div className="text-[10px] text-[#00f0ff] mt-[15px] font-bold">{val > 0 ? `+${val.toFixed(1)}` : val.toFixed(1)} dB</div>
+    </div>
+  );
 };
 
 // --- AK47 SPECIFIC MATCHER ---
@@ -342,24 +364,28 @@ export default function MiniPlayer() {
   const[currentTime, setCurrentTime] = useState(0);
   const[duration, setDuration] = useState(0);
   const[volume, setVolume] = useState(100);
+  
+  // MODAL/UI STATES
   const[isExpanded, setIsExpanded] = useState(false);
+  const[showQueue, setShowQueue] = useState(false);
+  const[showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const[showTimerMenu, setShowTimerMenu] = useState(false);
+  
+  const activeOverlayRef = useRef<'player' | 'settings' | 'queue' | 'timer' | 'none'>('none');
+
   const[dominantColor, setDominantColor] = useState("rgb(83, 83, 83)");
   const[isScrolledPastMain, setIsScrolledPastMain] = useState(false);
   const[isUiHidden, setIsUiHidden] = useState(false); 
   const[isShuffle, setIsShuffle] = useState(false);
   const[repeatMode, setRepeatMode] = useState(0); 
-  const[showQueue, setShowQueue] = useState(false);
   
-  // HIGH-PERFORMANCE DIRECT DOM DRAG STATE
   const[dragActiveIndex, setDragActiveIndex] = useState<number | null>(null);
   const dragRef = useRef({ activeIndex: -1, startY: 0, currentY: 0, startScrollTop: 0, scrollSpeed: 0, rafId: 0, targetIndex: -1 });
   const[isQueueEditMode, setIsQueueEditMode] = useState(false);
   const[selectedQueueItems, setSelectedQueueItems] = useState<number[]>([]); 
 
-  // Sleep Timer Setup
   const[sleepTimer, setSleepTimer] = useState<number | 'end' | null>(null);
   const[timerRemaining, setTimerRemaining] = useState<number | null>(null);
-  const[showTimerMenu, setShowTimerMenu] = useState(false);
   
   const currentTrackRef = useRef<any>(null);
   const maxListenRef = useRef<number>(0);
@@ -407,9 +433,8 @@ export default function MiniPlayer() {
   const fetchingRecsRef = useRef(false);
   const[isFetchingRecsUI, setIsFetchingRecsUI] = useState(false);
   const[isSessionRestored, setIsSessionRestored] = useState(false);
-  const[showSettingsMenu, setShowSettingsMenu] = useState(false);
   
-  const [selectedQuality, setSelectedQuality] = useState("320");
+  const[selectedQuality, setSelectedQuality] = useState("320");
   const[lineFontSize, setLineFontSize] = useState("Medium");
   const[cardFontSize, setCardFontSize] = useState("Medium");
   const[isCanvasEnabled, setIsCanvasEnabled] = useState(true);
@@ -461,36 +486,58 @@ export default function MiniPlayer() {
       (container as any)._scrollRaf = requestAnimationFrame(animation);
   },[]);
 
-  // --- ROBUST MODAL HISTORY ROUTING (Fixes App Closure Bug) ---
-  const previousStates = useRef({ isExpanded: false, showQueue: false, showSettingsMenu: false, showTimerMenu: false });
-
-  useEffect(() => {
-      const prev = previousStates.current;
-      const modalOpened = (!prev.isExpanded && isExpanded) ||
-                          (!prev.showQueue && showQueue) ||
-                          (!prev.showSettingsMenu && showSettingsMenu) ||
-                          (!prev.showTimerMenu && showTimerMenu);
-      if (modalOpened) {
-          window.history.pushState({ appModal: true }, '', window.location.href);
-      }
-      previousStates.current = { isExpanded, showQueue, showSettingsMenu, showTimerMenu };
-  },[isExpanded, showQueue, showSettingsMenu, showTimerMenu]);
-
+  // --- ROBUST MODAL HISTORY ROUTING (Fixes Complete Close Bug) ---
   useEffect(() => {
       const handlePopState = (e: PopStateEvent) => {
-          if (showSettingsMenu) { setShowSettingsMenu(false); return; }
-          if (showTimerMenu) { setShowTimerMenu(false); return; }
-          if (showQueue) { setShowQueue(false); return; }
-          if (isExpanded) { setIsExpanded(false); return; }
+          if (activeOverlayRef.current === 'settings') {
+              setShowSettingsMenu(false);
+              activeOverlayRef.current = 'player';
+          } else if (activeOverlayRef.current === 'queue') {
+              setShowQueue(false);
+              activeOverlayRef.current = 'player';
+          } else if (activeOverlayRef.current === 'timer') {
+              setShowTimerMenu(false);
+              activeOverlayRef.current = 'player';
+          } else if (activeOverlayRef.current === 'player') {
+              setIsExpanded(false);
+              activeOverlayRef.current = 'none';
+          }
       };
       window.addEventListener('popstate', handlePopState);
       return () => window.removeEventListener('popstate', handlePopState);
-  },[showSettingsMenu, showTimerMenu, showQueue, isExpanded]);
+  },[]);
+
+  const openMainPlayer = () => {
+      if (!isExpanded) {
+          setIsExpanded(true);
+          activeOverlayRef.current = 'player';
+          window.history.pushState({ modal: 'player' }, '');
+      }
+  };
+
+  const openSettings = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setShowSettingsMenu(true);
+      activeOverlayRef.current = 'settings';
+      window.history.pushState({ modal: 'settings' }, '');
+  };
+
+  const openQueue = () => {
+      setShowQueue(true);
+      activeOverlayRef.current = 'queue';
+      window.history.pushState({ modal: 'queue' }, '');
+  };
+
+  const openTimer = () => {
+      setShowTimerMenu(true);
+      activeOverlayRef.current = 'timer';
+      window.history.pushState({ modal: 'timer' }, '');
+  };
 
 
   // --- PRO 10-BAND AUDIO CONTEXT & SPECTRUM EQUALIZER ---
   useEffect(() => { eqBandValuesRef.current = eqBandValues; },[eqBandValues]);
-  useEffect(() => { () => cancelAnimationFrame(visualizerRafRef.current); },[]);
+  useEffect(() => { return () => cancelAnimationFrame(visualizerRafRef.current); },[]);
 
   const startVisualizer = useCallback(() => {
     const canvas = visualizerCanvasRef.current;
@@ -511,7 +558,7 @@ export default function MiniPlayer() {
         }
 
         analyser.getByteFrequencyData(dataArray);
-        ctx.fillStyle = '#121212';
+        ctx.fillStyle = '#0a0b0e';
         ctx.fillRect(0, 0, w, h);
 
         const barWidth = (w / bufferLength) * 2.5;
@@ -562,7 +609,7 @@ export default function MiniPlayer() {
             limiter.release.value = 0.050;  
             
             // 10-Band EQ filters
-            let previousNode: AudioNode = source; // Explicitly typed to fix TypeScript compilation error
+            let previousNode: AudioNode = source;
             const bands: any[] =[];
 
             EQ_FREQUENCIES.forEach((freq, i) => {
@@ -631,7 +678,7 @@ export default function MiniPlayer() {
         await navigator.clipboard.writeText(shareUrl); alert("Link copied to clipboard!"); 
       }
     } catch (e) { console.error("Error sharing:", e); }
-    window.history.back(); // cleanly closes overlay via popstate
+    window.history.back();
   };
 
   useEffect(() => {
@@ -952,7 +999,7 @@ export default function MiniPlayer() {
     
     spotifyTimer = setTimeout(() => { fetchSpotifyMatch(); }, 1500);
     return () => { isCurrent = false; clearTimeout(spotifyTimer); };
-  }, [currentSong]);
+  },[currentSong]);
 
   useEffect(() => {
     if (queue && queue.length > 0) {
@@ -1613,7 +1660,7 @@ export default function MiniPlayer() {
 
   const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
   const handleTouchMove = (e: React.TouchEvent) => { const diff = e.touches[0].clientX - touchStartX.current; if (diff > 0 && !showQueue) setSwipeX(diff); };
-  const handleTouchEnd = () => { if (swipeX > window.innerWidth * 0.45 && !showQueue) { setCurrentSong(null); setIsPlaying(false); setIsExpanded(false); } setSwipeX(0); };
+  const handleTouchEnd = () => { if (swipeX > window.innerWidth * 0.45 && !showQueue) { setCurrentSong(null); setIsPlaying(false); setIsExpanded(false); activeOverlayRef.current = 'none'; } setSwipeX(0); };
 
   // --- 20X FASTER NATIVE MP3 PACKER ENGINE ---
   const executeMp3PackerDownload = async (url: string, quality: string) => {
@@ -1954,9 +2001,15 @@ export default function MiniPlayer() {
             color: transparent;
             will-change: background;
         }
-        .eq-slider { -webkit-appearance: none; appearance: none; background: rgba(255,255,255,0.1); outline: none; border-radius: 2px; }
-        .eq-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid #1db954; box-shadow: 0 0 10px rgba(29, 185, 84, 0.5); cursor: pointer; transition: transform 0.1s; }
-        .eq-slider::-webkit-slider-thumb:active { transform: scale(1.2); }
+        
+        /* Pro Equalizer Sliders Exact Match */
+        .eq-slider-custom {
+            -webkit-appearance: none; width: 140px; height: 6px; background: #202530; border-radius: 3px; outline: none; transform: rotate(-90deg); margin: auto 0;
+        }
+        .eq-slider-custom::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #fff; cursor: pointer; border: 2px solid #00f0ff; box-shadow: 0 0 10px rgba(0, 240, 255, 0.5); transition: transform 0.1s;
+        }
+        .eq-slider-custom::-webkit-slider-thumb:active { transform: scale(1.2); }
       `}} />
 
       <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} 
@@ -1970,36 +2023,48 @@ export default function MiniPlayer() {
 
       <div className={`player-root fixed inset-0 z-[99999] text-white transition-all duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${isExpanded ? "translate-y-0 opacity-100 overflow-hidden" : "translate-y-full opacity-0 pointer-events-none"}`}>
         
-        {isCanvasLoaded && !isScrolledPastMain && !showQueue && !isVideoMode && !isLyricsFullScreen && isCanvasEnabled && (
-          <div className="absolute inset-0 z-10 cursor-pointer" onClick={() => setIsUiHidden(!isUiHidden)} />
-        )}
-        <div className="absolute inset-0 z-0 pointer-events-none transition-all duration-700" style={{ backgroundColor: dominantColor, backgroundImage: isLyricsFullScreen ? 'none' : 'linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%)' }} />
-        
-        {canvasData?.canvasUrl && !isVideoMode && isCanvasEnabled && (
-          <div className={`absolute inset-0 z-0 bg-transparent pointer-events-none transition-opacity duration-700 flex justify-center ${isCanvasLoaded && !isScrolledPastMain && !showQueue && !isLyricsFullScreen ? 'opacity-100' : 'opacity-0'}`}>
-            <div className="relative w-full h-full max-w-[calc(100vh*9/16)] mx-auto overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]">
-               <video ref={canvasVideoRef} src={canvasData.canvasUrl} loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="absolute inset-0 w-full h-full object-cover" />
-               <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/70 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
-               <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/30 transition-opacity duration-500 ${isUiHidden ? 'opacity-100' : 'opacity-0'}`} />
-            </div>
-          </div>
-        )}
+        {/* Full Player Background Gradient using Dominant Color */}
+        <div className="absolute inset-0 z-0 pointer-events-none transition-all duration-700" style={{ backgroundColor: dominantColor, backgroundImage: isLyricsFullScreen ? 'none' : 'linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.85) 100%)' }} />
 
         <div className={`absolute inset-0 z-20 overflow-x-hidden scrollbar-hide flex flex-col pointer-events-none ${isLyricsFullScreen ? 'overflow-y-hidden' : 'overflow-y-auto'}`} onScroll={handleScroll}>
           
           <div className="w-full flex flex-col flex-shrink-0 pointer-events-auto transition-all duration-500" style={{ height: isLyricsFullScreen ? '100%' : undefined, minHeight: isLyricsFullScreen ? '100%' : '100dvh' }}>
             
+            {/* Header */}
             <div className={`flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-2 flex-shrink-0 w-full ${isLyricsFullScreen ? 'mt-0' : 'mt-4'}`}>
               <button onClick={() => { if (isLyricsFullScreen) setIsLyricsFullScreen(false); else window.history.back(); }} className="p-2 -ml-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><ChevronDown size={28} /></button>
               <div className="flex flex-col items-center flex-1 min-w-0 px-2 drop-shadow-md no-select-text">
                 <span className="text-[10px] tracking-widest text-white/70 uppercase truncate w-full text-center font-medium">Playing from {playContext?.type || 'App'}</span>
                 <span className="text-[13px] font-bold text-white truncate w-full text-center mt-[2px]">{decodeEntities(playContext?.name || 'Music')}</span>
               </div>
-              <button onClick={() => setShowSettingsMenu(true)} className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><MoreHorizontal size={24} /></button>
+              <button onClick={openSettings} className="p-2 -mr-2 text-white active:opacity-50 drop-shadow-md pointer-events-auto"><MoreHorizontal size={24} /></button>
             </div>
 
-            <div className={`flex-1 min-h-0 w-full flex items-center justify-center relative z-30 transition-all duration-500 ${isLyricsFullScreen ? 'px-0 py-0 flex-col items-stretch justify-start' : (isVideoMode ? 'px-4 py-2' : 'px-8 py-2')}`}>
-              {isLyricsFullScreen && isLyricsEnabled ? (
+            {/* PERFECT FIXED 9:16 MEDIA CONTAINER */}
+            <div className={`flex-1 min-h-0 w-full flex flex-col items-center justify-center relative z-30 transition-all duration-500 ${isLyricsFullScreen ? 'hidden' : 'px-6 py-4 flex-shrink-0'}`}>
+               <div className="relative bg-black rounded-[16px] shadow-[0_15px_40px_rgba(0,0,0,0.6)] overflow-hidden w-full max-w-[380px] pointer-events-auto" style={{ aspectRatio: '9/16', maxHeight: '55vh' }}>
+                  {(loading || isVideoLoading) && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
+                  
+                  {isVideoMode && ytVideoId ? (
+                    <iframe 
+                      ref={videoIframeRef} 
+                      src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${iframeInitialTimeRef.current}`} 
+                      style={{ width: "100%", height: "100%", border: "none" }} 
+                      allow="autoplay; fullscreen; picture-in-picture" 
+                    />
+                  ) : isCanvasLoaded && isCanvasEnabled && canvasData?.canvasUrl ? (
+                    <div className="absolute inset-0 w-full h-full cursor-pointer" onClick={() => setIsUiHidden(!isUiHidden)}>
+                       <video ref={canvasVideoRef} src={canvasData.canvasUrl} loop muted playsInline onLoadedData={() => setIsCanvasLoaded(true)} className="w-full h-full object-cover" />
+                       <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/50 transition-opacity duration-500 ${isUiHidden ? 'opacity-0' : 'opacity-100'}`} />
+                    </div>
+                  ) : displayImage ? (
+                    <img draggable={false} src={displayImage} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />
+                  ) : null}
+               </div>
+            </div>
+
+            {/* FULL SCREEN LYRICS VIEW (If active) */}
+            {isLyricsFullScreen && isLyricsEnabled && (
                 <div className="flex-1 w-full h-full flex flex-col relative overflow-hidden pointer-events-auto transition-colors duration-700 bg-transparent">
                   <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-4 pb-[30vh] flex flex-col gap-8 w-full h-full mask-edges-vertical" ref={fullLyricsContainerRef}>
                      {lyrics.length > 0 && (syncType !== "LINE_SYNCED" || isVideoMode) && (
@@ -2010,23 +2075,9 @@ export default function MiniPlayer() {
                      {RenderedLyrics}
                   </div>
                 </div>
-              ) : isVideoMode && ytVideoId ? (
-                <div className="w-full aspect-video max-w-[600px] max-h-[50vh] relative bg-black shadow-[0_15px_40px_rgba(0,0,0,0.5)] rounded-[12px] transition-all duration-500 overflow-hidden mx-auto pointer-events-auto" style={{ transform: 'translateZ(0)' }}>
-                  <iframe 
-                    ref={videoIframeRef} 
-                    src={`https://ayushcom.vercel.app/?vid=${ytVideoId}&t=${iframeInitialTimeRef.current}`} 
-                    style={{ width: "100%", height: "100%", border: "none", pointerEvents: 'auto', borderRadius: '12px' }} 
-                    allow="autoplay; fullscreen; picture-in-picture" 
-                  />
-                </div>
-              ) : (
-                <div className={`relative bg-[#282828] rounded-[8px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isCanvasLoaded && isCanvasEnabled ? 'opacity-0 scale-75 pointer-events-none hidden' : 'opacity-100 scale-100 block'}`} style={{ width: '100%', aspectRatio: '1/1', maxWidth: '380px', maxHeight: '50vh' }}>
-                  {(loading || isVideoLoading) && <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-white" /></div>}
-                  {displayImage && <img draggable={false} src={displayImage} alt="cover" className="w-full h-full object-cover no-select pointer-events-none" />}
-                </div>
-              )}
-            </div>
+            )}
 
+            {/* CONTROLS SECTION */}
             <div className={`w-full px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2 flex flex-col justify-end flex-shrink-0 transition-opacity duration-500 pointer-events-auto ${isLyricsFullScreen ? 'mb-0 pb-[max(0.5rem,env(safe-area-inset-bottom))]' : 'mb-2'}`}>
               
               <div className={`transition-all duration-500 w-full relative overflow-hidden flex items-center justify-start mask-edges-vertical ${isUiHidden && !isVideoMode ? 'max-h-0 opacity-0 mb-0' : (isLyricsFullScreen ? 'hidden' : 'mb-3 opacity-100 min-h-[75px]')}`}>
@@ -2035,7 +2086,6 @@ export default function MiniPlayer() {
 
               <div className={`transition-all duration-500 flex items-center justify-between drop-shadow-md w-full no-select-text ${isLyricsFullScreen ? 'mb-2 scale-[0.8] origin-bottom-left' : 'mb-5'}`}>
                 <div className="flex items-center gap-3 overflow-hidden pr-4 flex-1 min-w-0 w-full max-w-full">
-                  {showTinyBanner && displayImage && !isLyricsFullScreen && (<img draggable={false} src={displayImage} className="w-[48px] h-[48px] rounded-md shadow-md flex-shrink-0 no-select pointer-events-none" alt="tiny cover" />)}
                   <div className="flex flex-col flex-1 min-w-0 w-full overflow-hidden">
                     <MarqueeText text={displayTitle} className="text-[22px] font-bold text-white tracking-tight drop-shadow-md w-full" />
                     <MarqueeText text={displayArtists} className="text-[15px] font-medium text-[#b3b3b3] mt-1 drop-shadow-md w-full" />
@@ -2062,7 +2112,7 @@ export default function MiniPlayer() {
                 {!isLyricsFullScreen && (
                   <div className="flex items-center justify-between text-[#b3b3b3] w-full px-1 drop-shadow-md pointer-events-auto">
                     <button onClick={toggleVideoMode} className={`active:opacity-50 transition-colors ${isVideoMode ? 'text-[#1db954]' : 'text-[#b3b3b3]'}`}>{isVideoLoading ? <Loader2 size={20} className="animate-spin" /> : <MonitorPlay size={20} />}</button>
-                    <div className="flex items-center gap-6"><button onClick={() => setShowQueue(true)} className="active:opacity-50 text-white"><ListMusic size={20} /></button></div>
+                    <div className="flex items-center gap-6"><button onClick={openQueue} className="active:opacity-50 text-white"><ListMusic size={20} /></button></div>
                   </div>
                 )}
               </div>
@@ -2070,6 +2120,7 @@ export default function MiniPlayer() {
             </div>
           </div>
 
+          {/* SCROLLABLE BOTTOM CONTENT CARDS */}
           <div className={`w-full px-5 pb-24 flex flex-col gap-6 pointer-events-auto transition-opacity duration-500 ${isUiHidden && !isVideoMode ? 'opacity-0 pointer-events-none' : 'opacity-100'} ${isLyricsFullScreen ? 'hidden' : 'block'}`}>
             {isLyricsEnabled && lyrics.length > 0 && !isLyricsFullScreen && (
               <div className="rounded-2xl p-6 w-full mx-auto shadow-2xl relative overflow-hidden transition-colors duration-500 border border-white/10" style={{ backgroundColor: dominantColor }}>
@@ -2090,7 +2141,7 @@ export default function MiniPlayer() {
             )}
 
             {!currentSong.isProFallback && songDetails?.album && (
-              <Link href={albumRoute} onClick={() => window.history.back()} className="w-full mb-6 bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group no-select-text pointer-events-auto">
+              <Link href={albumRoute} onClick={() => window.history.back()} className="w-full bg-[#1e1e1e]/60 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 hover:bg-[#2a2a2a]/80 transition-colors border border-white/10 shadow-xl relative overflow-hidden group no-select-text pointer-events-auto">
                 <div className="absolute inset-0 z-0 pointer-events-none opacity-30" style={{ backgroundColor: dominantColor }} />
                 {displayImage && <img draggable={false} src={displayImage} className="w-[64px] h-[64px] rounded-md object-cover relative z-10 shadow-md border border-white/5 group-hover:scale-105 transition-transform no-select pointer-events-none" alt="Album Cover" />}
                 <div className="flex flex-col relative z-10 flex-1 pr-2"><span className="text-white/60 text-[11px] uppercase tracking-widest font-bold mb-1 drop-shadow-sm">Album</span><span className="text-white font-bold text-[16px] line-clamp-1 drop-shadow-md">{decodeEntities(songDetails.album.name)}</span></div><div className="relative z-10 text-white/50 group-hover:text-white transition-colors pl-2"><ChevronDown size={20} className="-rotate-90" /></div>
@@ -2098,7 +2149,7 @@ export default function MiniPlayer() {
             )}
 
             {!currentSong.isProFallback && songDetails && (
-              <div className="w-full mb-6 rounded-2xl p-5 flex flex-col gap-4 border border-white/10 shadow-2xl relative overflow-hidden no-select-text">
+              <div className="w-full rounded-2xl p-5 flex flex-col gap-4 border border-white/10 shadow-2xl relative overflow-hidden no-select-text">
                 {displayImage && <div className="absolute inset-0 z-0 bg-cover bg-center opacity-30 blur-lg scale-110" style={{ backgroundImage: `url(${displayImage})` }} />}<div className="absolute inset-0 z-0 bg-gradient-to-t from-black/90 via-black/60 to-black/30 pointer-events-none" />
                 <h3 className="text-white font-bold text-[18px] drop-shadow-md relative z-10 mb-2">About Song</h3>
                 <div className="relative z-10 grid grid-cols-2 gap-y-5 gap-x-4">
@@ -2112,46 +2163,35 @@ export default function MiniPlayer() {
               </div>
             )}
 
-            {/* --- PRO EQUALIZER & VISUALIZER --- */}
+            {/* --- PRO EQUALIZER EXACT HTML MATCH REPLICA --- */}
             {!currentSong.isProFallback && (
-              <div className="w-full mb-10 rounded-2xl p-5 flex flex-col gap-4 border border-white/10 shadow-2xl relative overflow-hidden bg-[#121212] no-select-text pointer-events-auto">
-                <div className="absolute inset-0 z-0 bg-gradient-to-t from-black/90 via-black/60 to-black/30 pointer-events-none" />
-                <div className="relative z-10 flex items-center justify-between mb-2">
-                  <h3 className="text-white font-bold text-[18px] drop-shadow-md">Pro Audio EQ</h3>
-                  <select
-                    value={eqPreset}
-                    onChange={(e) => applyEqPreset(e.target.value)}
-                    className="bg-white/10 text-white text-[12px] font-bold px-3 py-1.5 rounded-lg outline-none border border-white/10 appearance-none text-center cursor-pointer"
-                  >
-                    {Object.keys(EQ_PRESETS).map(p => <option key={p} value={p} className="text-black">{p}</option>)}
-                    <option value="Custom" className="text-black">Custom</option>
-                  </select>
+              <div className="w-full bg-[#111318] p-6 rounded-[12px] shadow-[0_15px_35px_rgba(0,0,0,0.8),0_0_15px_rgba(0,240,255,0.05)] border border-white/5 flex flex-col gap-5 no-select-text pointer-events-auto">
+                <div className="flex flex-col">
+                  <h1 className="text-[22px] font-bold uppercase tracking-[1.5px] mb-1" style={{ background: 'linear-gradient(90deg, #00f0ff, #0066ff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Pro Audio Analyzer</h1>
+                  <p className="text-[#7a8295] text-[13px]">Distortion-Free 10-Band EQ & Spectrum</p>
                 </div>
-
-                <div className="relative z-10 w-full h-[120px] rounded-lg overflow-hidden border border-white/10 bg-[#0a0b0e] shadow-inner">
+                
+                <div className="w-full h-[140px] bg-[#0a0b0e] rounded-[8px] overflow-hidden relative border border-[#202530]">
                   <canvas ref={visualizerCanvasRef} className="w-full h-full block" />
                 </div>
 
-                <div className="relative z-10 flex items-center justify-between gap-2 overflow-x-auto scrollbar-hide py-4 px-1 w-full" style={{ touchAction: 'pan-x' }}>
-                  {EQ_FREQUENCIES.map((freq, i) => (
-                    <div key={i} className="flex flex-col items-center gap-3 flex-shrink-0 min-w-[36px]">
-                      <span className="text-white/50 text-[10px] font-bold">{freq >= 1000 ? `${freq/1000}k` : freq}</span>
-                      <div className="h-[120px] flex items-center justify-center relative w-full">
-                         <input
-                           type="range"
-                           min="-12" max="12" step="0.1"
-                           value={eqBandValues[i]}
-                           onChange={(e) => handleEqBandChange(i, parseFloat(e.target.value))}
-                           className="absolute w-[120px] h-[4px] eq-slider"
-                           style={{ transform: 'rotate(-90deg)' }}
-                         />
-                      </div>
-                      <span className="text-[#1db954] text-[9px] font-bold tracking-wider">{eqBandValues[i] > 0 ? `+${eqBandValues[i].toFixed(1)}` : eqBandValues[i].toFixed(1)}</span>
-                    </div>
-                  ))}
+                <div className="bg-[#0a0b0e] p-5 rounded-[8px] border border-[#202530]">
+                   <div className="flex justify-between items-center mb-5 flex-wrap gap-[15px]">
+                      <h3 className="text-[16px] text-white font-bold">10-Band Equalizer</h3>
+                      <select value={eqPreset} onChange={(e) => applyEqPreset(e.target.value)} className="bg-[#111318] text-white border border-[#202530] py-[10px] px-[14px] rounded-[6px] outline-none cursor-pointer text-[14px] w-full max-w-[180px]">
+                        {Object.keys(EQ_PRESETS).map(p => <option key={p} value={p}>{p}</option>)}
+                        <option value="Custom">Custom</option>
+                      </select>
+                   </div>
+                   <div className="flex justify-between items-center gap-[10px] h-[220px] overflow-x-auto overflow-y-hidden pb-[10px] scrollbar-hide">
+                      {EQ_FREQUENCIES.map((freq, i) => (
+                         <EqSlider key={freq} freq={freq} initialValue={eqBandValues[i]} onChange={(v) => handleEqBandChange(i, v)} />
+                      ))}
+                   </div>
                 </div>
               </div>
             )}
+
           </div>
         </div>
 
@@ -2401,14 +2441,14 @@ export default function MiniPlayer() {
                 <>
                     <div className="flex flex-col items-center gap-1 active:opacity-50 cursor-pointer" onClick={() => setIsShuffle(!isShuffle)}><Shuffle size={24} className={isShuffle ? 'text-[#1db954]' : 'text-white/70'} /><span className={`text-[11px] font-medium ${isShuffle ? 'text-[#1db954]' : 'text-white/70'}`}>Shuffle</span></div>
                     <div className="flex flex-col items-center gap-1 active:opacity-50 cursor-pointer" onClick={() => setRepeatMode((prev) => (prev + 1) % 3)}><div className="relative"><Repeat size={24} className={repeatMode > 0 ? 'text-[#1db954]' : 'text-white/70'} />{repeatMode === 2 && <span className="absolute -top-1 -right-1 bg-[#1db954] text-black text-[9px] font-bold rounded-full w-3 h-3 flex items-center justify-center">1</span>}</div><span className={`text-[11px] font-medium ${repeatMode > 0 ? 'text-[#1db954]' : 'text-white/70'}`}>Repeat</span></div>
-                    <div className="flex flex-col items-center gap-1 active:opacity-50 cursor-pointer text-white/70" onClick={() => setShowTimerMenu(true)}><div className={`relative ${sleepTimer ? 'text-[#1db954]' : 'text-white/70'}`}><Timer size={24} /></div><span className={`text-[11px] font-medium ${sleepTimer ? 'text-[#1db954]' : 'text-white/70'}`}>{timerRemaining ? formatSleepTimerStr(timerRemaining) : sleepTimer === 'end' ? 'Track End' : 'Timer'}</span></div>
+                    <div className="flex flex-col items-center gap-1 active:opacity-50 cursor-pointer text-white/70" onClick={openTimer}><div className={`relative ${sleepTimer ? 'text-[#1db954]' : 'text-white/70'}`}><Timer size={24} /></div><span className={`text-[11px] font-medium ${sleepTimer ? 'text-[#1db954]' : 'text-white/70'}`}>{timerRemaining ? formatSleepTimerStr(timerRemaining) : sleepTimer === 'end' ? 'Track End' : 'Timer'}</span></div>
                 </>
             )}
           </div>
         </div>
       </div>
 
-      <div onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onClick={() => setIsExpanded(true)} className={`fixed bottom-[65px] left-[8px] right-[8px] h-[56px] rounded-[6px] z-[99990] cursor-pointer overflow-hidden transition-all duration-[400ms] shadow-md no-select-text ${isExpanded ? 'opacity-0 pointer-events-none translate-y-6 scale-[0.98]' : 'opacity-100 translate-y-0 scale-100'}`} style={{ backgroundColor: dominantColor, transform: swipeX > 0 ? `translateX(${swipeX}px)` : undefined, transition: swipeX === 0 && !isExpanded ? 'transform 0.4s ease-out, opacity 0.4s' : 'none' }}>
+      <div onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onClick={openMainPlayer} className={`fixed bottom-[65px] left-[8px] right-[8px] h-[56px] rounded-[6px] z-[99990] cursor-pointer overflow-hidden transition-all duration-[400ms] shadow-md no-select-text ${isExpanded ? 'opacity-0 pointer-events-none translate-y-6 scale-[0.98]' : 'opacity-100 translate-y-0 scale-100'}`} style={{ backgroundColor: dominantColor, transform: swipeX > 0 ? `translateX(${swipeX}px)` : undefined, transition: swipeX === 0 && !isExpanded ? 'transform 0.4s ease-out, opacity 0.4s' : 'none' }}>
         <div className="absolute inset-0 bg-black/25 z-0 pointer-events-none" />
         <div className="relative z-10 w-full h-full flex items-center px-2">
           <div className="w-[40px] h-[40px] flex-shrink-0 rounded-[4px] shadow-sm overflow-hidden bg-[#282828] relative mr-3">

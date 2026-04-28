@@ -1,5 +1,4 @@
 
-
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -159,7 +158,7 @@ const parseTimeTag = (tag: string) => {
 const RAPID_KEYS =["d1edce158amshec139440d20658ap1f2545jsnbb7da9add82f", "6cf7f03014msh787c51a713c0264p15c20djsna1f9a9f6a378", "13d48f6bb8msh459c11b91bdcc44p110f4ejsn099443894115", "03fc23317fmsh0535ef9ec8c6f5bp1db59bjsn545991df9343", "e54e3fbc4dmshfc16d4417b618fdp1a2fafjsn30c72d8cf3ab"];
 const RAPID_API_HOST = "spotify81.p.rapidapi.com";
 
-// --- AUDIO EQ PRESETS ---
+// --- AUDIO EQ PRESETS (BACKGROUND ENGINE) ---
 const EQ_FREQUENCIES =[32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 const ENHANCED_EQ =[-2, 2, -1, -5, -7, -6, -3, -3, -4, -1];
 const ORIGINAL_EQ =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -499,79 +498,84 @@ export default function MiniPlayer() {
       window.history.pushState({ modal: 'timer' }, '');
   };
 
-  // Navigating out entirely
   const closePlayerForNavigation = () => {
       setIsExpanded(false);
       activeOverlayRef.current = 'none';
   };
 
-  // --- AUDIO EQ EFFECTS ENGINE (Runs seamlessly in background) ---
+
+  // --- DEEP AUDIO EQ ENGINE (Runs flawlessly via onPlay intercept) ---
+  const ensureAudioActive = useCallback(() => {
+      if (!audioRef.current) return;
+      
+      if (!isAudioPremiumSetupRef.current) {
+          try {
+              const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+              if (!AudioContextClass) return;
+              const ctx = new AudioContextClass();
+              audioCtxRef.current = ctx;
+              
+              const source = ctx.createMediaElementSource(audioRef.current);
+              
+              let previousNode: AudioNode = source;
+              const bands: any[] =[];
+              
+              const savedAe = localStorage.getItem('audio_enhanced');
+              const isEnh = savedAe !== null ? savedAe === 'true' : isAudioEnhanced;
+              const currentEQ = isEnh ? ENHANCED_EQ : ORIGINAL_EQ;
+
+              EQ_FREQUENCIES.forEach((freq, i) => {
+                  let filter = ctx.createBiquadFilter();
+                  filter.type = "peaking";
+                  filter.frequency.value = freq;
+                  filter.Q.value = 1.41;
+                  filter.gain.value = currentEQ[i];
+                  previousNode.connect(filter);
+                  previousNode = filter;
+                  bands.push(filter);
+              });
+              eqBandsRef.current = bands;
+
+              // Studio Limiter (prevents distortion natively)
+              const limiter = ctx.createDynamicsCompressor();
+              limiter.threshold.value = -1.0; 
+              limiter.knee.value = 0.0;       
+              limiter.ratio.value = 20.0;      
+              limiter.attack.value = 0.005;  
+              limiter.release.value = 0.050;  
+              
+              previousNode.connect(limiter); 
+              limiter.connect(ctx.destination);
+              
+              isAudioPremiumSetupRef.current = true;
+          } catch(e) {
+              console.warn("Premium Audio Config Error (CORS block):", e);
+              isAudioPremiumSetupRef.current = true;
+          }
+      }
+      
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+          audioCtxRef.current.resume();
+      }
+  }, [isAudioEnhanced]);
+
+  // Handle setting updates efficiently
   useEffect(() => {
-    if (eqBandsRef.current.length > 0 && audioCtxRef.current) {
-        const targetEQ = isAudioEnhanced ? ENHANCED_EQ : ORIGINAL_EQ;
-        targetEQ.forEach((val, i) => {
-            eqBandsRef.current[i].gain.setTargetAtTime(val, audioCtxRef.current.currentTime, 0.1);
-        });
-        if (audioCtxRef.current.state === 'suspended') {
-            audioCtxRef.current.resume();
-        }
-    }
-    localStorage.setItem('audio_enhanced', isAudioEnhanced.toString());
-  },[isAudioEnhanced]);
+      if (eqBandsRef.current.length > 0 && audioCtxRef.current) {
+          const targetEQ = isAudioEnhanced ? ENHANCED_EQ : ORIGINAL_EQ;
+          targetEQ.forEach((val, i) => {
+              if (eqBandsRef.current[i]) {
+                  eqBandsRef.current[i].gain.setTargetAtTime(val, audioCtxRef.current.currentTime, 0.1);
+                  eqBandsRef.current[i].gain.value = val;
+              }
+          });
+          if (audioCtxRef.current.state === 'suspended') {
+              audioCtxRef.current.resume();
+          }
+      }
+      localStorage.setItem('audio_enhanced', isAudioEnhanced.toString());
+  }, [isAudioEnhanced]);
 
-  useEffect(() => {
-    if (!audioRef.current) return;
-    const audio = audioRef.current;
-    
-    const initAudioContext = () => {
-        if (isAudioPremiumSetupRef.current) {
-            if (audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume();
-            return;
-        }
-        try {
-            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-            if (!AudioContextClass) return;
-            const ctx = new AudioContextClass();
-            audioCtxRef.current = ctx;
-            const source = ctx.createMediaElementSource(audio);
-            
-            // 10-Band EQ filters Setup
-            let previousNode: AudioNode = source;
-            const bands: any[] =[];
-            const currentEQ = isAudioEnhanced ? ENHANCED_EQ : ORIGINAL_EQ;
-
-            EQ_FREQUENCIES.forEach((freq, i) => {
-                let filter = ctx.createBiquadFilter();
-                filter.type = "peaking";
-                filter.frequency.value = freq;
-                filter.Q.value = 1.41;
-                filter.gain.value = currentEQ[i];
-                previousNode.connect(filter);
-                previousNode = filter;
-                bands.push(filter);
-            });
-            eqBandsRef.current = bands;
-
-            // Studio Limiter (prevents clipping/distortion)
-            const limiter = ctx.createDynamicsCompressor();
-            limiter.threshold.value = -1.0; 
-            limiter.knee.value = 0.0;       
-            limiter.ratio.value = 20.0;      
-            limiter.attack.value = 0.005;  
-            limiter.release.value = 0.050;  
-            
-            // Connect chain
-            previousNode.connect(limiter); 
-            limiter.connect(ctx.destination);
-            
-            isAudioPremiumSetupRef.current = true;
-        } catch(e) { console.warn("Premium Audio Config Error", e); }
-    };
-
-    const handlePlay = () => initAudioContext();
-    audio.addEventListener('play', handlePlay);
-    return () => audio.removeEventListener('play', handlePlay);
-  },[]);
 
   // --- CLEAN RAW LINK SHARE ---
   const handleShareSong = async () => {
@@ -882,9 +886,7 @@ export default function MiniPlayer() {
                  }
              }
          }
-      } catch (e) {
-          // If AK47 fails, we suppress the error and allow it to fall back to RapidAPI
-      }
+      } catch (e) {}
 
       // SECOND TRY (FALLBACK): RapidAPI
       const searchUrl = `https://${RAPID_API_HOST}/search?q=${encodeURIComponent(query)}&type=tracks&offset=0&limit=25&numberOfTopResults=5`;
@@ -919,7 +921,7 @@ export default function MiniPlayer() {
         if (idx !== -1) setUpcomingQueue(queue.slice(idx + 1));
       }
     }
-  }, [queue]); 
+  },[queue]); 
 
   // DYNAMIC ZERO-LATENCY AUDIO STREAMING ENGINE
   useEffect(() => {
@@ -1063,9 +1065,7 @@ export default function MiniPlayer() {
       videoIframeRef.current.contentWindow.postMessage({ type: newState ? 'MUSIC_PLAY' : 'MUSIC_PAUSE' }, '*');
     } else {
       if (newState) {
-        if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-            audioCtxRef.current.resume();
-        }
+        ensureAudioActive();
         const playPromise = audioRef.current?.play();
         if (playPromise !== undefined) playPromise.catch(()=>{});
       } else audioRef.current?.pause();
@@ -1080,7 +1080,7 @@ export default function MiniPlayer() {
         const audioDur = audioRef.current.duration || 0; setDuration(audioDur);
         const safeTime = (audioDur > 0 && currentTime > audioDur) ? audioDur - 2 : currentTime;
         audioRef.current.currentTime = safeTime; setCurrentTime(safeTime);
-        if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+        ensureAudioActive();
         const playPromise = audioRef.current.play();
         if (playPromise !== undefined) playPromise.catch(()=>{});
         setIsPlaying(true);
@@ -1098,7 +1098,7 @@ export default function MiniPlayer() {
     const newVid = await prefetchVideoId(displayTitle, displayArtists);
     if (newVid) { setYtVideoId(newVid); setIsVideoMode(true); } 
     else if (audioRef.current) { 
-        if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+        ensureAudioActive();
         const p = audioRef.current.play(); if(p!==undefined) p.catch(()=>{}); setIsPlaying(true); 
     }
     setIsVideoLoading(false);
@@ -1163,7 +1163,7 @@ export default function MiniPlayer() {
     if (audioRef.current && audioUrl) {
       audioRef.current.volume = volume / 100;
       if (isPlaying && !isVideoMode) { 
-          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+          ensureAudioActive();
           const p = audioRef.current.play(); if (p !== undefined) p.catch(() => {}); 
       }
       else if (!isPlaying) audioRef.current.pause();
@@ -1200,7 +1200,7 @@ export default function MiniPlayer() {
     if (repeatMode === 2 && audioRef.current) { 
       audioRef.current.currentTime = 0; 
       setRepeatMode(0); 
-      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+      ensureAudioActive();
       const p = audioRef.current.play(); 
       if (p!==undefined) p.catch(()=>{}); 
       return; 
@@ -1274,7 +1274,7 @@ export default function MiniPlayer() {
           setIsPlaying(true); navigator.mediaSession.playbackState = 'playing';
           if (isVideoModeRef.current && videoIframeRef.current?.contentWindow) videoIframeRef.current.contentWindow.postMessage({ type: 'MUSIC_PLAY' }, '*');
           else if (audioRef.current) { 
-              if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+              ensureAudioActive();
               const p = audioRef.current.play(); if (p !== undefined) p.catch(()=>{}); 
           }
        });
@@ -1297,7 +1297,7 @@ export default function MiniPlayer() {
     if ('mediaSession' in navigator) {
        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
     }
-  },[isPlaying]);
+  }, [isPlaying]);
 
   const handleTimeUpdate = () => {
     if (audioRef.current && !isVideoMode) {
@@ -1477,7 +1477,7 @@ export default function MiniPlayer() {
     } else if (audioRef.current && duration > 0) {
       audioRef.current.currentTime = newTime; syncPosition();
       if (isPlaying) { 
-          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+          ensureAudioActive();
           const p = audioRef.current.play(); if (p !== undefined) p.catch(()=>{}); 
       }
     }
@@ -1840,7 +1840,7 @@ export default function MiniPlayer() {
         </Link>
       )
     });
-  }, [uniqueArtists]);
+  },[uniqueArtists]);
 
   const RenderedQueue = useMemo(() => {
     return upcomingQueue.map((track: any, index: number) => {
@@ -1934,7 +1934,16 @@ export default function MiniPlayer() {
         }
       `}} />
 
-      <audio ref={audioRef} src={audioUrl} autoPlay={isPlaying && !isVideoMode} onEnded={playNext} onTimeUpdate={handleTimeUpdate} crossOrigin="anonymous"
+      {/* AUDIO ELEMENT WITH NATIVE ONPLAY HOOKS FOR EQ ACTIVATION */}
+      <audio 
+        ref={audioRef} 
+        src={audioUrl} 
+        autoPlay={isPlaying && !isVideoMode} 
+        onEnded={playNext} 
+        onTimeUpdate={handleTimeUpdate} 
+        crossOrigin="anonymous"
+        onPlay={ensureAudioActive}
+        onPlaying={ensureAudioActive}
         onLoadedMetadata={() => { 
            const dur = audioRef.current?.duration || 0;
            setDuration(dur); 
@@ -2189,13 +2198,13 @@ export default function MiniPlayer() {
                    <div className="flex bg-[#1e1e1e] rounded-[16px] overflow-hidden p-2 gap-2">
                       <button onClick={() => {
                           setIsAudioEnhanced(false);
-                          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+                          ensureAudioActive();
                       }} className={`flex-1 px-4 py-3 rounded-xl text-[14px] font-bold transition-all ${!isAudioEnhanced ? 'bg-[#1db954] text-black shadow-md' : 'bg-white/5 text-white hover:bg-white/10'}`}>
                          Original
                       </button>
                       <button onClick={() => {
                           setIsAudioEnhanced(true);
-                          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+                          ensureAudioActive();
                       }} className={`flex-1 px-4 py-3 rounded-xl text-[14px] font-bold transition-all ${isAudioEnhanced ? 'bg-[#1db954] text-black shadow-md' : 'bg-white/5 text-white hover:bg-white/10'}`}>
                          Enhanced
                       </button>
@@ -2341,7 +2350,7 @@ export default function MiniPlayer() {
                     <button onClick={() => {
                         if (selectedQueueItems.length === 0) return;
                         setUpcomingQueue(prev => {
-                            const arr =[...prev]; 
+                            const arr = [...prev]; 
                             const toMove = selectedQueueItems.map(idx => prev[idx]);
                             const remaining = arr.filter((_, i) => !selectedQueueItems.includes(i));
                             return[...toMove, ...remaining];

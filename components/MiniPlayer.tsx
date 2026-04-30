@@ -160,7 +160,7 @@ const RAPID_API_HOST = "spotify81.p.rapidapi.com";
 
 // --- AUDIO EQ PRESETS (BACKGROUND ENGINE) ---
 const EQ_FREQUENCIES =[32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-const ENHANCED_EQ =[-2, 2, -1, -5, -7, -6, -3, -3, -4, -1];
+const ENHANCED_EQ =[-2, 2, -1, -5, -7, -3, 0, 0, -4, -1];
 const ORIGINAL_EQ =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 // --- AK47 SPECIFIC MATCHER ---
